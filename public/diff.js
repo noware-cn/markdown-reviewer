@@ -24,6 +24,7 @@
     chapterScrollBound: false,
     navIdx: -1,
     scrollPos: {}, // "path:mode" -> scrollTop
+    lastViewKey: null,
   };
 
   const esc = window.DiffModel.esc;
@@ -328,12 +329,9 @@
   /* ---------- P3: 变更导航 ---------- */
   function changeElements() {
     const doc = document.getElementById("wbDoc");
-    // 阅读模式：有 line-anchor 的块（即 hunk 内可评论行）
     let els = doc.querySelectorAll(".line-anchor");
-    if (!els.length) {
-      // unified/split 模式：add/del 行
-      els = doc.querySelectorAll(".dline.add, .dline.del");
-    }
+    if (!els.length) els = doc.querySelectorAll(".dline.add, .dline.del");
+    if (!els.length) els = doc.querySelectorAll(".sb-head .is-added, .sb-head .is-modified-new, .sb-base .is-removed, .sb-base .is-partial");
     return Array.from(els);
   }
   function gotoChange(dir) {
@@ -362,10 +360,9 @@
   function render() {
     const meta = D.meta;
     if (!meta) return;
-    // 保存当前滚动位置
-    if (D.file) {
-      const doc = document.getElementById("wbDoc");
-      D.scrollPos[`${D.file}:${D.mode}`] = doc.scrollTop;
+    // 保存上一个视图的滚动位置（用旧 key）
+    if (D.lastViewKey) {
+      D.scrollPos[D.lastViewKey] = document.getElementById("wbDoc").scrollTop;
     }
     document.getElementById("wbPrTitle").textContent = `#${meta.number} ${meta.title}`;
     document.getElementById("wbStats").textContent =
@@ -389,12 +386,12 @@
     else content.innerHTML = readingHTML(file);
 
     document.getElementById("wbDrawerBody").innerHTML = drawerHTML();
-    // 恢复滚动位置
-    const saved = D.scrollPos[`${D.file}:${D.mode}`];
-    if (saved !== undefined) {
-      const doc = document.getElementById("wbDoc");
-      requestAnimationFrame(() => { doc.scrollTop = saved; });
-    }
+    // 恢复当前视图的滚动位置，记录本次 key
+    const key = `${D.file}:${D.mode}`;
+    D.lastViewKey = key;
+    const saved = D.scrollPos[key];
+    const docEl = document.getElementById("wbDoc");
+    requestAnimationFrame(() => { docEl.scrollTop = saved ?? 0; });
     updateNavFloat();
   }
 
@@ -496,14 +493,15 @@
     document.addEventListener("keydown", (e) => {
       const wb = document.getElementById("workbench");
       if (wb.hidden) return;
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
       if (e.key === "n") { e.preventDefault(); gotoChange(1); }
       else if (e.key === "p") { e.preventDefault(); gotoChange(-1); }
-      else if (e.key === "1") { D.mode = "reading"; render(); }
-      else if (e.key === "2") { D.mode = "sidebyside"; render(); }
-      else if (e.key === "3") { D.mode = "unified"; render(); }
-      else if (e.key === "4") { D.mode = "split"; render(); }
+      else if (e.key === "1") { D.active = null; D.mode = "reading"; render(); }
+      else if (e.key === "2") { D.active = null; D.mode = "sidebyside"; render(); }
+      else if (e.key === "3") { D.active = null; D.mode = "unified"; render(); }
+      else if (e.key === "4") { D.active = null; D.mode = "split"; render(); }
     });
     document.getElementById("dselchip").addEventListener("click", () => {
       const chip = document.getElementById("dselchip");
