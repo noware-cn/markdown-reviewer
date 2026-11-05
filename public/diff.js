@@ -293,11 +293,20 @@
     // review options
     if (!D.meta?.merged) {
       parts.push(`<div class="devopt">`
+        + `<label class="devlab"><input type="radio" name="wbrev" value="APPROVE" data-ev="APPROVE"${D.event === "APPROVE" ? " checked" : ""}>批准</label>`
         + `<label class="devlab"><input type="radio" name="wbrev" value="COMMENT" data-ev="COMMENT"${D.event === "COMMENT" ? " checked" : ""}>仅评论</label>`
         + `<label class="devlab"><input type="radio" name="wbrev" value="REQUEST_CHANGES" data-ev="REQUEST_CHANGES"${D.event === "REQUEST_CHANGES" ? " checked" : ""}>请求修改</label>`
         + `</div>`);
-      parts.push(`<button class="dsubmit" id="wbSubmit" type="button" ${D.drafts.length && !draftsOutdated() ? "" : "disabled"}>提交 ${D.drafts.length} 条意见到 GitHub</button>`);
-      const hint = draftsOutdated() ? "PR 已有新提交：旧草稿行号可能失效，请删除后重新定位。" : "评论使用你本人令牌写入，页面不保存副本。";
+      const canSubmit = D.event === "APPROVE"
+        ? !draftsOutdated()
+        : D.drafts.length > 0 && !draftsOutdated();
+      const btnText = D.event === "APPROVE"
+        ? (D.drafts.length ? `批准并附 ${D.drafts.length} 条意见` : "批准合并")
+        : `提交 ${D.drafts.length} 条意见到 GitHub`;
+      parts.push(`<button class="dsubmit" id="wbSubmit" type="button" ${canSubmit ? "" : "disabled"}>${btnText}</button>`);
+      const hint = draftsOutdated() ? "PR 已有新提交：旧草稿行号可能失效，请删除后重新定位。"
+        : D.event === "APPROVE" ? "批准将以你的名义在 GitHub 提交 Approve Review。"
+        : "评论使用你本人令牌写入，页面不保存副本。";
       parts.push(`<div class="dhint">${hint}</div>`);
     } else {
       parts.push(`<div class="dhint">PR 已合并，GitHub 不允许再新增评论，此页只读。</div>`);
@@ -395,7 +404,7 @@
       const del = e.target.closest("[data-del]");
       if (del) { D.drafts.splice(Number(del.dataset.del), 1); saveDrafts(); render(); return; }
       const ev = e.target.closest("[data-ev]");
-      if (ev) { D.event = ev.dataset.ev === "REQUEST_CHANGES" ? "REQUEST_CHANGES" : "COMMENT"; render(); return; }
+      if (ev) { D.event = ev.dataset.ev; render(); return; }
       const submit = e.target.closest("#wbSubmit");
       if (submit) submitDrafts();
     });
@@ -482,8 +491,9 @@
 
   /* ---------- 提交草稿 ---------- */
   async function submitDrafts() {
-    if (!D.drafts.length) return;
+    if (!D.drafts.length && D.event !== "APPROVE") return;
     if (draftsOutdated()) { toast("PR 已有新提交，旧草稿不能提交"); return; }
+    if (D.event === "APPROVE" && !confirm("确认以你的名义在 GitHub 提交 Approve Review？")) return;
     const btn = document.getElementById("wbSubmit");
     btn.disabled = true;
     btn.textContent = "提交中…";

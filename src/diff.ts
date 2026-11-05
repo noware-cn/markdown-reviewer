@@ -266,22 +266,25 @@ export interface ReviewResult {
   comments: number;
 }
 
-/** 一次提交把草稿合并成一条 review；event 默认 COMMENT，可指定 REQUEST_CHANGES。 */
+/** 一次提交把草稿合并成一条 review；event 默认 COMMENT，可指定 REQUEST_CHANGES 或 APPROVE。 */
 export const createReview = async (
   env: Env,
   token: string,
   number: number,
   commitId: string,
   drafts: ReviewDraft[],
-  event: "COMMENT" | "REQUEST_CHANGES" = "COMMENT",
+  event: "COMMENT" | "REQUEST_CHANGES" | "APPROVE" = "COMMENT",
 ): Promise<ReviewResult> => {
+  const eventBody =
+    event === "REQUEST_CHANGES"
+      ? `变更查看器提交的行级审阅意见（共 ${drafts.length} 条），结论：请求修改后再审。`
+      : event === "APPROVE"
+        ? `变更查看器提交的审阅结论：批准合并。${drafts.length ? `附 ${drafts.length} 条行级意见。` : ""}`
+        : `变更查看器提交的行级审阅意见（共 ${drafts.length} 条）`;
   const payload = {
     commit_id: commitId,
     event,
-    body:
-      event === "REQUEST_CHANGES"
-        ? `变更查看器提交的行级审阅意见（共 ${drafts.length} 条），结论：请求修改后再审。`
-        : `变更查看器提交的行级审阅意见（共 ${drafts.length} 条）`,
+    body: eventBody,
     comments: drafts.map((draft) => ({
       path: draft.path,
       body: draft.body,

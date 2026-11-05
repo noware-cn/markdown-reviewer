@@ -354,9 +354,11 @@ export default {
       } catch {
         return json({ status: "error", message: "请求体不是合法 JSON" }, 400);
       }
-      const event = body.event === "REQUEST_CHANGES" ? ("REQUEST_CHANGES" as const) : ("COMMENT" as const);
+      const event = body.event === "REQUEST_CHANGES" || body.event === "APPROVE"
+        ? body.event
+        : "COMMENT";
       const drafts = Array.isArray(body.comments) ? body.comments : [];
-      if (!drafts.length) return json({ status: "error", message: "没有可提交的意见" }, 400);
+      if (!drafts.length && event !== "APPROVE") return json({ status: "error", message: "没有可提交的意见" }, 400);
       const invalid = drafts.find(
         (d) => !d || typeof d.path !== "string" || typeof d.body !== "string" || !Number.isFinite(d.line),
       );
@@ -366,7 +368,7 @@ export default {
         return json({
           ok: true,
           event,
-          review: { id: 990001, url: "https://github.com/noware-cn/workspace/pull/11#pullrequestreview-990001", comments: drafts.length },
+          review: { id: 990001, url: "https://github.com/noware-cn/markdown-reviewer/pull/11#pullrequestreview-990001", comments: drafts.length },
           source: "mock",
         });
       }
