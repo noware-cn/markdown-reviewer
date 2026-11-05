@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Markdown 文档审批工作台 · noware-cn/workspace</title>
-<link rel="stylesheet" href="/styles.css?v=201">
+<link rel="stylesheet" href="/styles.css?v=202">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -60,6 +60,7 @@
     <div class="wb-stats" id="wbStats"></div>
     <div class="wb-modes" role="tablist">
       <button type="button" class="wb-mode on" data-mode="reading">阅读改动</button>
+      <button type="button" class="wb-mode" data-mode="sidebyside">前后对照</button>
       <button type="button" class="wb-mode" data-mode="unified">统一 Diff</button>
       <button type="button" class="wb-mode" data-mode="split">分栏 Diff</button>
     </div>
@@ -94,8 +95,24 @@
 
 <button class="selchip" id="dselchip" type="button" hidden>评论所选</button>
 <div class="dtoast" id="dtoast" role="status"></div>
-<script src="/diff-model.js?v=1"></script>
-<script src="/diff.js?v=201"></script>
-<script src="/app.js?v=201"></script>
+<script src="/marked.min.js?v=1"></script>
+<script>
+/* marked 配置：文档内标题降级（h1→h3），链接新窗口打开，禁止原始 HTML 透传 */
+window.marked.setOptions({ gfm: true, breaks: false });
+(function(){
+  const r = window.marked.Renderer ? new window.marked.Renderer() : null;
+  if (r) {
+    r.heading = ({ tokens, depth }) => {
+      const d = Math.min(depth + 1, 6);
+      return '<h' + d + '>' + window.marked.parseInline(tokens) + '</h' + d + '>';
+    };
+    r.link = ({ href, tokens }) => '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + window.marked.parseInline(tokens) + '</a>';
+    window.marked.setOptions({ renderer: r });
+  }
+})();
+</script>
+<script src="/diff-model.js?v=202"></script>
+<script src="/diff.js?v=202"></script>
+<script src="/app.js?v=202"></script>
 </body>
 </html>

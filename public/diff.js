@@ -193,6 +193,34 @@
       + `<div class="del-jump" data-jump-source="${esc(file.path)}">在源码 Diff 中查看 →</div></div>`;
   }
 
+  function sideBySideHTML(file) {
+    const textState = D.texts[file.path];
+    if (!textState || !textState.headLoaded || !textState.baseLoaded) {
+      return `<div class="dempty">正在加载前后版本…</div>`;
+    }
+    const model = modelFor(file);
+    const leftBlocks = model.baseBlocks || [];
+    const rightBlocks = model.headBlocks || [];
+    const leftHtml = leftBlocks.map((b) => {
+      let cls = "md-block";
+      let tag = "";
+      if (b.changeState === "removed") { cls += " is-removed"; tag = `<span class="diff-tag del">删除</span>`; }
+      else if (b.changeState === "partial") { cls += " is-partial"; tag = `<span class="diff-tag mod">修改</span>`; }
+      return `<div class="${cls}" data-line="${b.startLine}">${tag}${b.html}</div>`;
+    }).join("");
+    const rightHtml = rightBlocks.map((b) => {
+      let cls = "md-block";
+      let tag = "";
+      if (b.changeState === "added" || file.status === "added") { cls += " is-added"; tag = `<span class="diff-tag add">新增</span>`; }
+      else if (b.changeState === "modified-new") { cls += " is-modified-new"; tag = `<span class="diff-tag mod">修改</span>`; }
+      return `<div class="${cls}" data-line="${b.startLine}">${tag}${b.html}</div>`;
+    }).join("");
+    return `<div class="sb2">`
+      + `<div class="sb-col sb-base"><div class="sb-col-head">Base（变更前）</div>${leftHtml || '<div class="dempty">（空文件）</div>'}</div>`
+      + `<div class="sb-col sb-head"><div class="sb-col-head">Head（变更后）</div>${rightHtml || '<div class="dempty">（空文件）</div>'}</div>`
+      + `</div>`;
+  }
+
   /* ---------- 源码 Diff（保留） ---------- */
   function unifiedHTML(file) {
     const patch = file.patch || "";
@@ -299,6 +327,7 @@
     if (!file) { content.innerHTML = `<div class="dempty">该 PR 没有变更文件。</div>`; }
     else if (D.mode === "unified") content.innerHTML = unifiedHTML(file);
     else if (D.mode === "split") content.innerHTML = splitHTML(file);
+    else if (D.mode === "sidebyside") content.innerHTML = sideBySideHTML(file);
     else content.innerHTML = readingHTML(file);
 
     document.getElementById("wbDrawerBody").innerHTML = drawerHTML();

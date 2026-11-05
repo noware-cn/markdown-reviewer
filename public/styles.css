@@ -316,3 +316,18 @@ body.wb-mode-on .layout { display: none; }
   .layout { grid-template-columns: 1fr; }
   .sidebar { position: static; max-height: none; }
 }
+
+/* ===== P1: 前后对照模式 ===== */
+.sb2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0; min-height: 100%; }
+.sb-col { padding: 24px 32px; overflow-y: auto; }
+.sb-col + .sb-col { border-left: 1px solid var(--border); }
+.sb-col-head {
+  position: sticky; top: 0; z-index: 2;
+  background: var(--bg); padding: 6px 0 14px;
+  font-size: 12px; font-weight: 600; color: var(--text-2);
+  text-transform: uppercase; letter-spacing: .05em;
+  border-bottom: 1px solid var(--border); margin-bottom: 16px;
+}
+.sb-base .md-block.is-removed { background: rgba(220, 38, 38, .07); }
+.sb-head .md-block.is-added { background: rgba(22, 163, 74, .07); }
+.sb-col .md-block { position: relative; padding: 4px 0; }

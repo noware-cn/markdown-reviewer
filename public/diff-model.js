@@ -163,6 +163,15 @@
   }
 
   function renderBlockHtml(type, raw, extra) {
+    // 使用 marked 做高质量渲染；未加载则降级到内置渲染
+    if (window.marked) {
+      let src = raw;
+      if (type === "code") src = "```\n" + raw + "\n```";
+      else if (type === "h1" || type === "h2" || type === "h3" || type === "h4") src = "#".repeat(Number(type[1])) + " " + raw;
+      else if (type === "ul" || type === "ol") src = raw.split("\n").map((t, i) => type === "ol" ? (i + 1) + ". " + t : "- " + t).join("\n");
+      else if (type === "quote") src = raw.split("\n").map((t) => "> " + t).join("\n");
+      try { return window.marked.parse(src); } catch (e) { /* fall through */ }
+    }
     if (type === "h1" || type === "h2" || type === "h3" || type === "h4") {
       const lvl = Math.min(Number(type[1]) + 1, 4);
       return `<h${lvl}>${inlineMd(raw)}</h${lvl}>`;
