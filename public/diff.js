@@ -22,6 +22,8 @@
     prefetchTotal: 0,
     prefetchDone: 0,
     chapterScrollBound: false,
+    navIdx: -1,
+    scrollPos: {}, // "path:mode" -> scrollTop
   };
 
   const esc = window.DiffModel.esc;
@@ -323,10 +325,48 @@
     return parts.join("");
   }
 
+  /* ---------- P3: 变更导航 ---------- */
+  function changeElements() {
+    const doc = document.getElementById("wbDoc");
+    // 阅读模式：有 line-anchor 的块（即 hunk 内可评论行）
+    let els = doc.querySelectorAll(".line-anchor");
+    if (!els.length) {
+      // unified/split 模式：add/del 行
+      els = doc.querySelectorAll(".dline.add, .dline.del");
+    }
+    return Array.from(els);
+  }
+  function gotoChange(dir) {
+    const els = changeElements();
+    if (!els.length) return;
+    if (D.navIdx < 0) D.navIdx = dir > 0 ? -1 : els.length;
+    D.navIdx = (D.navIdx + dir + els.length) % els.length;
+    const target = els[D.navIdx];
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    target.style.outline = "2px solid #c8102e";
+    setTimeout(() => { target.style.outline = ""; }, 1500);
+    document.getElementById("navCount").textContent = `${D.navIdx + 1}/${els.length}`;
+  }
+  function updateNavFloat() {
+    const el = document.getElementById("navFloat");
+    if (!el) return;
+    const wb = document.getElementById("workbench");
+    el.hidden = wb.hidden || !D.file;
+    if (!el.hidden) {
+      const n = changeElements().length;
+      document.getElementById("navCount").textContent = D.navIdx >= 0 ? `${D.navIdx + 1}/${n}` : `0/${n}`;
+    }
+  }
+
   /* ---------- 主渲染 ---------- */
   function render() {
     const meta = D.meta;
     if (!meta) return;
+    // 保存当前滚动位置
+    if (D.file) {
+      const doc = document.getElementById("wbDoc");
+      D.scrollPos[`${D.file}:${D.mode}`] = doc.scrollTop;
+    }
     document.getElementById("wbPrTitle").textContent = `#${meta.number} ${meta.title}`;
     document.getElementById("wbStats").textContent =
       `${meta.changedFiles} 文件 · +${meta.additions}/−${meta.deletions} · head ${meta.headSha.slice(0, 7)}`
@@ -349,6 +389,13 @@
     else content.innerHTML = readingHTML(file);
 
     document.getElementById("wbDrawerBody").innerHTML = drawerHTML();
+    // 恢复滚动位置
+    const saved = D.scrollPos[`${D.file}:${D.mode}`];
+    if (saved !== undefined) {
+      const doc = document.getElementById("wbDoc");
+      requestAnimationFrame(() => { doc.scrollTop = saved; });
+    }
+    updateNavFloat();
   }
 
   /* ---------- 选择文字反查行号 ---------- */
@@ -440,6 +487,24 @@
       chip.textContent = "评论所选 L" + rng.start + (rng.end > rng.start ? "–" + rng.end : "");
     });
     document.getElementById("dselchip").addEventListener("mousedown", (e) => e.preventDefault());
+
+    // P3: 导航按钮
+    document.getElementById("navPrev").addEventListener("click", () => gotoChange(-1));
+    document.getElementById("navNext").addEventListener("click", () => gotoChange(1));
+
+    // P3: 键盘快捷键（在工作台内且不在输入框时）
+    document.addEventListener("keydown", (e) => {
+      const wb = document.getElementById("workbench");
+      if (wb.hidden) return;
+      const tag = document.activeElement?.tagName;
+      if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "n") { e.preventDefault(); gotoChange(1); }
+      else if (e.key === "p") { e.preventDefault(); gotoChange(-1); }
+      else if (e.key === "1") { D.mode = "reading"; render(); }
+      else if (e.key === "2") { D.mode = "sidebyside"; render(); }
+      else if (e.key === "3") { D.mode = "unified"; render(); }
+      else if (e.key === "4") { D.mode = "split"; render(); }
+    });
     document.getElementById("dselchip").addEventListener("click", () => {
       const chip = document.getElementById("dselchip");
       D.active = { path: D.file, start: Number(chip.dataset.start), end: Number(chip.dataset.end), quote: "" };
@@ -471,6 +536,7 @@
   async function selectFile(path, force) {
     D.file = path;
     D.active = null;
+    D.navIdx = -1;
     D.err = "";
     renderFiles();
     renderChapters();
