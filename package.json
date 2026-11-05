@@ -1,0 +1,19 @@
+{
+  "name": "markdown-reviewer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "个人 Markdown 文档审批工作台：面向 GitHub PR 中 Markdown 变更的阅读、差异核对、批注与审批",
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "build": "tsc --noEmit",
+    "deploy": "wrangler deploy",
+    "deploy:ci": "wrangler deploy --var DEPLOY_COMMIT:${WORKERS_CI_COMMIT_SHA:-unknown}",
+    "smoke": "node scripts/smoke.mjs"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20261104.1",
+    "typescript": "^7.0.2",
+    "wrangler": "^4.157.0"
+  }
+}

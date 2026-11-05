@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Markdown 文档审批工作台 · noware-cn/workspace</title>
+<link rel="stylesheet" href="/styles.css?v=201">
+<link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
+</head>
+<body class="list-mode">
+
+<!-- ===== 任务列表视图（默认） ===== -->
+<header class="topbar" id="listTopbar">
+  <div class="brand">
+    <span class="brand-mark"></span>
+    <span class="brand-text">Markdown 审批工作台</span>
+    <span class="brand-sub">noware-cn / workspace</span>
+  </div>
+  <div class="account">
+    <span class="source-badge" id="sourceBadge">数据加载中</span>
+    <span class="sync-at" id="syncAt">加载中</span>
+    <button class="refresh-btn" id="refreshBtn" type="button">刷新</button>
+    <span class="user-chip" id="userChip">未登录</span>
+    <a class="logout" href="/auth/logout">退出</a>
+  </div>
+</header>
+
+<main class="layout" id="listLayout">
+  <aside class="sidebar">
+    <div class="filters" id="filters">
+      <button class="chip active" data-state="all">全部</button>
+      <button class="chip" data-state="open">进行中</button>
+      <button class="chip" data-state="merged">已合并</button>
+      <button class="chip" data-state="closed">已关闭</button>
+    </div>
+    <div class="search">
+      <input id="search" type="search" placeholder="搜索标题、单号或提交人" autocomplete="off">
+    </div>
+    <div class="list-meta" id="listMeta">—</div>
+    <ul class="list" id="list"></ul>
+  </aside>
+
+  <section class="detail" id="detail">
+    <div class="empty">
+      <div class="empty-title">选择一条 PR 进入审批工作台</div>
+      <div class="empty-hint">左侧列出仓库中的 Pull Request。点击后进入全窗口 Markdown 审批工作台，阅读完整文档、核对差异、批注并提交 Review。</div>
+    </div>
+  </section>
+</main>
+
+<!-- ===== 工作台视图（全屏，进入 PR 后显示） ===== -->
+<div class="workbench" id="workbench" hidden>
+  <div class="dloading" id="wbLoading" hidden><span class="spin"></span><span>正在从 GitHub 加载…</span></div>
+  <header class="wb-topbar">
+    <button class="wb-back" id="wbBack" type="button" title="返回任务列表">← 返回列表</button>
+    <div class="wb-pr" id="wbPrTitle">—</div>
+    <div class="wb-stats" id="wbStats"></div>
+    <div class="wb-modes" role="tablist">
+      <button type="button" class="wb-mode on" data-mode="reading">阅读改动</button>
+      <button type="button" class="wb-mode" data-mode="unified">统一 Diff</button>
+      <button type="button" class="wb-mode" data-mode="split">分栏 Diff</button>
+    </div>
+    <label class="wb-marks"><input type="checkbox" id="wbMarks" checked> 显示变更标记</label>
+    <button class="wb-drawer-btn" id="wbDrawerBtn" type="button">意见 <span class="wb-badge" id="wbDraftCount">0</span></button>
+  </header>
+
+  <div class="wb-body" id="wbBody">
+    <aside class="wb-nav" id="wbNav">
+      <div class="wb-nav-head">
+        <button class="wb-nav-fold" id="wbNavFold" type="button" title="折叠文件导航">◀</button>
+        <span>变更文件</span>
+      </div>
+      <input class="wb-filter" id="wbFilter" type="search" placeholder="筛选文件路径" autocomplete="off">
+      <div class="wb-files" id="wbFiles"></div>
+      <div class="wb-chapters" id="wbChapters"></div>
+    </aside>
+
+    <main class="wb-doc" id="wbDoc">
+      <article class="wb-content" id="wbContent"></article>
+    </main>
+
+    <aside class="wb-drawer" id="wbDrawer">
+      <div class="wb-drawer-head">
+        <span>意见与草稿</span>
+        <button class="wb-drawer-fold" id="wbDrawerFold" type="button" title="收起面板">▶</button>
+      </div>
+      <div class="wb-drawer-body" id="wbDrawerBody"></div>
+    </aside>
+  </div>
+</div>
+
+<button class="selchip" id="dselchip" type="button" hidden>评论所选</button>
+<div class="dtoast" id="dtoast" role="status"></div>
+<script src="/diff-model.js?v=1"></script>
+<script src="/diff.js?v=201"></script>
+<script src="/app.js?v=201"></script>
+</body>
+</html>
