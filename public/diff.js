@@ -161,6 +161,10 @@
     }
 
     // interleave head blocks + insertions
+    if (!file.patch && file.status !== "added") {
+      return `<div class="error-box">GitHub 未返回该文件的差异（文件过大）。<a href="https://github.com/${D.meta.repo}/pull/${D.n}/files#diff-${encodeURIComponent(file.path)}" target="_blank" rel="noopener">在 GitHub 中查看完整 Diff →</a></div>`
+        + model.headBlocks.map((b) => blockHtml(b, {})).join("");
+    }
     const blocks = model.headBlocks;
     const insertions = model.headInsertions;
     let j = 0;
@@ -216,6 +220,9 @@
     if (!textState || !textState.headLoaded || !textState.baseLoaded) {
       return `<div class="dempty">正在加载前后版本…</div>`;
     }
+    if (textState.headTruncated || textState.baseTruncated) {
+      return `<div class="error-box">文件超过读取上限（400 KB），前后对照内容不完整，请用 GitHub 查看完整版本。</div>`;
+    }
     const model = modelFor(file);
     const leftBlocks = model.baseBlocks || [];
     const rightBlocks = model.headBlocks || [];
@@ -247,9 +254,9 @@
     let html = "";
     for (const op of rows.ops) {
       if (op.t === "ctx") {
-        html += `<div class="dline ctx"><span class="ln">${op.old}</span><span class="ln">${op.new}</span><span class="sg"></span><span class="tx">${esc(op.text)}</span></div>`;
+        html += `<div class="dline ctx" data-line="${op.new}"><span class="ln">${op.old}</span><span class="ln">${op.new}</span><span class="sg"></span><span class="tx">${esc(op.text)}</span></div>`;
       } else if (op.t === "add") {
-        html += `<div class="dline add"><span class="ln"></span><span class="ln">${op.new}</span><span class="sg">+</span><span class="tx">${esc(op.text)}</span></div>`;
+        html += `<div class="dline add" data-line="${op.new}"><span class="ln"></span><span class="ln">${op.new}</span><span class="sg">+</span><span class="tx">${esc(op.text)}</span></div>`;
       } else {
         html += `<div class="dline del"><span class="ln">${op.old}</span><span class="ln"></span><span class="sg">−</span><span class="tx">${esc(op.text)}</span></div>`;
       }
@@ -293,7 +300,7 @@
     if (D.active) {
       const a = D.active;
       parts.push(`<div class="composer"><div class="canchor">${esc(a.path.split("/").pop())} · L${a.start}${a.end > a.start ? "–" + a.end : ""} · side=RIGHT</div>`
-        + `<textarea id="wbcText" placeholder="写下判断依据或要求补充的内容。">${esc(a.quote ? "" : "")}</textarea>`
+        + `<textarea id="wbcText" placeholder="写下判断依据或要求补充的内容。">${esc(a.body || "")}</textarea>`
         + `<div class="crow"><button class="btn" type="button" data-act="save">存为草稿</button><button class="btn ghost" type="button" data-act="cancel">取消</button></div></div>`);
     }
     // drafts
@@ -363,9 +370,14 @@
   }
 
   /* ---------- 主渲染 ---------- */
+  function saveComposerText() {
+    const ta = document.getElementById("wbcText");
+    if (ta && D.active) D.active.body = ta.value;
+  }
   function render() {
     const meta = D.meta;
     if (!meta) return;
+    saveComposerText();
     // 保存上一个视图的滚动位置（用旧 key）
     if (D.lastViewKey) {
       D.scrollPos[D.lastViewKey] = document.getElementById("wbDoc").scrollTop;
@@ -434,12 +446,15 @@
         setTimeout(() => { const ta = document.getElementById("wbcText"); if (ta) ta.focus(); }, 50);
         return;
       }
+    });
+
+    // 章节跳转（绑在 wbNav 上，因为章节元素在导航栏内）
+    document.getElementById("wbChapters").addEventListener("click", (e) => {
       const chapter = e.target.closest("[data-chapter]");
       if (chapter) {
         const line = Number(chapter.dataset.chapter);
-        const target = doc.querySelector(`[data-line="${line}"]`);
+        const target = document.getElementById("wbDoc").querySelector(`[data-line="${line}"]`);
         if (target) target.scrollIntoView({ block: "start", behavior: "smooth" });
-        return;
       }
     });
 
@@ -664,10 +679,11 @@
             let bp = { text: "", truncated: false };
             if (file && file.status !== "added") {
               const br = await fetchJSON(`/api/approvals/${D.n}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(D.meta.baseSha)}${force ? "&refresh=1" : ""}`);
+              if (!br.ok) throw new Error(`读取 Base 正文失败（${br.status}）`);
               bp = await br.json().catch(() => ({}));
             }
-            D.texts[p] = { base: bp.text || "", head: hp.text || "", headLoaded: true, baseLoaded: true, headTruncated: !!hp.truncated, baseTruncated: !!bp.truncated };
-          } catch { /* per-file failure tolerated */ }
+            D.texts[p] = { base: bp.text || "", head: hp.text || "", headLoaded: true, baseLoaded: true, headTruncated: !!hp.truncated, baseTruncated: !!bp.truncated, error: "" };
+          } catch (err) { D.texts[p] = { base: "", head: "", headLoaded: false, baseLoaded: false, headTruncated: false, baseTruncated: false, error: String(err) }; }
           D.prefetchDone += 1;
           if (p === D.file) render();
         }
@@ -689,6 +705,9 @@
       document.getElementById("wbBody").classList.remove("drawer-open");
     });
     document.getElementById("wbNavFold").addEventListener("click", () => {
+      document.getElementById("wbBody").classList.toggle("nav-collapsed");
+    });
+    document.getElementById("wbNavToggle").addEventListener("click", () => {
       document.getElementById("wbBody").classList.toggle("nav-collapsed");
     });
     document.getElementById("wbFilter").addEventListener("input", (e) => { D.filter = e.target.value; renderFiles(); });

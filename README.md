@@ -71,15 +71,14 @@ apps/approval-visualization-worker/
 ## 本地开发
 
 ```bash
-cd apps/approval-visualization-worker
 npm ci
-npm run dev        # 默认 http://127.0.0.1:8787
+npx wrangler dev --local --var MOCK_MODE:1 --var SESSION_SECRET:local-dev-secret
+# 默认 http://127.0.0.1:8787
 ```
 
 演示模式（不连 GitHub，不需要任何凭据）：
 
 ```bash
-npx wrangler dev --local --var MOCK_MODE:1 --var SESSION_SECRET:local-dev-secret
 curl -c /tmp/jar http://localhost:8787/auth/login    # 直接建立演示会话
 ```
 

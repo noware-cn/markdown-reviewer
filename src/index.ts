@@ -169,6 +169,10 @@ const handleCallback = async (env: Env, request: Request, url: URL): Promise<Res
     if (!orgResponse.ok) {
       return denyPage(`账号 ${user.login} 不是 ${env.GITHUB_ORG} 组织成员，无权访问。`, 403);
     }
+    const orgMembership = (await orgResponse.json()) as { state: string };
+    if (orgMembership.state !== "active") {
+      return denyPage(`账号 ${user.login} 的 ${env.GITHUB_ORG} 组织成员状态为 ${orgMembership.state}，请先接受组织邀请。`, 403);
+    }
   }
 
   const session = await signedSession(env, user, tokenBody.access_token);

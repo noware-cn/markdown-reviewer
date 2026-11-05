@@ -114,7 +114,7 @@
         const ordered = /^\s*\d+\.\s+/.test(line);
         const items = [];
         while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])) {
-          items.push(lines[i].replace(/^\s*([-*+]|\d+\.)\s+/, ""));
+          items.push(lines[i]); // 保留原始行（缩进/编号），交给 marked 渲染
           i += 1;
         }
         blocks.push(mkBlock(start, i, ordered ? "ol" : "ul", items.join("\n"), hstack));
@@ -171,7 +171,7 @@
       let src = raw;
       if (type === "code") src = "```\n" + raw + "\n```";
       else if (type === "h1" || type === "h2" || type === "h3" || type === "h4") src = "#".repeat(Number(type[1])) + " " + raw;
-      else if (type === "ul" || type === "ol") src = raw.split("\n").map((t, i) => type === "ol" ? (i + 1) + ". " + t : "- " + t).join("\n");
+      // ul/ol 的 raw 已保留原始列表标记，直接交给 marked
       else if (type === "quote") src = raw.split("\n").map((t) => "> " + t).join("\n");
       try {
         const out = window.marked.parse(src);

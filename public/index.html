@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Markdown 文档审批工作台 · noware-cn/workspace</title>
-<link rel="stylesheet" href="/styles.css?v=204">
+<link rel="stylesheet" href="/styles.css?v=205">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -56,6 +56,7 @@
   <div class="dloading" id="wbLoading" hidden><span class="spin"></span><span>正在从 GitHub 加载…</span></div>
   <header class="wb-topbar">
     <button class="wb-back" id="wbBack" type="button" title="返回任务列表">← 返回列表</button>
+    <button class="wb-nav-toggle" id="wbNavToggle" type="button" title="切换文件导航">☰</button>
     <div class="wb-pr" id="wbPrTitle">—</div>
     <div class="wb-stats" id="wbStats"></div>
     <div class="wb-modes" role="tablist">
@@ -103,22 +104,11 @@
 <script src="/marked.min.js?v=1"></script>
 <script src="/purify.min.js?v=1"></script>
 <script>
-/* marked 配置：文档内标题降级（h1→h3），链接新窗口打开，禁止原始 HTML 透传 */
+/* marked 配置：GFM 表格、链接新窗口打开 */
 window.marked.setOptions({ gfm: true, breaks: false });
-(function(){
-  const r = window.marked.Renderer ? new window.marked.Renderer() : null;
-  if (r) {
-    r.heading = ({ tokens, depth }) => {
-      const d = Math.min(depth + 1, 6);
-      return '<h' + d + '>' + window.marked.parseInline(tokens) + '</h' + d + '>';
-    };
-    r.link = ({ href, tokens }) => '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + window.marked.parseInline(tokens) + '</a>';
-    window.marked.setOptions({ renderer: r });
-  }
-})();
 </script>
-<script src="/diff-model.js?v=204"></script>
-<script src="/diff.js?v=207"></script>
-<script src="/app.js?v=207"></script>
+<script src="/diff-model.js?v=205"></script>
+<script src="/diff.js?v=208"></script>
+<script src="/app.js?v=208"></script>
 </body>
 </html>
