@@ -198,6 +198,15 @@
       .map((pc) => `<div class="del-block"><div class="del-head">旧内容（已替换）</div><div class="del-body"><pre>${esc(pc.oldText)}</pre></div></div>`)
       .join("");
     const oldBlock = oldBlocks;
+    // 代码块：给每行加 data-line，使选区能精确定位到源码行
+    let bodyHtml = b.html;
+    if (b.type === "code" && b.startLine != null) {
+      bodyHtml = bodyHtml.replace(/(<pre><code>)([\s\S]*?)(<\/code><\/pre>)/, (_m, open, code, close) => {
+        const lines = code.split("\n");
+        const wrapped = lines.map((ln, i) => `<span class="code-line" data-line="${b.startLine + i}">${ln}</span>`).join("\n");
+        return open + wrapped + close;
+      });
+    }
     // 在块范围内找一个 hunk 覆盖的行作为评论锚点（从后往前找，优先命中改动行）
     const cl = modelFor(curFile())?.parsed?.commentableHeadLines;
     let anchorLine = null;
@@ -205,7 +214,7 @@
     const anchor = anchorLine
       ? `<span class="line-anchor" data-line="${anchorLine}" data-side="RIGHT" role="button" title="在第 ${anchorLine} 行评论">L${anchorLine} +</span>`
       : "";
-    return `<div class="${cls}" data-line="${b.startLine}" data-block="${b.startLine}">${oldBlock}${tag}${b.html}${anchor}</div>`;
+    return `<div class="${cls}" data-line="${b.startLine}" data-block="${b.startLine}">${oldBlock}${tag}${bodyHtml}${anchor}</div>`;
   }
 
   function insertionHtml(ch, file) {
@@ -630,7 +639,7 @@
       D.drafts = [];
       clearDraftsStorage();
       toast(`已写入 GitHub：review #${data.review.id}（${data.review.comments} 条）`);
-      await load(myPr, true, true);
+      render(); // 只需清空草稿并重渲染，不必重新拉取所有数据
     } catch (err) {
       toast(`提交未确认成功：${String(err)}`);
       render();
