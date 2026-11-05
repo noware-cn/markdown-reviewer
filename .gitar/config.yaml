@@ -1,0 +1,5 @@
+# .gitar/config.yaml
+review:
+  language: "zh-CN"
+  # 指定评审回复语言为简体中文
+  prompt: "请使用简体中文对以下代码更改进行 Code Review。指出潜在问题、优化建议及性能隐患。"
