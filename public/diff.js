@@ -185,10 +185,12 @@
     const oldBlock = b.pairedChange
       ? `<div class="del-block"><div class="del-head">旧内容（已替换）</div><div class="del-body"><pre>${esc(b.pairedChange.oldText)}</pre></div></div>`
       : "";
-    // 只在 diff hunk 覆盖的行显示评论锚点，避免 GitHub 422
-    const commentable = modelFor(curFile())?.parsed?.commentableHeadLines?.has(b.startLine);
-    const anchor = commentable
-      ? `<span class="line-anchor" data-line="${b.startLine}" data-side="RIGHT" role="button" title="在第 ${b.startLine} 行评论">L${b.startLine} +</span>`
+    // 在块范围内找一个 hunk 覆盖的行作为评论锚点（从后往前找，优先命中改动行）
+    const cl = modelFor(curFile())?.parsed?.commentableHeadLines;
+    let anchorLine = null;
+    if (cl) for (let l = (b.endLine ?? b.startLine); l >= b.startLine; l--) if (cl.has(l)) { anchorLine = l; break; }
+    const anchor = anchorLine
+      ? `<span class="line-anchor" data-line="${anchorLine}" data-side="RIGHT" role="button" title="在第 ${anchorLine} 行评论">L${anchorLine} +</span>`
       : "";
     return `<div class="${cls}" data-line="${b.startLine}" data-block="${b.startLine}">${oldBlock}${tag}${b.html}${anchor}</div>`;
   }
@@ -426,6 +428,9 @@
       if (!text || text.length < 2) { document.getElementById("dselchip").hidden = true; return; }
       const rng = locateFromSelection(sel);
       if (!rng) { document.getElementById("dselchip").hidden = true; return; }
+      // 校验选区行号在 diff hunk 内，否则不显示评论按钮
+      const cl = modelFor(curFile())?.parsed?.commentableHeadLines;
+      if (cl && (!cl.has(rng.start) || !cl.has(rng.end))) { document.getElementById("dselchip").hidden = true; return; }
       const chip = document.getElementById("dselchip");
       chip.dataset.start = String(rng.start);
       chip.dataset.end = String(rng.end);

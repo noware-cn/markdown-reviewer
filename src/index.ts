@@ -421,7 +421,8 @@ export default {
           const outOfHunk = drafts.find((draft) => {
             const cl = commentableHeadLines(patchByPath.get(draft.path) ?? null);
             if (cl === null) return false; // 无 patch（新增文件）→ 所有行可评论
-            return !cl.has(Number(draft.line));
+            return !cl.has(Number(draft.line))
+              || (draft.start_line !== undefined && !cl.has(Number(draft.start_line)));
           });
           if (outOfHunk) return json({ status: "error", message: `草稿定位在 diff 之外（${outOfHunk.path.split("/").pop()} L${outOfHunk.line}），请只在变更行或相邻上下文行评论。` }, 400);
         }
