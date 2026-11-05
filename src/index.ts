@@ -24,6 +24,22 @@ const json = (data: unknown, status = 200, extra: HeadersInit = {}): Response =>
 const html = (body: string, status = 200): Response =>
   new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } });
 
+/** 解析 patch，返回 head 侧可评论的行号集合（add + ctx op 的 new 行号） */
+function commentableHeadLines(patch: string | null): Set<number> | null {
+  if (!patch) return null;
+  const lines = patch.split("\n");
+  const result = new Set<number>();
+  let newNo = 0;
+  for (const line of lines) {
+    const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
+    if (h) { newNo = Number(h[1]); continue; }
+    if (line.startsWith("+")) { result.add(newNo); newNo += 1; }
+    else if (line.startsWith("-")) { /* del, skip */ }
+    else if (line.startsWith(" ") || line === "") { result.add(newNo); newNo += 1; }
+  }
+  return result;
+}
+
 const cookie = (name: string, value: string, maxAge: number): string =>
   `${name}=${value}; Path=/; HttpOnly; Secure; SameSite=Lax; Max-Age=${maxAge}`;
 
@@ -399,6 +415,16 @@ export default {
           || (draft.start_line !== undefined && (!Number.isInteger(Number(draft.start_line)) || Number(draft.start_line) < 1 || Number(draft.start_line) > Number(draft.line)))
         );
         if (invalidDraft) return json({ status: "error", message: "草稿包含无效文件路径、行号或空评论，请重新定位。" }, 400);
+        // 校验草稿行号在 patch hunk 范围内（GitHub 只允许评论 diff hunk 内的行）
+        if (drafts.length) {
+          const patchByPath = new Map(files.map((f) => [f.path, f.patch]));
+          const outOfHunk = drafts.find((draft) => {
+            const cl = commentableHeadLines(patchByPath.get(draft.path) ?? null);
+            if (cl === null) return false; // 无 patch（新增文件）→ 所有行可评论
+            return !cl.has(Number(draft.line));
+          });
+          if (outOfHunk) return json({ status: "error", message: `草稿定位在 diff 之外（${outOfHunk.path.split("/").pop()} L${outOfHunk.line}），请只在变更行或相邻上下文行评论。` }, 400);
+        }
         const review = await createReview(
           env,
           token,

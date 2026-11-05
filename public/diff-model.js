@@ -54,12 +54,13 @@
     const newToOld = new Map();
     const addedLines = new Set();
     const deletedLines = new Set();
+    const commentableHeadLines = new Set(); // head-side lines inside any hunk (add or ctx)
     for (const op of ops) {
-      if (op.t === "ctx") { oldToNew.set(op.old, op.new); newToOld.set(op.new, op.old); }
-      else if (op.t === "add") addedLines.add(op.new);
+      if (op.t === "ctx") { oldToNew.set(op.old, op.new); newToOld.set(op.new, op.old); commentableHeadLines.add(op.new); }
+      else if (op.t === "add") { addedLines.add(op.new); commentableHeadLines.add(op.new); }
       else if (op.t === "del") deletedLines.add(op.old);
     }
-    return { ops, hunks, oldToNew, newToOld, addedLines, deletedLines };
+    return { ops, hunks, oldToNew, newToOld, addedLines, deletedLines, commentableHeadLines };
   }
 
   /* ---------- 2. Markdown 分块：保留起止行号、类型、章节路径 ---------- */
@@ -170,7 +171,10 @@
       else if (type === "h1" || type === "h2" || type === "h3" || type === "h4") src = "#".repeat(Number(type[1])) + " " + raw;
       else if (type === "ul" || type === "ol") src = raw.split("\n").map((t, i) => type === "ol" ? (i + 1) + ". " + t : "- " + t).join("\n");
       else if (type === "quote") src = raw.split("\n").map((t) => "> " + t).join("\n");
-      try { return window.marked.parse(src); } catch (e) { /* fall through */ }
+      try {
+        const out = window.marked.parse(src);
+        return window.DOMPurify ? window.DOMPurify.sanitize(out) : esc(src);
+      } catch (e) { /* fall through */ }
     }
     if (type === "h1" || type === "h2" || type === "h3" || type === "h4") {
       const lvl = Math.min(Number(type[1]) + 1, 4);

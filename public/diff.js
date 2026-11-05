@@ -148,7 +148,7 @@
       const baseBlocks = window.DiffModel.mdBlocks(textOf(file.path, "base"));
       return `<div class="del-block"><div class="del-head">此文件在本 PR 中已删除</div>`
         + `<div class="del-body">以下为删除前完整内容（Base 版本）：</div></div>`
-        + baseBlocks.map((b) => `<div class="md-block" data-line="${b.startLine}">${b.html}</div>`).join("");
+        + baseBlocks.map((b) => `<div class="md-block" data-base-line="${b.startLine}">${b.html}</div>`).join("");
     }
 
     const model = modelFor(file);
@@ -185,8 +185,12 @@
     const oldBlock = b.pairedChange
       ? `<div class="del-block"><div class="del-head">旧内容（已替换）</div><div class="del-body"><pre>${esc(b.pairedChange.oldText)}</pre></div></div>`
       : "";
-    return `<div class="${cls}" data-line="${b.startLine}" data-block="${b.startLine}">${oldBlock}${tag}${b.html}`
-      + `<span class="line-anchor" data-line="${b.startLine}" role="button" title="在第 ${b.startLine} 行评论">L${b.startLine} +</span></div>`;
+    // 只在 diff hunk 覆盖的行显示评论锚点，避免 GitHub 422
+    const commentable = modelFor(curFile())?.parsed?.commentableHeadLines?.has(b.startLine);
+    const anchor = commentable
+      ? `<span class="line-anchor" data-line="${b.startLine}" data-side="RIGHT" role="button" title="在第 ${b.startLine} 行评论">L${b.startLine} +</span>`
+      : "";
+    return `<div class="${cls}" data-line="${b.startLine}" data-block="${b.startLine}">${oldBlock}${tag}${b.html}${anchor}</div>`;
   }
 
   function insertionHtml(ch, file) {
@@ -209,7 +213,7 @@
       let tag = "";
       if (b.changeState === "removed") { cls += " is-removed"; tag = `<span class="diff-tag del">删除</span>`; }
       else if (b.changeState === "partial") { cls += " is-partial"; tag = `<span class="diff-tag mod">修改</span>`; }
-      return `<div class="${cls}" data-line="${b.startLine}">${tag}${b.html}</div>`;
+      return `<div class="${cls}" data-base-line="${b.startLine}">${tag}${b.html}</div>`;
     }).join("");
     const rightHtml = rightBlocks.map((b) => {
       let cls = "md-block";
