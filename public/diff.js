@@ -87,10 +87,13 @@
       .map((f) => {
         const mark = f.status === "added" ? "A" : f.status === "removed" ? "D" : f.status === "renamed" ? "R" : "M";
         const draftCount = D.drafts.filter((d) => d.path === f.path).length;
-        return `<div class="fitem${D.file === f.path ? " active" : ""}" data-path="${esc(f.path)}">`
+        const commentCount = D.commentsByPath ? (D.commentsByPath.get(f.path) || []).length : 0;
+        const reviewed = draftCount > 0 || commentCount > 0;
+        return `<div class="fitem${D.file === f.path ? " active" : ""}${reviewed ? " reviewed" : ""}" data-path="${esc(f.path)}" title="${reviewed ? "已有意见" : "未审阅"}">`
           + `<span class="fmark ${mark}">${mark}</span>`
           + `<span class="fname" title="${esc(f.path)}">${esc(f.path.split("/").pop())}</span>`
           + `<span class="fnum"><em>+${f.additions}</em> −${f.deletions}</span>`
+          + (reviewed ? `<span class="fdot" title="草稿 ${draftCount} · 已有评论 ${commentCount}"></span>` : "")
           + (draftCount ? `<span class="wb-badge" style="position:static">${draftCount}</span>` : "")
           + `</div>`;
       }).join("") || `<div class="dempty">没有匹配的文件</div>`;
@@ -493,7 +496,11 @@
   async function submitDrafts() {
     if (!D.drafts.length && D.event !== "APPROVE") return;
     if (draftsOutdated()) { toast("PR 已有新提交，旧草稿不能提交"); return; }
-    if (D.event === "APPROVE" && !confirm("确认以你的名义在 GitHub 提交 Approve Review？")) return;
+    const eventLabel = { APPROVE: "批准合并", COMMENT: "仅评论", REQUEST_CHANGES: "请求修改" }[D.event] || D.event;
+    const summary = D.drafts.length
+      ? `${eventLabel}（附 ${D.drafts.length} 条行级意见）`
+      : eventLabel;
+    if (!confirm(`确认提交 Review：${summary}？\n\n将以你的名义写入 GitHub，提交后不可撤回。`)) return;
     const btn = document.getElementById("wbSubmit");
     btn.disabled = true;
     btn.textContent = "提交中…";

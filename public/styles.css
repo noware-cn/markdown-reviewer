@@ -331,3 +331,11 @@ body.wb-mode-on .layout { display: none; }
 .sb-base .md-block.is-removed { background: rgba(220, 38, 38, .07); }
 .sb-head .md-block.is-added { background: rgba(22, 163, 74, .07); }
 .sb-col .md-block { position: relative; padding: 4px 0; }
+
+/* ===== P2: 文件审阅状态 ===== */
+.fitem.reviewed .fdot {
+  display: inline-block; width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent, #c8102e); margin-left: 4px; flex-shrink: 0;
+}
+.fitem .fdot { display: none; }
+.fitem.reviewed .fname { color: var(--text-1); font-weight: 600; }
