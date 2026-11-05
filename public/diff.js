@@ -185,9 +185,15 @@
       cls += " is-modified-new";
       tag = `<span class="diff-tag mod">修改</span>`;
     }
-    const oldBlock = b.pairedChange
-      ? `<div class="del-block"><div class="del-head">旧内容（已替换）</div><div class="del-body"><pre>${esc(b.pairedChange.oldText)}</pre></div></div>`
-      : "";
+    else if (b.changeState === "partial") {
+      cls += " is-modified-new";
+      tag = `<span class="diff-tag mod">修改</span>`;
+    }
+    // 显示所有配对删除内容（可能有多处修改）
+    const oldBlocks = (b.pairedChanges || (b.pairedChange ? [b.pairedChange] : []))
+      .map((pc) => `<div class="del-block"><div class="del-head">旧内容（已替换）</div><div class="del-body"><pre>${esc(pc.oldText)}</pre></div></div>`)
+      .join("");
+    const oldBlock = oldBlocks;
     // 在块范围内找一个 hunk 覆盖的行作为评论锚点（从后往前找，优先命中改动行）
     const cl = modelFor(curFile())?.parsed?.commentableHeadLines;
     let anchorLine = null;
@@ -532,6 +538,7 @@
 
   /* ---------- 文件加载 ---------- */
   async function selectFile(path, force) {
+    const myPr = D.n;
     D.file = path;
     D.active = null;
     D.navIdx = -1;
@@ -558,6 +565,8 @@
         headLoaded: true, baseLoaded: true,
         headTruncated: !!headP.truncated, baseTruncated: !!baseP.truncated,
       };
+      // 用户可能已切换到其他 PR，过期结果不覆盖
+      if (D.n !== myPr) return;
     } catch (err) {
       D.err = err.name === "AbortError" ? "正文加载超时，请重试" : String(err);
       D.texts[path] = { base: "", head: "", headLoaded: false, baseLoaded: false, headTruncated: false, baseTruncated: false };
@@ -568,7 +577,11 @@
   /* ---------- 提交草稿 ---------- */
   async function submitDrafts() {
     if (!D.drafts.length && D.event !== "APPROVE") return;
-    if (draftsOutdated()) { toast("PR 已有新提交，旧草稿不能提交"); return; }
+    draftsOutdatedCheck: {
+      if (draftsOutdated()) { toast("PR 已有新提交，旧草稿不能提交"); return; }
+    }
+    const myPr = D.n; // 捕获当前 PR 号，防止用户中途切换
+    const myHeadSha = D.meta.headSha;
     const eventLabel = { APPROVE: "批准合并", COMMENT: "仅评论", REQUEST_CHANGES: "请求修改" }[D.event] || D.event;
     const summary = D.drafts.length
       ? `${eventLabel}（附 ${D.drafts.length} 条行级意见）`
@@ -597,10 +610,12 @@
         render();
         return;
       }
+      // 检查用户是否已切换到其他 PR
+      if (D.n !== myPr) { toast("已提交（但你已切换到其他 PR）"); return; }
       D.drafts = [];
       clearDraftsStorage();
       toast(`已写入 GitHub：review #${data.review.id}（${data.review.comments} 条）`);
-      await load(D.n, true, true);
+      await load(myPr, true, true);
     } catch (err) {
       toast(`提交未确认成功：${String(err)}`);
       render();
@@ -683,10 +698,10 @@
     });
   }
 
+  let bound = false;
   window.DiffView = {
     mount: async (number) => {
-      bind();
-      bindTopbar();
+      if (!bound) { bind(); bindTopbar(); bound = true; }
       document.getElementById("workbench").hidden = false;
       document.body.classList.add("wb-mode-on");
       document.getElementById("wbLoading").hidden = false;

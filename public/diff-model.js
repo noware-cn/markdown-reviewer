@@ -34,6 +34,8 @@
         continue;
       }
       if (!cur) continue;
+      // 跳过 "\ No newline at end of file" 标记行，不当作上下文
+      if (line.startsWith("\\")) continue;
       let op;
       if (line.startsWith("+")) {
         op = { t: "add", old: null, new: newNo, text: line.slice(1) };
@@ -141,7 +143,7 @@
       // paragraph (default)
       const para = [];
       while (i < lines.length && lines[i].trim() &&
-        !/^(#{1,6}\s|```|\s*>|\s*([-*+]|\d+\.)\s|\s*\||^(-{3,}|\*{3,})$)/.test(lines[i])) {
+        !/^(#{1,6}\s|```|\s*>|\s*([-*+]|\d+\.)\s|^(-{3,}|\*{3,})$)/.test(lines[i])) {
         para.push(lines[i]);
         i += 1;
       }
@@ -311,7 +313,8 @@
               anchorNew,
             };
             changes.push(ch);
-            if (anchorNew !== null) headInsertions.push({ afterNewLine: anchorNew, change: ch });
+            // 无论能否定位 anchor 都放入 headInsertions，anchor 为 null 时放在文档开头
+            headInsertions.push({ afterNewLine: anchorNew ?? 0, change: ch });
           }
         } else if (seg.t === "add") {
           // 独立新增 run（未被 modified 配对消费）
@@ -331,10 +334,11 @@
     // 4.3 把 modified 变化反标到 head 块上（块落在 newStart..newEnd 内 → modified-new）
     const modifiedChanges = changes.filter((c) => c.type === "modified");
     for (const b of headBlocks) {
-      const m = modifiedChanges.find((c) => b.startLine <= c.newEnd && b.endLine >= c.newStart);
-      if (m) {
+      const matches = modifiedChanges.filter((c) => b.startLine <= c.newEnd && b.endLine >= c.newStart);
+      if (matches.length) {
         b.changeState = "modified-new";
-        b.pairedChange = m;
+        b.pairedChanges = matches;
+        b.pairedChange = matches[0]; // 向后兼容
       }
     }
 
