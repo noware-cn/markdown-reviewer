@@ -343,3 +343,25 @@ test('手动强制刷新只刷新 PR 元数据，不强制刷新正文', async (
   assert.equal(world.calls.filter((c) => c.url.includes('/file?')).length, beforeFiles);
   assert.ok(world.calls.every((c) => !c.url.includes('refreshText=1') && !c.url.includes('refresh=1')));
 });
+
+test('切换并重新打开原 PR 后，旧提交只清除旧快照草稿', async () => {
+  const world = makeWorld();
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  app.ctx.window.__D.drafts = [{ id: 'submitted-before-switch', path: 'a.md', body: '旧意见', start: 1, end: 1, headSha: 'h1' }];
+  app.ctx.window.__saveDrafts();
+  world.gate = (call) => call.method === 'POST';
+  const submit = app.ctx.window.__submit();
+  await tick();
+  await mountComplete(world, app, 2);
+  await mountComplete(world, app, 1);
+  app.ctx.window.__D.drafts = [{ id: 'new-after-reopen', path: 'a.md', body: '新意见', start: 1, end: 1, headSha: 'h1' }];
+  app.ctx.window.__saveDrafts();
+  const post = world.gated().find((call) => call.method === 'POST');
+  assert.ok(post);
+  post.release();
+  await submit;
+  assert.deepEqual(app.ctx.window.__D.drafts.map((draft) => draft.id), ['new-after-reopen']);
+  const saved = JSON.parse(app.store['wb.drafts.1']);
+  assert.deepEqual(saved.map((draft) => draft.id), ['new-after-reopen']);
+});
