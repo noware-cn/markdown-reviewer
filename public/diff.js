@@ -589,15 +589,23 @@
     document.addEventListener("mouseup", (e) => {
       const wb = document.getElementById("workbench");
       if (wb.hidden) return;
-      if (e.target.closest("#dselchip") || e.target.closest(".composer")) return;
+      if (e.target.closest("#dselchip") || e.target.closest(".composer") || !e.target.closest("#wbDoc")) return;
       const sel = window.getSelection();
       const text = sel ? sel.toString().trim() : "";
       if (!text || text.length < 2) { document.getElementById("dselchip").hidden = true; return; }
       const rng = locateFromSelection(sel);
-      if (!rng) { document.getElementById("dselchip").hidden = true; return; }
+      if (!rng) {
+        document.getElementById("dselchip").hidden = true;
+        toast("无法精确定位所选内容，请改选单行内容或代码行。");
+        return;
+      }
       // 校验选区行号在 diff hunk 内，否则不显示评论按钮
       const cl = modelFor(curFile())?.parsed?.commentableHeadLines;
-      if (cl && (!cl.has(rng.start) || !cl.has(rng.end))) { document.getElementById("dselchip").hidden = true; return; }
+      if (cl && (!cl.has(rng.start) || !cl.has(rng.end))) {
+        document.getElementById("dselchip").hidden = true;
+        toast("所选行不在当前 Diff 的可评论范围内。");
+        return;
+      }
       const chip = document.getElementById("dselchip");
       chip.dataset.start = String(rng.start);
       chip.dataset.end = String(rng.end);
