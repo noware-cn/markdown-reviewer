@@ -104,11 +104,17 @@
 <script src="/marked.min.js?v=1"></script>
 <script src="/purify.min.js?v=1"></script>
 <script>
-/* marked 配置：GFM 表格、链接新窗口打开 */
+/* marked + DOMPurify 配置：GFM 表格；链接新窗口打开 */
 window.marked.setOptions({ gfm: true, breaks: false });
+window.DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+  if (node.tagName === "A" && node.getAttribute("href")) {
+    node.setAttribute("target", "_blank");
+    node.setAttribute("rel", "noopener noreferrer");
+  }
+});
 </script>
 <script src="/diff-model.js?v=205"></script>
-<script src="/diff.js?v=209"></script>
-<script src="/app.js?v=209"></script>
+<script src="/diff.js?v=210"></script>
+<script src="/app.js?v=210"></script>
 </body>
 </html>

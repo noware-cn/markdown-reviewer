@@ -139,8 +139,9 @@
   /* ---------- 阅读改动渲染 ---------- */
   function readingHTML(file) {
     const textState = D.texts[file.path];
+    const errMsg = (textState && textState.error) || D.err;
     if (!textState || !textState.headLoaded) {
-      if (D.err) return `<div class="error-box">${esc(D.err)} <button type="button" class="retry" data-retry="1">重试</button></div>`;
+      if (errMsg) return `<div class="error-box">${esc(errMsg)} <button type="button" class="retry" data-retry="1">重试</button></div>`;
       return `<div class="dempty">正在加载正文…</div>`;
     }
     if (textState.headTruncated) {
@@ -226,7 +227,9 @@
 
   function sideBySideHTML(file) {
     const textState = D.texts[file.path];
+    const errMsg = (textState && textState.error) || D.err;
     if (!textState || !textState.headLoaded || !textState.baseLoaded) {
+      if (errMsg) return `<div class="error-box">${esc(errMsg)} <button type="button" class="retry" data-retry="1">重试</button></div>`;
       return `<div class="dempty">正在加载前后版本…</div>`;
     }
     if (textState.headTruncated || textState.baseTruncated) {
@@ -309,7 +312,7 @@
     if (D.active) {
       const a = D.active;
       parts.push(`<div class="composer"><div class="canchor">${esc(a.path.split("/").pop())} · L${a.start}${a.end > a.start ? "–" + a.end : ""} · side=RIGHT</div>`
-        + `<textarea id="wbcText" placeholder="写下判断依据或要求补充的内容。">${esc(a.body || "")}</textarea>`
+        + `<textarea id="wbcText" data-key="${esc(a.path + ":" + a.start + ":" + a.end)}" placeholder="写下判断依据或要求补充的内容。">${esc(a.body || "")}</textarea>`
         + `<div class="crow"><button class="btn" type="button" data-act="save">存为草稿</button><button class="btn ghost" type="button" data-act="cancel">取消</button></div></div>`);
     }
     // drafts
@@ -381,7 +384,9 @@
   /* ---------- 主渲染 ---------- */
   function saveComposerText() {
     const ta = document.getElementById("wbcText");
-    if (ta && D.active) D.active.body = ta.value;
+    if (!ta || !D.active) return;
+    const key = `${D.active.path}:${D.active.start}:${D.active.end}`;
+    if (ta.dataset.key === key) D.active.body = ta.value;
   }
   function render() {
     const meta = D.meta;
@@ -584,14 +589,15 @@
         baseP = await baseR.json().catch(() => ({}));
         if (!baseR.ok && file.status !== "removed") throw new Error(`读取改前正文失败（${baseR.status}）`);
       }
+      // 用户可能已切换到其他 PR，过期结果不写入缓存
+      if (D.n !== myPr) return;
       D.texts[path] = {
         base: baseP.text || "", head: headP.text || "",
         headLoaded: true, baseLoaded: true,
         headTruncated: !!headP.truncated, baseTruncated: !!baseP.truncated,
       };
-      // 用户可能已切换到其他 PR，过期结果不覆盖
-      if (D.n !== myPr) return;
     } catch (err) {
+      if (D.n !== myPr) return;
       D.err = err.name === "AbortError" ? "正文加载超时，请重试" : String(err);
       D.texts[path] = { base: "", head: "", headLoaded: false, baseLoaded: false, headTruncated: false, baseTruncated: false };
     } finally { spin(-1); }
