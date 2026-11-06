@@ -627,8 +627,8 @@
       if (D.generation !== myGen) return;
       D.err = err.name === "AbortError" ? "正文加载超时，请重试" : String(err);
       D.texts[path] = { base: "", head: "", headLoaded: false, baseLoaded: false, headTruncated: false, baseTruncated: false };
-    } finally { spin(-1); }
-    render();
+    } finally { if (D.generation === myGen) spin(-1); }
+    if (D.generation === myGen) render();
   }
 
   /* ---------- 提交草稿 ---------- */
@@ -639,9 +639,12 @@
     }
     const myGen = D.generation;
     const myPr = D.n;
-    const eventLabel = { APPROVE: "批准合并", COMMENT: "仅评论", REQUEST_CHANGES: "请求修改" }[D.event] || D.event;
-    const summary = D.drafts.length
-      ? `${eventLabel}（附 ${D.drafts.length} 条行级意见）`
+    const myHeadSha = D.meta.headSha;
+    const myEvent = D.event;
+    const myDrafts = JSON.parse(JSON.stringify(D.drafts)); // 快照
+    const eventLabel = { APPROVE: "批准合并", COMMENT: "仅评论", REQUEST_CHANGES: "请求修改" }[myEvent] || myEvent;
+    const summary = myDrafts.length
+      ? `${eventLabel}（附 ${myDrafts.length} 条行级意见）`
       : eventLabel;
     if (!confirm(`确认提交 Review：${summary}？\n\n将以你的名义写入 GitHub，提交后不可撤回。`)) return;
     const btn = document.getElementById("wbSubmit");
@@ -649,9 +652,9 @@
     btn.textContent = "提交中…";
     try {
       const payload = {
-        commit_id: D.meta.headSha,
-        event: D.event,
-        comments: D.drafts.map((d) => ({
+        commit_id: myHeadSha,
+        event: myEvent,
+        comments: myDrafts.map((d) => ({
           path: d.path, body: d.body, line: d.end, side: "RIGHT",
           start_line: d.start < d.end ? d.start : undefined,
         })),
@@ -688,8 +691,10 @@
     spin(1);
     try {
       const res = await fetchJSON(`/api/approvals/${number}/diff${force ? "?refresh=1" : ""}`);
+      if (D.generation !== myGen) return; // 已切换/刷新
       if (res.status === 401) { location.href = "/auth/login"; return; }
       const data = await res.json();
+      if (D.generation !== myGen) return;
       if (!res.ok) { document.getElementById("wbContent").innerHTML = `<div class="error-box">读取变更失败：${esc(data.message || res.status)}</div>`; return; }
       const oldSha = D.meta ? D.meta.headSha : null;
       D.meta = data.meta;
@@ -739,7 +744,7 @@
         }
       };
       await Promise.all(Array.from({ length: Math.min(4, order.length) }, run));
-    } finally { spin(-1); }
+    } finally { if (D.generation === myGen) spin(-1); }
   }
 
   /* ---------- 顶栏/侧栏事件 ---------- */
