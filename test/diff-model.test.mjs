@@ -44,7 +44,7 @@ const CASES = [
   { name: '任务列表', doc: '- [ ] a\n- [x] b', ranges: [[1, 2]], li: [1, 2] },
   { name: '两个列表被标题隔开', doc: '- a\n\n# h\n\n- b', ranges: [[1, 1], [5, 5]], li: [1, 5] },
   { name: '项内缩进代码', doc: '- a\n\n      code\n\n- b', ranges: [[1, 5]], li: [1, 5] },
-  { name: '缩进代码中的假列表标记', doc: '- 父项\n\n      - 这只是代码，不是列表项\n\n- 第二项', ranges: [[1, 6]], li: [1, 6] },
+  { name: '缩进代码中的假列表标记', doc: '- 父项\n\n      - 这只是代码，不是列表项\n\n- 第二项', ranges: [[1, 5]], li: [1, 5] },
 ];
 
 const listBlocks = (m, doc) => Array.from(m.mdBlocks(doc)).filter((b) => b.type === 'ul' || b.type === 'ol');
