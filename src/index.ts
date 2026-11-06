@@ -450,6 +450,9 @@ export default {
           })),
           event,
         );
+        // 新评论/新 Review 已写入：立刻失效该 PR 的 diff 缓存（meta+files+comments），
+        // 否则客户端提交后的 /diff 会继续返回最长 5 分钟的旧评论。
+        apiCache.delete(`${repoKey(env)}|/diff/${number}`);
         return json({ ok: true, review, source: "github" });
       } catch (error) {
         const status = error instanceof GitHubError ? error.status : 502;

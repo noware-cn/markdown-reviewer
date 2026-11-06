@@ -104,7 +104,7 @@ Worker Secret（用 `npx wrangler secret put <NAME>` 写入，不进仓库）：
 
 `wrangler.jsonc` 中的普通变量：`SERVICE_NAME`、`ENVIRONMENT`、`GITHUB_ORG`、`GITHUB_REPO`、`MOCK_MODE`。
 
-GitHub OAuth App 回调地址填 `https://workspace.noware.cn/auth/callback`。组织如启用第三方应用限制，需由组织管理员批准该 OAuth App。
+GitHub OAuth App 回调地址填 `<Worker 对外域名>/auth/callback`。仓库内未声明自定义域（见 `wrangler.jsonc`），生产域名（如是否沿用 `workspace.noware.cn`）需在 Cloudflare Dashboard 配置后核对。组织如启用第三方应用限制，需由组织管理员批准该 OAuth App。
 
 ## 生产部署
 
@@ -114,7 +114,7 @@ GitHub OAuth App 回调地址填 `https://workspace.noware.cn/auth/callback`。�
 npx wrangler deploy
 ```
 
-CI/CD 工作流待配置。部署前需在 Cloudflare Worker 中通过 `npx wrangler secret put <NAME>` 写入上述 Secret。
+CI/CD 尚未配置；`npm run deploy:ci` 预留了 Cloudflare Workers Builds 的 `WORKERS_CI_COMMIT_SHA` 注入。部署前需在 Cloudflare Worker 中通过 `npx wrangler secret put <NAME>` 写入上述 Secret。
 
 ## 回滚
 
@@ -137,17 +137,4 @@ Cloudflare Dashboard → Workers & Pages → 对应 Worker → Deployments，选
 - 删除文件和重命名文件分别按 GitHub 文件状态读取 base/head 正文；新增文件的 base 侧和删除文件的 head 侧为空。
 - 渲染视图按 Markdown 原文分块，每块挂真实行号锚点，评论始终回落到 `path + line`。
 - 已合并或已关闭的 PR 不允许再写评论，接口返回 409，页面显示只读提示。
-
-## 部署触发方式（2026-11-05 现状）
-
-`main` 目前不含该应用，`.github/workflows/deploy-worker.yml` 也尚未进入默认分支，因此"推送 main 自动部署"暂未生效。当前可用的部署通道是：
-
-```bash
-curl -X POST -H "Authorization: token <gh-token>" \
-  https://api.github.com/repos/noware-cn/workspace/actions/workflows/407164727/dispatches \
-  -d '{"ref":"topic/approval-visualization-mvp"}'
-```
-
-该动作以目标分支的 workflow 文件执行 `npm ci → tsc → wrangler deploy --var DEPLOY_COMMIT:<sha>`，部署完成后 `/api/health` 的 `commit` 字段即为本次提交 SHA，可直接对账。
-
-应用合入 `main` 后，删除上面这段说明，改由 `deploy-worker.yml` 的 main push 触发即可。
+- 提交 Review 成功后服务端立即失效该 PR 的 diff 缓存，页面无需整页强刷即可看到新评论；正文按 `path + headSha + baseSha` 复用，不因评论刷新重新拉取。

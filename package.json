@@ -9,6 +9,7 @@
     "build": "tsc --noEmit",
     "deploy": "wrangler deploy",
     "deploy:ci": "wrangler deploy --var DEPLOY_COMMIT:${WORKERS_CI_COMMIT_SHA:-unknown}",
+    "test": "node --test test/*.test.mjs",
     "smoke": "node scripts/smoke.mjs"
   },
   "devDependencies": {

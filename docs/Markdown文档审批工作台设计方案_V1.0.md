@@ -3,8 +3,8 @@
 版本：V1.0
 日期：2026-11-06
 状态：设计基线已确认，待进入开发
-适用项目：noware-cn/workspace / apps/approval-visualization-worker
-目标分支：topic/approval-visualization-mvp
+适用项目：noware-cn/markdown-reviewer（自 noware-cn/workspace / apps/approval-visualization-worker 迁出）
+目标分支：topic/markdown-reviewer-mvp
 
 ## 1. 文档目的
 
@@ -510,12 +510,12 @@ interface DocumentChange {
 ## 18. 当前仓库上下文与开发入口
 
 当前已核实仓库：
-- 仓库：noware-cn/workspace
-- 目标分支：topic/approval-visualization-mvp
-- 应用目录：apps/approval-visualization-worker/
+- 仓库：noware-cn/markdown-reviewer（自 noware-cn/workspace / apps/approval-visualization-worker 迁出）
+- 目标分支：topic/markdown-reviewer-mvp
+- 应用目录：仓库根目录
 - 主要前端文件：public/index.html、public/styles.css、public/app.js、public/diff.js
 - 后端目录：src/
-- 应用说明：apps/approval-visualization-worker/README.md
+- 应用说明：README.md
 
 当前 README 描述的既有能力包括 PR/Review 数据读取、Base/Head 文件正文读取、行级评审批注、本地草稿与 Head SHA 绑定、过期草稿保护，以及 Worker 部署与健康检查。开发前应重新核对当前代码实现，README 仅作为线索，不可替代代码核验。
 
@@ -527,10 +527,10 @@ interface DocumentChange {
 
 建议启动提示词：
 
-> 我们继续 noware-cn/workspace 仓库的 topic/approval-visualization-mvp 分支开发。
+> 我们继续 noware-cn/markdown-reviewer 仓库的 topic/markdown-reviewer-mvp 分支开发。
 >
 > 请先连接 GitHub，读取该分支最新状态及 AGENTS.md，然后完整阅读：
-> apps/approval-visualization-worker/docs/Markdown文档审批工作台设计方案_V1.0.md
+> docs/Markdown文档审批工作台设计方案_V1.0.md
 >
 > 以该设计方案作为已确认产品与界面基线。先审计当前代码（尤其是 public/index.html、styles.css、app.js、diff.js 和 Worker 相关接口），形成文件级实施计划、差异模型验证方案和测试清单。优先执行 P0，不要擅自改变默认阅读模式、差异语义、评论锚点或现有审批链路。发现需要重大取舍时集中提问；否则按阶段推进。所有修改留在当前主题分支，不合并 main；未经明确要求不部署。
 

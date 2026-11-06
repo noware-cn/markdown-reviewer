@@ -79,10 +79,37 @@
     return s;
   }
 
+  /* 列表区间：用 marked lexer 一次算完整边界（含续行 / 空行 / 嵌套 / 懒续行）。
+     marked 未就绪时退回「连续标记行」分组，保证降级渲染仍是列表。 */
+  function listRanges(lines) {
+    const index = new Map(); // startLine -> { end, ordered }
+    const marker = /^\s*([-*+]|\d+[.)])\s+/;
+    if (!window.marked) {
+      for (let k = 0; k < lines.length; k += 1) {
+        if (!marker.test(lines[k])) continue;
+        let end = k + 1;
+        while (end < lines.length && marker.test(lines[end])) end += 1;
+        index.set(k + 1, { end, ordered: /^\s*\d+[.)]\s+/.test(lines[k]) });
+        k = end - 1;
+      }
+      return index;
+    }
+    let lineNo = 0;
+    for (const tok of window.marked.lexer(lines.join("\n"))) {
+      if (tok.type === "list") {
+        const raw = tok.raw.replace(/\n+$/, "");
+        index.set(lineNo + 1, { end: lineNo + raw.split("\n").length, ordered: !!tok.ordered });
+      }
+      lineNo += tok.raw.split("\n").length - 1;
+    }
+    return index;
+  }
+
   function mdBlocks(text) {
     const lines = String(text || "").split(/\r?\n/);
     const blocks = [];
     const hstack = []; // heading path
+    const listIndex = listRanges(lines);
     let i = 0;
     while (i < lines.length) {
       const line = lines[i];
@@ -109,15 +136,12 @@
         blocks.push(mkBlock(start, start, "h" + level, hd[2], hstack, { title, level }));
         continue;
       }
-      // list — 整体解析保留嵌套结构
-      if (/^\s*([-*+]|\d+\.)\s+/.test(line)) {
-        const ordered = /^\s*\d+\.\s+/.test(line);
-        const rawLines = [];
-        while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])) {
-          rawLines.push(lines[i]);
-          i += 1;
-        }
-        blocks.push(mkBlock(start, i, ordered ? "ol" : "ul", rawLines.join("\n"), hstack));
+      // list — 使用 lexer 预先算好的完整区间，保留嵌套 / 续行 / 空行列表
+      const listHit = listIndex.get(start);
+      if (listHit) {
+        const raw = lines.slice(i, listHit.end).join("\n");
+        i = listHit.end;
+        blocks.push(mkBlock(start, i, listHit.ordered ? "ol" : "ul", raw, hstack));
         continue;
       }
       // blockquote
@@ -142,11 +166,14 @@
       }
       // paragraph (default)
       const para = [];
-      while (i < lines.length && lines[i].trim() &&
-        !/^(#{1,6}\s|```|\s*>|\s*([-*+]|\d+\.)\s|^(-{3,}|\*{3,})$)/.test(lines[i])) {
+      while (i < lines.length && lines[i].trim()
+        && !listIndex.has(i + 1)
+        && !/^(#{1,6}\s|```|\s*>|^(-{3,}|\*{3,})$)/.test(lines[i])) {
         para.push(lines[i]);
         i += 1;
       }
+      // 兜底：命中了上面某个分支但该分支不接管时（如缩进代码行），保证 i 前进
+      if (!para.length) { para.push(lines[i]); i += 1; }
       blocks.push(mkBlock(start, i, "para", para.join("\n"), hstack));
     }
     return blocks;
@@ -198,6 +225,24 @@
     }
     if (type === "hr") return "<hr>";
     return `<p>${raw.split("\n").map(inlineMd).join(" ")}</p>`;
+  }
+
+  /* 列表项 → 源码行号：按 raw 顺序扫标记行（跳过围栏代码块内的假标记行）。
+     顺序与 marked 输出的 <li> 深度优先顺序一致，嵌套项也会得到自己的行号。 */
+  function listItemLines(raw, startLine) {
+    const marker = /^\s*([-*+]|\d+[.)])\s+/;
+    const out = [];
+    let fence = null;
+    String(raw || "").split("\n").forEach((ln, idx) => {
+      const f = /^\s*(```|~~~)/.exec(ln);
+      if (f) {
+        if (fence === null) fence = f[1];
+        else if (f[1] === fence) fence = null;
+        return;
+      }
+      if (fence === null && marker.test(ln)) out.push(startLine + idx);
+    });
+    return out;
   }
 
   /* ---------- 3. 文本相似度（中文按字二元组） ---------- */
@@ -348,5 +393,5 @@
     return { parsed, headBlocks, baseBlocks, changes, headInsertions };
   }
 
-  window.DiffModel = { parsePatch, mdBlocks, buildModel, similarity, esc };
+  window.DiffModel = { parsePatch, mdBlocks, buildModel, similarity, esc, listRanges, listItemLines };
 })();
