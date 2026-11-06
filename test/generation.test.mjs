@@ -309,7 +309,7 @@ test('列表删除项在原列表项位置插入', () => {
   const deleted = result.html.indexOf('删除（Base L2）');
   const firstClose = result.html.indexOf('</li>', first);
   const second = result.html.indexOf('<li data-line="2">');
-  assert.ok(first >= 0 && deleted > first && deleted < firstClose && firstClose < second);
+  assert.ok(first >= 0 && firstClose < deleted && deleted < second);
   assert.deepEqual(result.unplaced, []);
 });
 
