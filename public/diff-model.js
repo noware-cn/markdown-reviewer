@@ -109,15 +109,15 @@
         blocks.push(mkBlock(start, start, "h" + level, hd[2], hstack, { title, level }));
         continue;
       }
-      // list — 每项拆成独立块，保证逐行行号映射
+      // list — 整体解析保留嵌套结构
       if (/^\s*([-*+]|\d+\.)\s+/.test(line)) {
         const ordered = /^\s*\d+\.\s+/.test(line);
+        const rawLines = [];
         while (i < lines.length && /^\s*([-*+]|\d+\.)\s+/.test(lines[i])) {
-          const itemStart = i + 1;
-          const itemLine = lines[i];
+          rawLines.push(lines[i]);
           i += 1;
-          blocks.push(mkBlock(itemStart, i, ordered ? "ol" : "ul", itemLine, hstack));
         }
+        blocks.push(mkBlock(start, i, ordered ? "ol" : "ul", rawLines.join("\n"), hstack));
         continue;
       }
       // blockquote

@@ -202,13 +202,26 @@
       .map((pc) => `<div class="del-block"><div class="del-head">旧内容（已替换）</div><div class="del-body"><pre>${esc(pc.oldText)}</pre></div></div>`)
       .join("");
     const oldBlock = oldBlocks;
-    // 代码块：给每行加 data-line，使选区能精确定位到源码行
+    // 代码块：逐行 data-line
     let bodyHtml = b.html;
     if (b.type === "code" && b.startLine != null) {
       bodyHtml = bodyHtml.replace(/(<pre><code>)([\s\S]*?)(<\/code><\/pre>)/, (_m, open, code, close) => {
         const lines = code.split("\n");
         const wrapped = lines.map((ln, i) => `<span class="code-line" data-line="${b.startLine + i}">${ln}</span>`).join("\n");
         return open + wrapped + close;
+      });
+    }
+    // 列表：给每个 <li> 绑定源码行号（按 raw 源文件行顺序）
+    if ((b.type === "ul" || b.type === "ol") && b.raw) {
+      const srcLines = b.raw.split("\n");
+      let liIdx = 0;
+      bodyHtml = bodyHtml.replace(/<li>/g, () => {
+        // 跳过嵌套子项行，只给顶层 <li> 绑定
+        while (liIdx < srcLines.length && !/^\s*([-*+]|\d+\.)\s+/.test(srcLines[liIdx])) liIdx++;
+        if (liIdx >= srcLines.length) return "<li>";
+        const lineNum = b.startLine + liIdx;
+        liIdx++;
+        return `<li data-line="${lineNum}">`;
       });
     }
     // 在块范围内找一个 hunk 覆盖的行作为评论锚点（从后往前找，优先命中改动行）
