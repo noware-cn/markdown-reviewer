@@ -14,15 +14,12 @@
 ├── public/diff-model.js  统一差异模型
 ├── public/marked.min.js  vendored marked@12
 ├── public/purify.min.js  vendored DOMPurify 3.2
-└── wrangler.jsonc        Cloudflare Worker 配置
-```
-├── public/styles.css     样式（华为红 + 灰白扁平）
-├── public/app.js         列表、筛选、详情与审批链路渲染
+├── public/styles.css     样式
+├── public/app.js         列表、筛选与审批链路
 ├── scripts/smoke.mjs     健康检查冒烟断言
-├── wrangler.jsonc        Workers 与静态资源配置
+├── wrangler.jsonc        Cloudflare Worker 配置
 ├── package.json          依赖与命令
 ├── tsconfig.json         类型检查配置
-├── .gitignore            本地开发产物
 └── README.md             本文件
 ```
 
