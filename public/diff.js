@@ -278,13 +278,14 @@
     }
     const stack = [];
     const rendered = blockHtml(block, {});
-    const html = rendered.replace(/<li(?:\s+data-line="(\d+)")?>|<\/li>/g, (tag, line) => {
+    const html = rendered.replace(/<li\b([^>]*)>|<\/li>/g, (tag, attrs) => {
       if (tag.startsWith("</li")) {
         const itemLine = stack.pop();
         const inserts = byLine.get(itemLine) || [];
-        return inserts.map((item) => insertionHtml(item.change, file)).join("") + tag;
+        return tag + inserts.map((item) => `<li class="list-deleted-item">${insertionHtml(item.change, file)}</li>`).join("");
       }
-      stack.push(line ? Number(line) : null);
+      const mapped = /\bdata-line="(\d+)"/.exec(attrs || "");
+      stack.push(mapped ? Number(mapped[1]) : null);
       return tag;
     });
     return { html, unplaced };
