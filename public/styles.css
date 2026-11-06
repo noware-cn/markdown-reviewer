@@ -248,11 +248,11 @@ body.wb-mode-on .layout { display: none; }
   background: var(--card);
   border-left: 1px solid var(--line);
   overflow: hidden;
-  display: flex;
+  display: none;
   flex-direction: column;
   min-width: 0;
 }
-.wb-drawer[hidden] { display: none; }
+.wb-body.drawer-open .wb-drawer { display: flex; }
 .wb-drawer-head { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; font-size: 13px; font-weight: 600; border-bottom: 1px solid var(--line-soft); }
 .wb-drawer-fold { border: 0; background: none; color: var(--ink-3); cursor: pointer; }
 .wb-drawer-body { overflow: auto; flex: 1; padding: 10px 12px; }

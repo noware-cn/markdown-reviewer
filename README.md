@@ -1,18 +1,21 @@
-# approval-visualization-worker
+# markdown-reviewer
 
-审批可视化 Worker。数据源为 GitHub 仓库的 PR 与 Review：单据 = PR，审批节点 = Review，链路 = 提交 → 各审批人 → 合并/关闭。访问需 GitHub 账号登录，且登录账号须属于配置的组织。
+个人 Markdown 文档审批工作台。数据源为 GitHub 仓库的 PR 与 Review：单据 = PR，审批节点 = Review，链路 = 提交 → 各审批人 → 合并/关闭。访问需 GitHub 账号登录，且登录账号须属于配置的组织。
 
 ## 目录结构
 
 ```
-apps/approval-visualization-worker/
 ├── src/index.ts          路由、登录门禁、OAuth 回调、接口
 ├── src/session.ts        会话签名与读取（HMAC-SHA256 Cookie）
-├── src/github.ts         GitHub API 读取与单据映射
+├── src/diff.ts           GitHub API 封装（PR、文件、评论、Review）
 ├── src/mock.ts           演示数据，仅 MOCK_MODE=1 使用
-├── src/types.ts          单据与节点类型
-├── public/index.html     审批可视化页面
-├── public/login.html     登录页
+├── public/index.html     工作台页面
+├── public/diff.js        工作台控制器
+├── public/diff-model.js  统一差异模型
+├── public/marked.min.js  vendored marked@12
+├── public/purify.min.js  vendored DOMPurify 3.2
+└── wrangler.jsonc        Cloudflare Worker 配置
+```
 ├── public/styles.css     样式（华为红 + 灰白扁平）
 ├── public/app.js         列表、筛选、详情与审批链路渲染
 ├── scripts/smoke.mjs     健康检查冒烟断言

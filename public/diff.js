@@ -238,6 +238,9 @@
     if (textState.headTruncated || textState.baseTruncated) {
       return `<div class="error-box">文件超过读取上限（400 KB），前后对照内容不完整，请用 GitHub 查看完整版本。</div>`;
     }
+    if (!file.patch && file.status !== "added" && file.status !== "removed") {
+      return `<div class="error-box">GitHub 未返回该文件的差异（文件过大）。<a href="${D.meta.url}/files#diff-${encodeURIComponent(file.path)}" target="_blank" rel="noopener">在 GitHub 中查看完整 Diff →</a></div>`;
+    }
     const model = modelFor(file);
     const leftBlocks = model.baseBlocks || [];
     const rightBlocks = model.headBlocks || [];
@@ -252,7 +255,7 @@
       let cls = "md-block";
       let tag = "";
       if (b.changeState === "added" || file.status === "added") { cls += " is-added"; tag = `<span class="diff-tag add">新增</span>`; }
-      else if (b.changeState === "modified-new") { cls += " is-modified-new"; tag = `<span class="diff-tag mod">修改</span>`; }
+      else if (b.changeState === "modified-new" || b.changeState === "partial") { cls += " is-modified-new"; tag = `<span class="diff-tag mod">修改</span>`; }
       return `<div class="${cls}" data-line="${b.startLine}">${tag}${b.html}</div>`;
     }).join("");
     return `<div class="sb2">`
@@ -287,13 +290,13 @@
     for (const op of rows.ops) {
       if (op.t === "ctx") {
         left += `<div class="dline ctx"><span class="ln">${op.old}</span><span class="tx">${esc(op.text)}</span></div>`;
-        right += `<div class="dline ctx"><span class="ln">${op.new}</span><span class="tx">${esc(op.text)}</span></div>`;
+        right += `<div class="dline ctx" data-line="${op.new}"><span class="ln">${op.new}</span><span class="tx">${esc(op.text)}</span></div>`;
       } else if (op.t === "del") {
         left += `<div class="dline del"><span class="ln">${op.old}</span><span class="tx">${esc(op.text)}</span></div>`;
         right += `<div class="dline"><span class="ln"></span><span class="tx"></span></div>`;
       } else {
         left += `<div class="dline"><span class="ln"></span><span class="tx"></span></div>`;
-        right += `<div class="dline add"><span class="ln">${op.new}</span><span class="tx">${esc(op.text)}</span></div>`;
+        right += `<div class="dline add" data-line="${op.new}"><span class="ln">${op.new}</span><span class="tx">${esc(op.text)}</span></div>`;
       }
     }
     return `<div class="split2"><div class="scol">${left}</div><div class="scol">${right}</div></div>`;
@@ -683,6 +686,7 @@
       render();
 
       // prefetch all files with limit 4
+      const myPr = D.n;
       const order = D.files.map((f) => f.path);
       D.prefetchTotal = order.length;
       D.prefetchDone = 0;
@@ -692,17 +696,24 @@
           const p = order[idx]; idx += 1;
           const file = D.files.find((f) => f.path === p);
           try {
-            const hr = await fetchJSON(`/api/approvals/${D.n}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(D.meta.headSha)}${force ? "&refresh=1" : ""}`);
+            const hr = await fetchJSON(`/api/approvals/${myPr}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(D.meta.headSha)}${force ? "&refresh=1" : ""}`);
             const hp = await hr.json().catch(() => ({}));
             if (!hr.ok) throw new Error(hp.message || `读取正文失败（${hr.status}）`);
             let bp = { text: "", truncated: false };
             if (file && file.status !== "added") {
-              const br = await fetchJSON(`/api/approvals/${D.n}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(D.meta.baseSha)}${force ? "&refresh=1" : ""}`);
+              const br = await fetchJSON(`/api/approvals/${myPr}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(D.meta.baseSha)}${force ? "&refresh=1" : ""}`);
               if (!br.ok) throw new Error(`读取 Base 正文失败（${br.status}）`);
               bp = await br.json().catch(() => ({}));
             }
+            if (D.n !== myPr) return; // 已切换 PR，不写入
             D.texts[p] = { base: bp.text || "", head: hp.text || "", headLoaded: true, baseLoaded: true, headTruncated: !!hp.truncated, baseTruncated: !!bp.truncated, error: "" };
-          } catch (err) { D.texts[p] = { base: "", head: "", headLoaded: false, baseLoaded: false, headTruncated: false, baseTruncated: false, error: String(err) }; }
+          } catch (err) {
+            if (D.n !== myPr) return;
+            // 已有成功缓存时不覆盖为空
+            if (!D.texts[p]?.headLoaded) {
+              D.texts[p] = { base: "", head: "", headLoaded: false, baseLoaded: false, headTruncated: false, baseTruncated: false, error: String(err) };
+            }
+          }
           D.prefetchDone += 1;
           if (p === D.file) render();
         }
