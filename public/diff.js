@@ -245,11 +245,11 @@
     // 列表：给每个 <li> 绑定源码行号（按 raw 顺序，跳过围栏内的假标记行；嵌套项也有行号）
     if ((b.type === "ul" || b.type === "ol") && b.raw) {
       const itemLines = window.DiffModel.listItemLines(b.raw, b.startLine);
-      const liCount = (bodyHtml.match(/<li\\b[^>]*>/g) || []).length;
+      const liCount = (bodyHtml.match(/<li\b[^>]*>/g) || []).length;
       // 映射数量不一致时整体放弃行号映射，绝不把后续 <li> 错配到别的源码行。
       if (itemLines.length === liCount) {
         let liIdx = 0;
-        bodyHtml = bodyHtml.replace(/<li\\b([^>]*)>/g, (_match, attrs) => {
+        bodyHtml = bodyHtml.replace(/<li\b([^>]*)>/g, (_match, attrs) => {
           const lineNum = itemLines[liIdx++];
           return lineNum == null ? `<li${attrs}>` : `<li${attrs} data-line="${lineNum}">`;
         });
