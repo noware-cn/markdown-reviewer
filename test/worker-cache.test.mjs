@@ -104,3 +104,36 @@ test('提交 Review 后 /diff 立即返回新评论', async () => {
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });
+
+test('文件正文 refreshMeta 只刷新一次 PR 数据，refreshText 不刷新 PR 元数据', async () => {
+  const realFetch = globalThis.fetch;
+  const { state, fetchImpl } = makeGitHub();
+  globalThis.fetch = fetchImpl;
+  const { worker, createSession, dir } = await loadWorker();
+  try {
+    const secret = 'test-secret-test-secret-test-secret';
+    const session = await createSession({ login: 'alice', name: 'Alice', avatar: '', exp: Date.now() + 3600_000, token: 'user-token' }, secret);
+    const env = {
+      GITHUB_ORG: 'noware-cn', GITHUB_REPO: 'workspace', GITHUB_DATA_TOKEN: 'ro-token',
+      SESSION_SECRET: secret, MOCK_MODE: '0', SERVICE_NAME: 'x', ENVIRONMENT: 'test',
+    };
+    const call = async (p) => {
+      const res = await worker.fetch(new Request(`https://worker.test${p}`, {
+        headers: { cookie: `sess=${session}` },
+      }), env, {});
+      return { status: res.status, body: await res.json() };
+    };
+    await call('/api/approvals/1/diff');
+    const before = state.calls.filter((x) => x === 'GET /repos/noware-cn/workspace/pulls/1').length;
+    const refreshed = await call('/api/approvals/1/file?path=docs%2Fa.md&ref=h1&refreshMeta=1');
+    assert.equal(refreshed.status, 200);
+    const after = state.calls.filter((x) => x === 'GET /repos/noware-cn/workspace/pulls/1').length;
+    assert.equal(after - before, 1);
+    await call('/api/approvals/1/file?path=docs%2Fa.md&ref=h1&refreshText=1');
+    const finalCount = state.calls.filter((x) => x === 'GET /repos/noware-cn/workspace/pulls/1').length;
+    assert.equal(finalCount, after);
+  } finally {
+    globalThis.fetch = realFetch;
+    fs.rmSync(dir, { recursive: true, force: true });
+  }
+});
