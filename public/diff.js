@@ -216,9 +216,6 @@
     return html;
   }
 
-  function blockHtml(b, opts) {    return html;
-  }
-
   function blockHtml(b, opts) {
     let cls = "md-block";
     let tag = "";
