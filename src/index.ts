@@ -290,8 +290,8 @@ export default {
         return json({ status: "error", message: "缺少取数令牌：未配置 GITHUB_DATA_TOKEN，且会话中没有登录者令牌。" }, 503);
       }
       try {
-        const refresh = url.searchParams.has("refresh");
-        const { value, stale } = await apiCached(env, `/diff/${number}`, refresh, async () => {
+        const refreshMeta = url.searchParams.has("refreshMeta") || url.searchParams.has("refresh");
+        const { value, stale } = await apiCached(env, `/diff/${number}`, refreshMeta, async () => {
           const [m, f, c] = await Promise.all([
             getPrMeta(env, token, number),
             getPrFiles(env, token, number),
@@ -331,8 +331,9 @@ export default {
       const token = dataToken(env, session);
       if (!token) return json({ status: "error", message: "缺少取数令牌。" }, 503);
       try {
-        const refresh = url.searchParams.has("refresh");
-        const { value } = await apiCached(env, `/diff/${number}`, refresh, async () => {
+        const refreshMeta = url.searchParams.has("refreshMeta") || url.searchParams.has("refresh");
+        const refreshText = url.searchParams.has("refreshText") || url.searchParams.has("refresh");
+        const { value } = await apiCached(env, `/diff/${number}`, refreshMeta, async () => {
           const [meta, files, comments] = await Promise.all([
             getPrMeta(env, token, number),
             getPrFiles(env, token, number),
@@ -356,7 +357,7 @@ export default {
         const sourcePath = side === "base" && file.status === "renamed" && file.previousPath
           ? file.previousPath
           : file.path;
-        const payload = await getFileText(env, token, sourcePath, requestedRef, refresh);
+        const payload = await getFileText(env, token, sourcePath, requestedRef, refreshText);
         return json({ ...payload, path: filePath, ref: requestedRef, side, source: "github" });
       } catch (error) {
         const status = error instanceof GitHubError ? error.status : 502;
