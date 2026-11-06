@@ -32,16 +32,30 @@
 
   /* ---------- 草稿持久化 ---------- */
   const draftsKey = (n) => `wb.drafts.${n}`;
+  const newDraftId = () => window.crypto?.randomUUID?.()
+    || `draft-${Date.now()}-${Math.random().toString(36).slice(2)}`;
   const loadDrafts = () => {
     try {
       const raw = localStorage.getItem(draftsKey(D.n));
       const value = raw ? JSON.parse(raw) : [];
-      D.drafts = Array.isArray(value) ? value : [];
+      D.drafts = Array.isArray(value) ? value.map((d) => ({ ...d, id: d.id || newDraftId() })) : [];
+      if (Array.isArray(value) && value.some((d) => !d.id)) saveDrafts();
     } catch { D.drafts = []; }
   };
   const draftsOutdated = () => D.drafts.some((d) => !d.headSha || d.headSha !== D.meta?.headSha);
   const saveDrafts = () => {
     try { localStorage.setItem(draftsKey(D.n), JSON.stringify(D.drafts)); } catch { /* ignore */ }
+  };
+  const removeSubmittedDrafts = (pr, ids) => {
+    const key = draftsKey(pr);
+    try {
+      const raw = localStorage.getItem(key);
+      const persisted = raw ? JSON.parse(raw) : [];
+      const remaining = (Array.isArray(persisted) ? persisted : []).filter((d) => !ids.has(d.id));
+      if (remaining.length) localStorage.setItem(key, JSON.stringify(remaining));
+      else localStorage.removeItem(key);
+    } catch { /* 清理失败时保留持久化数据 */ }
+    if (String(D.n) === String(pr)) D.drafts = D.drafts.filter((d) => !ids.has(d.id));
   };
   const clearDraftsStorage = () => { try { localStorage.removeItem(draftsKey(D.n)); } catch { /* ignore */ } };
 
@@ -181,15 +195,28 @@
     let j = 0;
     let html = "";
     for (const b of blocks) {
-      // emit insertions whose anchor is within (prevBlockEnd, b.endLine]
+      const pending = [];
       while (j < insertions.length && insertions[j].afterNewLine <= b.endLine) {
-        html += insertionHtml(insertions[j].change, file);
+        pending.push(insertions[j]);
         j += 1;
       }
-      html += blockHtml(b, {});
+      if (b.type === "ul" || b.type === "ol") {
+        const before = pending.filter((item) => item.afterNewLine < b.startLine);
+        const inside = pending.filter((item) => item.afterNewLine >= b.startLine);
+        html += before.map((item) => insertionHtml(item.change, file)).join("");
+        const placed = listBlockWithInsertions(b, inside, file);
+        html += placed.html;
+        html += placed.unplaced.map((item) => insertionHtml(item.change, file)).join("");
+      } else {
+        html += pending.map((item) => insertionHtml(item.change, file)).join("");
+        html += blockHtml(b, {});
+      }
     }
     while (j < insertions.length) { html += insertionHtml(insertions[j].change, file); j += 1; }
     return html;
+  }
+
+  function blockHtml(b, opts) {    return html;
   }
 
   function blockHtml(b, opts) {
@@ -214,7 +241,7 @@
     if (b.type === "code" && b.startLine != null) {
       bodyHtml = bodyHtml.replace(/(<pre><code>)([\s\S]*?)(<\/code><\/pre>)/, (_m, open, code, close) => {
         const lines = code.split("\n");
-        const wrapped = lines.map((ln, i) => `<span class="code-line" data-line="${b.startLine + i}">${ln}</span>`).join("\n");
+        const wrapped = lines.map((ln, i) => `<span class="code-line" data-line="${b.startLine + i + 1}">${ln}</span>`).join("\n");
         return open + wrapped + close;
       });
     }
@@ -235,7 +262,35 @@
     const anchor = anchorLine
       ? `<span class="line-anchor" data-line="${anchorLine}" data-side="RIGHT" role="button" title="在第 ${anchorLine} 行评论">L${anchorLine} +</span>`
       : "";
-    return `<div class="${cls}" data-line="${b.startLine}" data-block="${b.startLine}">${oldBlock}${tag}${bodyHtml}${anchor}</div>`;
+    return `<div class="${cls}" data-line="${b.startLine}" data-end-line="${b.endLine}" data-block="${b.startLine}">${oldBlock}${tag}${bodyHtml}${anchor}</div>`;
+  }
+
+  function listBlockWithInsertions(block, changes, file) {
+    const ranges = window.DiffModel.listItemRanges(block.raw, block.startLine);
+    const byLine = new Map();
+    const unplaced = [];
+    for (const item of changes) {
+      const anchor = item.afterNewLine;
+      const candidates = ranges
+        .filter((range) => range.startLine <= anchor && range.endLine >= anchor)
+        .sort((a, b) => b.startLine - a.startLine);
+      const target = candidates[0];
+      if (!target) { unplaced.push(item); continue; }
+      if (!byLine.has(target.startLine)) byLine.set(target.startLine, []);
+      byLine.get(target.startLine).push(item);
+    }
+    const stack = [];
+    const rendered = blockHtml(block, {});
+    const html = rendered.replace(/<li(?:\s+data-line="(\d+)")?>|<\/li>/g, (tag, line) => {
+      if (tag.startsWith("</li")) {
+        const itemLine = stack.pop();
+        const inserts = byLine.get(itemLine) || [];
+        return inserts.map((item) => insertionHtml(item.change, file)).join("") + tag;
+      }
+      stack.push(line ? Number(line) : null);
+      return tag;
+    });
+    return { html, unplaced };
   }
 
   function insertionHtml(ch, file) {
@@ -455,18 +510,18 @@
     const elementOf = (n) => (n && n.nodeType === 1 ? n : n?.parentElement);
     const lineOf = (n) => {
       const el = elementOf(n);
-      const found = el?.closest?.("[data-line]");
-      if (!found) return null;
-      // 如果命中的是整个 .md-block（块首行），优先找块内的 line-anchor（hunk 内行）
-      if (found.classList?.contains("md-block")) {
-        const anchor = found.querySelector(".line-anchor[data-line]");
-        if (anchor) {
-          const l = Number(anchor.dataset.line);
-          if (Number.isInteger(l) && l > 0) return l;
-        }
+      if (!el?.closest) return null;
+      const codeLine = el.closest(".code-line[data-line]");
+      if (codeLine) {
+        const line = Number(codeLine.dataset.line);
+        return Number.isInteger(line) && line > 0 ? line : null;
       }
-      const l = Number(found.dataset.line);
-      return Number.isInteger(l) && l > 0 ? l : null;
+      const block = el.closest(".md-block[data-line][data-end-line]");
+      if (block && Number(block.dataset.line) === Number(block.dataset.endLine)) {
+        const line = Number(block.dataset.line);
+        return Number.isInteger(line) && line > 0 ? line : null;
+      }
+      return null;
     };
     const s = lineOf(sel?.anchorNode);
     const e = lineOf(sel?.focusNode);
@@ -514,7 +569,7 @@
         if (act.dataset.act === "cancel") { D.active = null; render(); return; }
         if (!text) { toast("先写点内容再存草稿"); return; }
         const a = D.active;
-        D.drafts.push({ path: a.path, start: a.start, end: a.end, body: text, headSha: D.meta.headSha });
+        D.drafts.push({ id: newDraftId(), path: a.path, start: a.start, end: a.end, body: text, headSha: D.meta.headSha });
         D.active = null;
         saveDrafts();
         render();
@@ -614,12 +669,12 @@
       && D.texts[path].headSha === meta.headSha && D.texts[path].baseSha === meta.baseSha) { render(); return; }
     spin(1);
     try {
-      const headR = await fetchJSON(`/api/approvals/${myPr}/file?path=${encodeURIComponent(path)}&ref=${encodeURIComponent(meta.headSha)}${force ? "&refresh=1" : ""}`);
+      const headR = await fetchJSON(`/api/approvals/${myPr}/file?path=${encodeURIComponent(path)}&ref=${encodeURIComponent(meta.headSha)}${force ? "&refreshText=1" : ""}`);
       const headP = await headR.json().catch(() => ({}));
       if (!headR.ok) throw new Error(`加载正文失败（${headR.status}）：${headP.message || ""}`);
       let baseP = { text: "", truncated: false };
       if (file.status !== "added") {
-        const baseR = await fetchJSON(`/api/approvals/${myPr}/file?path=${encodeURIComponent(path)}&ref=${encodeURIComponent(meta.baseSha)}${force ? "&refresh=1" : ""}`);
+        const baseR = await fetchJSON(`/api/approvals/${myPr}/file?path=${encodeURIComponent(path)}&ref=${encodeURIComponent(meta.baseSha)}${force ? "&refreshText=1" : ""}`);
         if (!baseR.ok) throw new Error(`读取改前正文失败（${baseR.status}）`);
         baseP = await baseR.json().catch(() => ({}));
       }
@@ -641,14 +696,15 @@
   /* ---------- 提交草稿 ---------- */
   async function submitDrafts() {
     if (!D.drafts.length && D.event !== "APPROVE") return;
-    draftsOutdatedCheck: {
-      if (draftsOutdated()) { toast("PR 已有新提交，旧草稿不能提交"); return; }
-    }
+    if (draftsOutdated()) { toast("PR 已有新提交，旧草稿不能提交"); return; }
+    D.drafts = D.drafts.map((d) => ({ ...d, id: d.id || newDraftId() }));
+    saveDrafts();
     const myGen = D.generation;
     const myPr = D.n;
     const myHeadSha = D.meta.headSha;
     const myEvent = D.event;
-    const myDrafts = JSON.parse(JSON.stringify(D.drafts)); // 快照
+    const myDrafts = JSON.parse(JSON.stringify(D.drafts));
+    const submittedIds = new Set(myDrafts.map((d) => d.id));
     const eventLabel = { APPROVE: "批准合并", COMMENT: "仅评论", REQUEST_CHANGES: "请求修改" }[myEvent] || myEvent;
     const summary = myDrafts.length
       ? `${eventLabel}（附 ${myDrafts.length} 条行级意见）`
@@ -672,21 +728,18 @@
         body: JSON.stringify(payload),
       });
       const data = await res.json();
-      // 用户已切换 PR 或触发了刷新：不刷新/不改动当前页面，旧 PR 的错误也不弹到新页面
-      if (D.generation !== myGen) {
-        if (res.ok) {
-          try { localStorage.removeItem(draftsKey(myPr)); } catch { /* ignore */ }
-          toast("已提交（但页面已刷新）");
+      if (!res.ok) {
+        if (D.generation === myGen) {
+          toast(`提交失败：${data.message || res.status}`);
+          render();
         }
         return;
       }
-      if (!res.ok) {
-        toast(`提交失败：${data.message || res.status}`);
-        render();
+      removeSubmittedDrafts(myPr, submittedIds);
+      if (D.generation !== myGen) {
+        toast("已提交（但页面已刷新）");
         return;
       }
-      D.drafts = [];
-      clearDraftsStorage();
       toast(`已写入 GitHub：review #${data.review.id}（${data.review.comments} 条）`);
       await load(myPr, true, false);
     } catch (err) {
@@ -705,7 +758,7 @@
     D.err = "";
     spin(1);
     try {
-      const res = await fetchJSON(`/api/approvals/${number}/diff${force ? "?refresh=1" : ""}`);
+      const res = await fetchJSON(`/api/approvals/${number}/diff${force ? "?refreshMeta=1" : ""}`);
       if (D.generation !== myGen) return; // 已切换/刷新
       if (res.status === 401) { location.href = "/auth/login"; return; }
       const data = await res.json();
@@ -724,7 +777,7 @@
         D.commentsByPath.get(c.path).push(c);
       }
       if (!keepDrafts) { D.drafts = []; loadDrafts(); }
-      if (force || (oldSha && (oldSha !== D.meta.headSha || oldBaseSha !== D.meta.baseSha))) { D.texts = {}; modelCache.clear(); }
+      if (oldSha && (oldSha !== D.meta.headSha || oldBaseSha !== D.meta.baseSha)) { D.texts = {}; modelCache.clear(); }
       D.file = (D.files.find((f) => f.path === D.file) || D.files[0] || null)?.path || null;
       render();
 
@@ -745,21 +798,21 @@
           if (D.generation !== myGen) return;
           const file = snap.files.find((f) => f.path === p);
           const have = D.texts[p];
-          if (!force && have && have.headLoaded && have.baseLoaded
+          if (have && have.headLoaded && have.baseLoaded
             && have.headSha === snap.headSha && have.baseSha === snap.baseSha) {
             D.prefetchDone += 1;
             if (p === D.file) render();
             continue;
           }
           try {
-            const hr = await fetchJSON(`/api/approvals/${snap.pr}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(snap.headSha)}${force ? "&refresh=1" : ""}`);
+            const hr = await fetchJSON(`/api/approvals/${snap.pr}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(snap.headSha)}`);
             if (D.generation !== myGen) return;
             const hp = await hr.json().catch(() => ({}));
             if (D.generation !== myGen) return;
             if (!hr.ok) throw new Error(hp.message || `读取正文失败（${hr.status}）`);
             let bp = { text: "", truncated: false };
             if (file && file.status !== "added") {
-              const br = await fetchJSON(`/api/approvals/${snap.pr}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(snap.baseSha)}${force ? "&refresh=1" : ""}`);
+              const br = await fetchJSON(`/api/approvals/${snap.pr}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(snap.baseSha)}`);
               if (D.generation !== myGen) return;
               if (!br.ok) throw new Error(`读取 Base 正文失败（${br.status}）`);
               bp = await br.json().catch(() => ({}));
