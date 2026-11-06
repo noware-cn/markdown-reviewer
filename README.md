@@ -106,19 +106,36 @@ Worker Secret（用 `npx wrangler secret put <NAME>` 写入，不进仓库）：
 
 GitHub OAuth App 回调地址填 `<Worker 对外域名>/auth/callback`。仓库内未声明自定义域（见 `wrangler.jsonc`），生产域名（如是否沿用 `workspace.noware.cn`）需在 Cloudflare Dashboard 配置后核对。组织如启用第三方应用限制，需由组织管理员批准该 OAuth App。
 
-## 生产部署
+## CI/CD
 
-手动部署：
+| 工作流 | 触发 | 内容 |
+|---|---|---|
+| `.github/workflows/ci.yml` | Pull Request / 手动 | `npm ci` → `tsc --noEmit` → `node --test`（54 个用例） |
+| `.github/workflows/deploy-worker.yml` | 合入 `main` / 手动选分支 | 同上校验 → `wrangler deploy --var DEPLOY_COMMIT:<sha>` → 部署后冒烟 |
 
-```bash
-npx wrangler deploy
-```
+仓库 Secret（Settings → Secrets and variables → Actions）：
 
-CI/CD 尚未配置；`npm run deploy:ci` 预留了 Cloudflare Workers Builds 的 `WORKERS_CI_COMMIT_SHA` 注入。部署前需在 Cloudflare Worker 中通过 `npx wrangler secret put <NAME>` 写入上述 Secret。
+| 名称 | 说明 |
+|---|---|
+| `CLOUDFLARE_API_TOKEN` | Cloudflare API Token，权限 `Workers Scripts:Edit`；建议同时限定到本账号 |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare 账号 ID（Dashboard 右侧栏可复制） |
+
+可选仓库 Variable `PROD_BASE_URL`：配置了自定义域就填 `https://<域名>`，冒烟会打到它；不填则从 `wrangler deploy` 输出里解析 `*.workers.dev` 地址。
+
+- Worker 运行时 Secret（`SESSION_SECRET`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`、`GITHUB_DATA_TOKEN`）与 CI 无关：部署不会覆盖，首次仍需 `npx wrangler secret put <NAME>`。
+- 部署提交号写入 Worker 变量 `DEPLOY_COMMIT`，`GET /api/health` 的 `commit` 字段可直接核对；冒烟步骤会断言两者一致，不一致即判失败。
+- 手动部署：`npm run deploy`；带提交号：`npm run deploy:ci`（优先读 `GITHUB_SHA`，回退 `WORKERS_CI_COMMIT_SHA`）。
+- 部署是全量上传后切流量，构建/测试失败时不会改动线上版本。
 
 ## 回滚
 
-Cloudflare Dashboard → Workers & Pages → 对应 Worker → Deployments，选择上一个成功版本执行 Rollback。
+Cloudflare Dashboard → Workers & Pages → 对应 Worker → Deployments，选择上一个成功版本执行 Rollback；或命令行：
+
+```bash
+npx wrangler rollback --name approval-visualization-worker
+```
+
+回滚后用 `GET /api/health` 核对 `commit` 是否回到期望版本。
 
 ## 变更查看与行级评审批注（2026-11-05）
 

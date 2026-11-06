@@ -1,5 +1,5 @@
 {
-  // Cloudflare Workers 生产配置（部署：npx wrangler deploy，CI/CD 待配置）
+  // Cloudflare Workers 生产配置（部署：合入 main 由 .github/workflows/deploy-worker.yml 自动执行）
   "$schema": "./node_modules/wrangler/config-schema.json",
   "name": "approval-visualization-worker",
   "main": "src/index.ts",
