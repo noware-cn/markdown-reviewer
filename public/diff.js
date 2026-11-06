@@ -163,7 +163,7 @@
 
     // interleave head blocks + insertions
     if (!file.patch && file.status !== "added") {
-      return `<div class="error-box">GitHub 未返回该文件的差异（文件过大）。<a href="https://github.com/${D.meta.repo}/pull/${D.n}/files#diff-${encodeURIComponent(file.path)}" target="_blank" rel="noopener">在 GitHub 中查看完整 Diff →</a></div>`
+      return `<div class="error-box">GitHub 未返回该文件的差异（文件过大）。<a href="${D.meta.url}/files#diff-${encodeURIComponent(file.path)}" target="_blank" rel="noopener">在 GitHub 中查看完整 Diff →</a></div>`
         + model.headBlocks.map((b) => blockHtml(b, {})).join("");
     }
     const blocks = model.headBlocks;
@@ -645,7 +645,8 @@
       D.drafts = [];
       clearDraftsStorage();
       toast(`已写入 GitHub：review #${data.review.id}（${data.review.comments} 条）`);
-      render(); // 只需清空草稿并重渲染，不必重新拉取所有数据
+      // 轻量刷新：重新拉评论但不强制重拉文件正文
+      await load(myPr, true, false);
     } catch (err) {
       toast(`提交未确认成功：${String(err)}`);
       render();
