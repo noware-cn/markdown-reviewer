@@ -227,22 +227,36 @@
     return `<p>${raw.split("\n").map(inlineMd).join(" ")}</p>`;
   }
 
-  /* 列表项 → 源码行号：按 raw 顺序扫标记行（跳过围栏代码块内的假标记行）。
-     顺序与 marked 输出的 <li> 深度优先顺序一致，嵌套项也会得到自己的行号。 */
-  function listItemLines(raw, startLine) {
-    const marker = /^\s*([-*+]|\d+[.)])\s+/;
+  /* 列表项源码区间：直接遍历 marked 的 list/list_item token。
+     代码块中的假 marker 不会成为 list_item token，因此不会误映射。 */
+  function listItemRanges(raw, startLine) {
+    const source = String(raw || "");
+    if (!window.marked) return [];
     const out = [];
-    let fence = null;
-    String(raw || "").split("\n").forEach((ln, idx) => {
-      const f = /^\s*(```|~~~)/.exec(ln);
-      if (f) {
-        if (fence === null) fence = f[1];
-        else if (f[1] === fence) fence = null;
-        return;
+    const lineAt = (offset) => startLine + source.slice(0, offset).split("\n").length - 1;
+    const walk = (tokens, segment, baseOffset) => {
+      let cursor = 0;
+      for (const token of tokens || []) {
+        if (token.type !== "list" || !Array.isArray(token.items)) continue;
+        for (const item of token.items) {
+          const itemRaw = item.raw || "";
+          if (!itemRaw) continue;
+          const local = segment.indexOf(itemRaw, cursor);
+          if (local < 0) continue;
+          const absolute = baseOffset + local;
+          const contentEnd = absolute + itemRaw.replace(/\n+$/, "").length;
+          out.push({ startLine: lineAt(absolute), endLine: lineAt(Math.max(absolute, contentEnd - 1)) });
+          walk(item.tokens, itemRaw, absolute);
+          cursor = local + itemRaw.length;
+        }
       }
-      if (fence === null && marker.test(ln)) out.push(startLine + idx);
-    });
+    };
+    walk(window.marked.lexer(source), source, 0);
     return out;
+  }
+
+  function listItemLines(raw, startLine) {
+    return listItemRanges(raw, startLine).map((item) => item.startLine);
   }
 
   /* ---------- 3. 文本相似度（中文按字二元组） ---------- */
@@ -393,5 +407,5 @@
     return { parsed, headBlocks, baseBlocks, changes, headInsertions };
   }
 
-  window.DiffModel = { parsePatch, mdBlocks, buildModel, similarity, esc, listRanges, listItemLines };
+  window.DiffModel = { parsePatch, mdBlocks, buildModel, similarity, esc, listRanges, listItemLines, listItemRanges };
 })();
