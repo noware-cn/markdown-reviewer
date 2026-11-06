@@ -25,6 +25,7 @@
     navIdx: -1,
     scrollPos: {}, // "path:mode" -> scrollTop
     lastViewKey: null,
+    generation: 0,
   };
 
   const esc = window.DiffModel.esc;
@@ -166,8 +167,7 @@
 
     // interleave head blocks + insertions
     if (!file.patch && file.status !== "added") {
-      return `<div class="error-box">GitHub 未返回该文件的差异（文件过大）。<a href="${D.meta.url}/files#diff-${encodeURIComponent(file.path)}" target="_blank" rel="noopener">在 GitHub 中查看完整 Diff →</a></div>`
-        + model.headBlocks.map((b) => blockHtml(b, {})).join("");
+      return `<div class="error-box">GitHub 未返回该文件的差异（文件过大）。无法在工作台中安全审阅此文件，请在 GitHub 中查看完整 Diff。<br><br><a href="${D.meta.url}/files#diff-${encodeURIComponent(file.path)}" target="_blank" rel="noopener">在 GitHub 中查看完整 Diff →</a></div>`;
     }
     const blocks = model.headBlocks;
     const insertions = model.headInsertions;
@@ -582,7 +582,7 @@
 
   /* ---------- 文件加载 ---------- */
   async function selectFile(path, force) {
-    const myPr = D.n;
+    const myGen = D.generation;
     D.file = path;
     D.active = null;
     D.navIdx = -1;
@@ -601,18 +601,17 @@
       let baseP = { text: "", truncated: false };
       if (file.status !== "added") {
         const baseR = await fetchJSON(`/api/approvals/${D.n}/file?path=${encodeURIComponent(path)}&ref=${encodeURIComponent(meta.baseSha)}${force ? "&refresh=1" : ""}`);
+        if (!baseR.ok) throw new Error(`读取改前正文失败（${baseR.status}）`);
         baseP = await baseR.json().catch(() => ({}));
-        if (!baseR.ok && file.status !== "removed") throw new Error(`读取改前正文失败（${baseR.status}）`);
       }
-      // 用户可能已切换到其他 PR，过期结果不写入缓存
-      if (D.n !== myPr) return;
+      if (D.generation !== myGen) return;
       D.texts[path] = {
         base: baseP.text || "", head: headP.text || "",
         headLoaded: true, baseLoaded: true,
         headTruncated: !!headP.truncated, baseTruncated: !!baseP.truncated,
       };
     } catch (err) {
-      if (D.n !== myPr) return;
+      if (D.generation !== myGen) return;
       D.err = err.name === "AbortError" ? "正文加载超时，请重试" : String(err);
       D.texts[path] = { base: "", head: "", headLoaded: false, baseLoaded: false, headTruncated: false, baseTruncated: false };
     } finally { spin(-1); }
@@ -625,8 +624,8 @@
     draftsOutdatedCheck: {
       if (draftsOutdated()) { toast("PR 已有新提交，旧草稿不能提交"); return; }
     }
-    const myPr = D.n; // 捕获当前 PR 号，防止用户中途切换
-    const myHeadSha = D.meta.headSha;
+    const myGen = D.generation;
+    const myPr = D.n;
     const eventLabel = { APPROVE: "批准合并", COMMENT: "仅评论", REQUEST_CHANGES: "请求修改" }[D.event] || D.event;
     const summary = D.drafts.length
       ? `${eventLabel}（附 ${D.drafts.length} 条行级意见）`
@@ -655,12 +654,11 @@
         render();
         return;
       }
-      // 检查用户是否已切换到其他 PR
-      if (D.n !== myPr) { toast("已提交（但你已切换到其他 PR）"); return; }
+      // 检查用户是否已切换到其他 PR 或触发了刷新
+      if (D.generation !== myGen) { toast("已提交（但页面已刷新）"); return; }
       D.drafts = [];
       clearDraftsStorage();
       toast(`已写入 GitHub：review #${data.review.id}（${data.review.comments} 条）`);
-      // 轻量刷新：重新拉评论但不强制重拉文件正文
       await load(myPr, true, false);
     } catch (err) {
       toast(`提交未确认成功：${String(err)}`);
@@ -671,6 +669,8 @@
   /* ---------- 加载 PR ---------- */
   async function load(number, keepDrafts, force) {
     D.n = number;
+    D.generation += 1;
+    const myGen = D.generation;
     D.err = "";
     spin(1);
     try {
@@ -695,7 +695,6 @@
       render();
 
       // prefetch all files with limit 4
-      const myPr = D.n;
       const order = D.files.map((f) => f.path);
       D.prefetchTotal = order.length;
       D.prefetchDone = 0;
@@ -705,20 +704,19 @@
           const p = order[idx]; idx += 1;
           const file = D.files.find((f) => f.path === p);
           try {
-            const hr = await fetchJSON(`/api/approvals/${myPr}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(D.meta.headSha)}${force ? "&refresh=1" : ""}`);
+            const hr = await fetchJSON(`/api/approvals/${D.n}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(D.meta.headSha)}${force ? "&refresh=1" : ""}`);
             const hp = await hr.json().catch(() => ({}));
             if (!hr.ok) throw new Error(hp.message || `读取正文失败（${hr.status}）`);
             let bp = { text: "", truncated: false };
             if (file && file.status !== "added") {
-              const br = await fetchJSON(`/api/approvals/${myPr}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(D.meta.baseSha)}${force ? "&refresh=1" : ""}`);
+              const br = await fetchJSON(`/api/approvals/${D.n}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(D.meta.baseSha)}${force ? "&refresh=1" : ""}`);
               if (!br.ok) throw new Error(`读取 Base 正文失败（${br.status}）`);
               bp = await br.json().catch(() => ({}));
             }
-            if (D.n !== myPr) return; // 已切换 PR，不写入
+            if (D.generation !== myGen) return; // 已切换/刷新，不写入
             D.texts[p] = { base: bp.text || "", head: hp.text || "", headLoaded: true, baseLoaded: true, headTruncated: !!hp.truncated, baseTruncated: !!bp.truncated, error: "" };
           } catch (err) {
-            if (D.n !== myPr) return;
-            // 已有成功缓存时不覆盖为空
+            if (D.generation !== myGen) return;
             if (!D.texts[p]?.headLoaded) {
               D.texts[p] = { base: "", head: "", headLoaded: false, baseLoaded: false, headTruncated: false, baseTruncated: false, error: String(err) };
             }

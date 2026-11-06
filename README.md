@@ -106,32 +106,19 @@ Worker Secret（用 `npx wrangler secret put <NAME>` 写入，不进仓库）：
 
 GitHub OAuth App 回调地址填 `https://workspace.noware.cn/auth/callback`。组织如启用第三方应用限制，需由组织管理员批准该 OAuth App。
 
-## 生产部署（GitHub Actions）
+## 生产部署
 
-流水线文件：`.github/workflows/deploy-worker.yml`。
+手动部署：
 
-| 项目 | 配置 |
-|---|---|
-| 触发 | `main` 分支下本目录或工作流文件变更；`topic/approval-visualization-mvp` 分支仅在提交信息以 `deploy:` 开头时触发；支持 `workflow_dispatch` 手动触发 |
-| 运行环境 | `ubuntu-latest`，Node 22，`environment: production` |
-| 步骤 | checkout → `npm ci` → `npm run build` → `cloudflare/wrangler-action@v3` 部署 → 生产健康检查 |
-| 部署命令 | `deploy --var DEPLOY_COMMIT:<github.sha>` |
+```bash
+npx wrangler deploy
+```
 
-仓库需配置：
-
-| 类型 | 名称 | 必须 | 说明 |
-|---|---|---|---|
-| Secret | `CLOUDFLARE_API_TOKEN` | 是 | 需 `Workers Scripts:Edit` |
-| Secret | `CLOUDFLARE_ACCOUNT_ID` | 是 | 账号 ID |
-| Variable | `PRODUCTION_URL` | 否 | 设置后自动执行生产 `/api/health` 校验 |
-
-`DEPLOY_COMMIT` 注入本次提交 SHA，`PRODUCTION_URL` 设置后流水线会用 `EXPECT_COMMIT` 断言生产 `commit` 与本次提交一致。
-
-生产部署默认由 `main` 的合规更新触发。为本次个人应用部署，额外允许 `topic/approval-visualization-mvp` 分支使用 `deploy:` 前缀提交触发；其他 `topic/*` 分支仍不触发生产部署。仓库内不保存任何 Token 或密钥。
+CI/CD 工作流待配置。部署前需在 Cloudflare Worker 中通过 `npx wrangler secret put <NAME>` 写入上述 Secret。
 
 ## 回滚
 
-Cloudflare Dashboard → Workers & Pages → `approval-visualization-worker` → Deployments，选择上一个成功版本执行 Rollback，然后用 `BASE_URL=<生产地址> npm run smoke` 复核。
+Cloudflare Dashboard → Workers & Pages → 对应 Worker → Deployments，选择上一个成功版本执行 Rollback。
 
 ## 变更查看与行级评审批注（2026-11-05）
 
