@@ -68,20 +68,21 @@ jobs:
             echo "- 部署地址: ${url:-未从输出解析到}"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Smoke test deployed worker
+      - name: Verify deployment
         env:
-          BASE_URL: ${{ vars.PROD_BASE_URL || steps.deploy.outputs.url }}
+          PROD_BASE_URL: ${{ vars.PROD_BASE_URL || steps.deploy.outputs.url }}
           EXPECT_COMMIT: ${{ github.sha }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          if [ -z "${BASE_URL:-}" ]; then
-            echo "::warning::未取到部署地址（可用仓库变量 PROD_BASE_URL 指定自定义域），跳过冒烟"
-            exit 0
+          if [ -z "${PROD_BASE_URL:-}" ]; then
+            echo "::warning::未取到部署地址（可用仓库变量 PROD_BASE_URL 指定），本次只校验线上绑定"
           fi
           for attempt in 1 2 3 4 5 6; do
-            if node scripts/smoke.mjs; then exit 0; fi
-            echo "第 ${attempt} 次冒烟未通过，5 秒后重试"
+            if npm run test:prod; then exit 0; fi
+            echo "第 ${attempt} 次验证未通过，5 秒后重试"
             sleep 5
           done
-          echo "::error::部署后冒烟失败：$BASE_URL/api/health 未在预期时间内返回 commit=${EXPECT_COMMIT}"
+          echo "::error::部署后验证失败：/api/health 或 DEPLOY_COMMIT 与 ${EXPECT_COMMIT} 不一致"
           exit 1
