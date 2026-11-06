@@ -149,6 +149,9 @@
     }
     // removed file: show base doc
     if (file.status === "removed") {
+      if (textState.baseTruncated) {
+        return `<div class="error-box">删除文件超过读取上限（400 KB），Base 内容不完整，请用 GitHub 查看完整版本。</div>`;
+      }
       const baseBlocks = window.DiffModel.mdBlocks(textOf(file.path, "base"));
       return `<div class="del-block"><div class="del-head">此文件在本 PR 中已删除</div>`
         + `<div class="del-body">以下为删除前完整内容（Base 版本）：</div></div>`

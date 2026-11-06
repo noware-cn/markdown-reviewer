@@ -24,18 +24,19 @@ const json = (data: unknown, status = 200, extra: HeadersInit = {}): Response =>
 const html = (body: string, status = 200): Response =>
   new Response(body, { status, headers: { "content-type": "text/html; charset=utf-8" } });
 
-/** 解析 patch，返回 head 侧可评论的行号集合（add + ctx op 的 new 行号） */
-function commentableHeadLines(patch: string | null): Set<number> | null {
+/** 解析 patch，返回 head 侧可评论行号 → hunk 索引的映射（add + ctx op 的 new 行号） */
+function commentableHeadLines(patch: string | null): Map<number, number> | null {
   if (!patch) return null;
   const lines = patch.split("\n");
-  const result = new Set<number>();
+  const result = new Map<number, number>();
   let newNo = 0;
+  let hunkIdx = -1;
   for (const line of lines) {
     const h = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(line);
-    if (h) { newNo = Number(h[1]); continue; }
-    if (line.startsWith("+")) { result.add(newNo); newNo += 1; }
+    if (h) { newNo = Number(h[1]); hunkIdx += 1; continue; }
+    if (line.startsWith("+")) { result.set(newNo, hunkIdx); newNo += 1; }
     else if (line.startsWith("-")) { /* del, skip */ }
-    else if (line.startsWith(" ") || line === "") { result.add(newNo); newNo += 1; }
+    else if (line.startsWith(" ") || line === "") { result.set(newNo, hunkIdx); newNo += 1; }
   }
   return result;
 }
@@ -425,8 +426,13 @@ export default {
           const outOfHunk = drafts.find((draft) => {
             const cl = commentableHeadLines(patchByPath.get(draft.path) ?? null);
             if (cl === null) return false; // 无 patch（新增文件）→ 所有行可评论
-            return !cl.has(Number(draft.line))
-              || (draft.start_line !== undefined && !cl.has(Number(draft.start_line)));
+            const lineHunk = cl.get(Number(draft.line));
+            if (lineHunk === undefined) return true;
+            if (draft.start_line !== undefined) {
+              const startHunk = cl.get(Number(draft.start_line));
+              if (startHunk === undefined || startHunk !== lineHunk) return true;
+            }
+            return false;
           });
           if (outOfHunk) return json({ status: "error", message: `草稿定位在 diff 之外（${outOfHunk.path.split("/").pop()} L${outOfHunk.line}），请只在变更行或相邻上下文行评论。` }, 400);
         }
