@@ -281,10 +281,10 @@ test('严格选区定位：多行块不回退到块首', () => {
   const multi = node('.md-block[data-line][data-end-line]', { line: '4', endLine: '8' });
   assert.equal(app.ctx.window.__locateFromSelection({ anchorNode: multi, focusNode: multi }), null);
   const single = node('.md-block[data-line][data-end-line]', { line: '4', endLine: '4' });
-  assert.deepEqual(app.ctx.window.__locateFromSelection({ anchorNode: single, focusNode: single }), { start: 4, end: 4 });
+  assert.deepEqual({ ...app.ctx.window.__locateFromSelection({ anchorNode: single, focusNode: single }) }, { start: 4, end: 4 });
   const codeA = node('.code-line[data-line]', { line: '10' });
   const codeB = node('.code-line[data-line]', { line: '12' });
-  assert.deepEqual(app.ctx.window.__locateFromSelection({ anchorNode: codeA, focusNode: codeB }), { start: 10, end: 12 });
+  assert.deepEqual({ ...app.ctx.window.__locateFromSelection({ anchorNode: codeA, focusNode: codeB }) }, { start: 10, end: 12 });
   const unknown = { nodeType: 1, dataset: { line: '3' }, closest() { return null; } };
   assert.equal(app.ctx.window.__locateFromSelection({ anchorNode: unknown, focusNode: unknown }), null);
 });
@@ -292,7 +292,7 @@ test('严格选区定位：多行块不回退到块首', () => {
 test('代码块逐行映射从围栏下一行开始', () => {
   const world = makeWorld();
   const app = mountApp(world);
-  const block = app.ctx.window.DiffModel.mdBlocks('```js\\nconst x = 1;\\n```')[0];
+  const block = app.ctx.window.DiffModel.mdBlocks('```js\nconst x = 1;\n```')[0];
   const html = app.ctx.window.__blockHtml(block, {});
   assert.ok(html.includes('class="code-line" data-line="2"'));
 });
@@ -300,7 +300,7 @@ test('代码块逐行映射从围栏下一行开始', () => {
 test('列表删除项在原列表项位置插入', () => {
   const world = makeWorld();
   const app = mountApp(world);
-  const block = app.ctx.window.DiffModel.mdBlocks('- 第一项\\n- 第三项').find((b) => b.type === 'ul');
+  const block = app.ctx.window.DiffModel.mdBlocks('- 第一项\n- 第三项').find((b) => b.type === 'ul');
   const result = app.ctx.window.__listBlockWithInsertions(block, [{
     afterNewLine: 1,
     change: { id: 'del-2', oldStart: 2, oldEnd: 2, oldText: '- 第二项' },
@@ -310,7 +310,7 @@ test('列表删除项在原列表项位置插入', () => {
   const firstClose = result.html.indexOf('</li>', first);
   const second = result.html.indexOf('<li data-line="2">');
   assert.ok(first >= 0 && firstClose < deleted && deleted < second);
-  assert.deepEqual(result.unplaced, []);
+  assert.deepEqual(Array.from(result.unplaced), []);
 });
 
 test('提交成功只删除快照草稿，保留请求期间新增的草稿', async () => {
@@ -338,6 +338,7 @@ test('手动强制刷新只刷新 PR 元数据，不强制刷新正文', async (
   const app = mountApp(world);
   await mountComplete(world, app, 1);
   const beforeFiles = world.calls.filter((c) => c.url.includes('/file?')).length;
+  world.gate = () => false; // 本用例只关心请求参数，不拦截网络
   await app.ctx.window.__load(1, true, true);
   assert.ok(world.calls.some((c) => c.url.includes('/1/diff') && c.url.includes('refreshMeta=1')));
   assert.equal(world.calls.filter((c) => c.url.includes('/file?')).length, beforeFiles);
