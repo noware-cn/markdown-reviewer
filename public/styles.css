@@ -358,3 +358,10 @@ body.wb-mode-on .layout { display: none; }
 }
 .nav-float button:hover { background: #f0f0f0; }
 .nav-float #navCount { min-width: 36px; text-align: center; }
+
+
+/* 阅读模式中原位插入的已删除列表项：作为列表兄弟项展示，不嵌套进上一项。 */
+.list-deleted-item {
+  list-style: none;
+  margin-block: 0.35em;
+}
