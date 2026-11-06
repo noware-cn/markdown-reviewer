@@ -438,8 +438,17 @@
     const elementOf = (n) => (n && n.nodeType === 1 ? n : n?.parentElement);
     const lineOf = (n) => {
       const el = elementOf(n);
-      const anchor = el?.closest?.("[data-line]");
-      const l = Number(anchor?.dataset?.line);
+      const found = el?.closest?.("[data-line]");
+      if (!found) return null;
+      // 如果命中的是整个 .md-block（块首行），优先找块内的 line-anchor（hunk 内行）
+      if (found.classList?.contains("md-block")) {
+        const anchor = found.querySelector(".line-anchor[data-line]");
+        if (anchor) {
+          const l = Number(anchor.dataset.line);
+          if (Number.isInteger(l) && l > 0) return l;
+        }
+      }
+      const l = Number(found.dataset.line);
       return Number.isInteger(l) && l > 0 ? l : null;
     };
     const s = lineOf(sel?.anchorNode);
