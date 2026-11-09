@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Markdown 文档审批工作台 · noware-cn/workspace</title>
-<link rel="stylesheet" href="/styles.css?v=312">
+<link rel="stylesheet" href="/styles.css?v=317">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -63,9 +63,11 @@
   <div class="dloading" id="wbLoading" hidden><span class="spin"></span><span>正在从 GitHub 加载…</span></div>
   <header class="wb-topbar">
     <button class="wb-back" id="wbBack" type="button" title="返回任务列表" aria-label="返回任务列表">← 返回列表</button>
-    <button class="wb-nav-toggle" id="wbNavToggle" type="button" title="切换文件导航">☰</button>
-    <h1 class="wb-pr" id="wbPrTitle">—</h1>
-    <div class="wb-stats" id="wbStats"></div>
+    <button class="wb-nav-toggle" id="wbNavToggle" type="button" title="切换文件导航" aria-label="切换文件导航"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.5 3.5h11M1.5 7h11M1.5 10.5h11"/></svg></button>
+    <span class="wb-brand">
+      <span class="brand-mark" aria-hidden="true"></span>
+      <span class="wb-brand-text">审批工作台</span>
+    </span>
     <span class="wb-orig-wrap" id="wbOrigWrap" hidden>
       <a class="wb-orig" id="wbOrig" href="#" target="_blank" rel="noopener">原始 PR</a>
       <button class="wb-orig-copy" id="wbOrigCopy" type="button" title="复制 PR 链接">复制</button>
@@ -89,6 +91,14 @@
           </div>
         </div>
         <div class="look-group">
+          <span class="look-label">阅读宽度</span>
+          <div class="look-seg" role="radiogroup" aria-label="阅读宽度">
+            <button type="button" data-read="narrow" role="radio" aria-checked="false">窄</button>
+            <button type="button" data-read="standard" role="radio" aria-checked="true">标准</button>
+            <button type="button" data-read="wide" role="radio" aria-checked="false">宽</button>
+          </div>
+        </div>
+        <div class="look-group">
           <span class="look-label">表格样式</span>
           <div class="look-seg" role="radiogroup" aria-label="表格样式">
             <button type="button" data-tbl="grid" role="radio" aria-checked="true">网格</button>
@@ -105,7 +115,8 @@
     <aside class="wb-nav" id="wbNav">
       <div class="wb-nav-head">
         <span class="wb-nav-title">变更文件</span>
-        <button class="wb-nav-fold" id="wbNavFold" type="button" title="收起导航">◀</button>
+        <span class="wb-progress" id="wbProgress"></span>
+        <button class="wb-nav-fold" id="wbNavFold" type="button" title="收起导航" aria-label="收起导航">◀</button>
       </div>
       <div class="wb-nav-tools">
         <input class="wb-filter" id="wbFilter" type="search" placeholder="筛选文件路径" autocomplete="off">
@@ -135,14 +146,22 @@
     <div class="wb-sash-col" id="wbSashX" role="separator" aria-orientation="vertical" tabindex="0"
       title="拖动调整左栏宽度（双击复位）" aria-label="调整左栏宽度"></div>
 
-    <main class="wb-doc" id="wbDoc">
+    <div class="wb-pane" id="wbPane">
+      <div class="wb-titlerow">
+        <div class="wb-title-block">
+          <div class="wb-title" id="wbPrTitle">—</div>
+          <p class="wb-subline" id="wbStats"></p>
+        </div>
+      </div>
+      <main class="wb-doc" id="wbDoc">
       <div class="wb-filepath" id="wbFilepath" hidden>
         <span class="fp-mark" id="wbFilepathMark"></span>
         <span class="fp-dir" id="wbFilepathDir"></span>
         <span class="fp-name" id="wbFilepathName"></span>
       </div>
-      <article class="wb-content" id="wbContent"></article>
-    </main>
+        <article class="wb-content" id="wbContent"></article>
+      </main>
+    </div>
 
     <aside class="wb-drawer" id="wbDrawer">
       <div class="wb-drawer-head">
@@ -174,8 +193,8 @@ window.DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 });
 </script>
 <script src="/route.js?v=1"></script>
-<script src="/diff-model.js?v=210"></script>
-<script src="/diff.js?v=230"></script>
-<script src="/app.js?v=217"></script>
+<script src="/diff-model.js?v=211"></script>
+<script src="/diff.js?v=233"></script>
+<script src="/app.js?v=220"></script>
 </body>
 </html>

@@ -195,7 +195,22 @@
     }, extra || {});
   }
 
+  /**
+   * 文档内的 # 是文档标题，屏幕标题由壳层的 h1 承担：整体降一级，
+   * 并给原 h1 打上 doc-h1 保持字号层级。
+   */
+  function demoteHeading(html) {
+    return html
+      .replace(/<h([1-5])([^>]*)>/g, (m, lvl, attrs) => {
+        const up = Number(lvl) + 1;
+        const cls = Number(lvl) === 1 ? ' class="doc-h1"' : "";
+        return `<h${up}${cls}${attrs}>`;
+      })
+      .replace(/<\/h([1-5])>/g, (m, lvl) => `</h${Number(lvl) + 1}>`);
+  }
+
   function renderBlockHtml(type, raw, extra) {
+    const isHeading = /^h[1-6]$/.test(type);
     // 使用 marked 做高质量渲染；未加载则降级到内置渲染
     if (window.marked) {
       let src = raw;
@@ -205,10 +220,11 @@
       else if (type === "quote") src = raw.split("\n").map((t) => "> " + t).join("\n");
       try {
         const out = window.marked.parse(src);
-        return window.DOMPurify ? window.DOMPurify.sanitize(out) : esc(src);
+        const clean = window.DOMPurify ? window.DOMPurify.sanitize(out) : out;
+        return isHeading ? demoteHeading(clean) : clean;
       } catch (e) { /* fall through */ }
     }
-    if (type === "h1" || type === "h2" || type === "h3" || type === "h4") {
+    if (isHeading) {
       const lvl = Math.min(Number(type[1]) + 1, 4);
       return `<h${lvl}>${inlineMd(raw)}</h${lvl}>`;
     }
@@ -647,8 +663,9 @@
   }
 
   /** 整篇渲染（引用文档与独立文档页共用）：marked → 清洗 → 标题锚点 → 表格可滚动外壳。 */
-  function renderMarkdown(text) {
+  function renderMarkdown(text, opts) {
     const src = String(text || "");
+    const demote = !!(opts && opts.demote);
     if (!window.marked) return `<pre class="plain-text">${esc(src)}</pre>`;
     let html = "";
     try {
@@ -658,7 +675,7 @@
     }
     const clean = window.DOMPurify ? window.DOMPurify.sanitize(html) : html;
     const seen = new Map();
-    return clean
+    const body = clean
       .replace(/<h([1-6])>([\s\S]*?)<\/h\1>/g, (match, level, inner) => {
         const title = inner.replace(/<[^>]+>/g, "");
         let id = slugify(title);
@@ -667,7 +684,9 @@
         seen.set(id, count + 1);
         if (count) id = `${id}-${count}`;
         return `<h${level} id="${id}">${inner}</h${level}>`;
-      })
+      });
+    const out = demote ? demoteHeading(body) : body;
+    return out
       .replace(/<table>/g, `<div class="table-shell"><div class="tscroll"><table>`)
       .replace(/<\/table>/g, `</table></div></div>`);
   }

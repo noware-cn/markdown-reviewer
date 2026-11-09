@@ -94,8 +94,25 @@ const toastHint = (message) => {
 };
 
 /* 进入工作台：hideList 时不写 URL（刷新恢复 / 前进后退已经由浏览器写好） */
+/**
+ * 同一时刻页面只有一个 h1：当前屏幕的名字在标题层级里，另一屏的标题降级为普通元素。
+ * 列表与工作台都只是显隐切换，DOM 里始终同时存在两块，所以进出时要显式换回来。
+ */
+const setTitleTag = (id, tag) => {
+  const el = document.getElementById(id);
+  if (!el || el.tagName === tag.toUpperCase()) return;
+  const next = document.createElement(tag);
+  next.id = id;
+  next.className = el.className;
+  next.textContent = el.textContent;
+  if (el.getAttribute("title")) next.setAttribute("title", el.getAttribute("title"));
+  el.replaceWith(next);
+};
+
 const enterWorkbench = async (number, opts = {}, historyMode = "push") => {
   state.selected = number;
+  setTitleTag("wbPrTitle", "h1");
+  setTitleTag("listTitle", "div");
   renderList();
   if (historyMode === "push") {
     route.push({
@@ -114,6 +131,8 @@ const enterWorkbench = async (number, opts = {}, historyMode = "push") => {
 const exitWorkbench = (fromHistory) => {
   if (window.DiffView) window.DiffView.unmount();
   state.selected = null;
+  setTitleTag("wbPrTitle", "div");
+  setTitleTag("listTitle", "h1");
   document.title = "审批可视化";
   renderList();
   if (fromHistory) return;

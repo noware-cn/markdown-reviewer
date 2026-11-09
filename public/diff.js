@@ -30,6 +30,7 @@
     tstate: {},      // path -> 表格视图状态（隐藏列 / 固定列 / 仅看变化 / 密度）
     theme: "paper",  // 文档主题：paper 纸白 / sepia 暖纸 / night 夜读
     tbl: "grid",     // 表格样式：grid 网格 / zebra 斑马 / plain 极简
+    read: "standard", // 阅读宽度：narrow 窄 / standard 标准 / wide 宽
     pendingAnchor: null, // 深链待定位：{ line, endLine } 或 { heading }
     pendingFile: null,
     urlLine: null,   // 当前地址里的行号：重渲染（开评论、切标记）时保留，不要被清掉
@@ -37,6 +38,7 @@
 
   const THEMES = ["paper", "sepia", "night"];
   const TBL_STYLES = ["grid", "zebra", "plain"];
+  const READ_WIDTHS = ["narrow", "standard", "wide"];
   const MODES = ["reading", "sidebyside", "unified", "split"];
 
   const esc = window.DiffModel.esc;
@@ -148,6 +150,7 @@
     sections: "wb.nav.sections",
     theme: "wb.doc.theme",
     tbl: "wb.doc.tbl",
+    read: "wb.doc.read",
   };
   const readPref = (key, fallback) => {
     try {
@@ -166,6 +169,7 @@
     if (!wb) return;
     if (wb.dataset.theme !== D.theme) wb.dataset.theme = D.theme;
     if (wb.dataset.tbl !== D.tbl) wb.dataset.tbl = D.tbl;
+    if (wb.dataset.read !== D.read) wb.dataset.read = D.read;
     if (D.syncLook) D.syncLook();
   };
 
@@ -179,6 +183,16 @@
     if (!window.AppRoute || !D.n || D.ref) return;
     (method === "push" ? window.AppRoute.push : window.AppRoute.replace)(routeState(extra));
   };
+
+  /** 副行时间：同一天只给时分，跨天给月-日 */
+  function shortTime(iso) {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return String(iso).slice(0, 10);
+    const pad = (n) => String(n).padStart(2, "0");
+    const now = new Date();
+    const sameDay = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
+    return sameDay ? `${pad(d.getHours())}:${pad(d.getMinutes())}` : `${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
 
   const setDocumentTitle = () => {
     if (!D.n) { document.title = "审批可视化"; return; }
@@ -227,7 +241,7 @@
     if (!target) return false;
     D.pendingAnchor = null;
     target.scrollIntoView({ block: "center" });
-    target.style.outline = "2px solid var(--mod)";
+    target.style.outline = "2px solid var(--text)";
     target.style.outlineOffset = "3px";
     setTimeout(() => { target.style.outline = ""; target.style.outlineOffset = ""; }, 1600);
     D.urlLine = line;
@@ -712,7 +726,7 @@
       }
     }
     while (j < insertions.length) { html += insertionHtml(insertions[j].change, file); j += 1; }
-    return html;
+    return html + changeRail(blocks, file);
   }
 
   function blockHtml(b, opts) {
@@ -778,6 +792,31 @@
         `${pad}<h${level}${attrs} data-line="${b.startLine}"><a class="hlink" href="#L${b.startLine}" data-hlink="${b.startLine}" title="复制本段链接" aria-label="复制第 ${b.startLine} 行所在标题的链接">#</a>`);
     }
     return `<div class="${cls}" data-line="${b.startLine}" data-end-line="${b.endLine}" data-block="${b.startLine}">${oldBlock}${tag}${bodyHtml}${anchor}</div>`;
+  }
+
+  /**
+   * 变更密度尺：把本次改动的块按行号投到左沟槽上，点一下就跳过去。
+   * 整篇新增的文件没有可导航的位置，直接不出。
+   */
+  function changeRail(blocks, file) {
+    if (!D.marks || !blocks || !blocks.length || file.status === "added") return "";
+    const total = blocks[blocks.length - 1].endLine || blocks[blocks.length - 1].startLine || 0;
+    if (!total) return "";
+    const ticks = blocks
+      .filter((b) => b.startLine && b.changeState && b.changeState !== "same")
+      .map((b) => {
+        const kind = b.changeState === "removed" ? "del" : b.changeState === "added" ? "add" : "mod";
+        const end = b.endLine || b.startLine;
+        const top = ((b.startLine - 1) / total) * 100;
+        const h = Math.max(((end - b.startLine + 1) / total) * 100, 0.9);
+        const label = kind === "add" ? "新增" : kind === "del" ? "删除" : "修改";
+        return `<button type="button" class="drail-t ${kind}" data-drail="${b.startLine}"
+          style="top:${top.toFixed(2)}%;height:${h.toFixed(2)}%"
+          title="第 ${b.startLine} 行 · ${label}" aria-label="跳到第 ${b.startLine} 行（${label}）"></button>`;
+      })
+      .join("");
+    if (!ticks) return "";
+    return `<div class="drail" aria-label="本次变更的位置">${ticks}</div>`;
   }
 
   function listBlockWithInsertions(block, changes, file) {
@@ -1076,7 +1115,7 @@
     if (file && D.commentsByPath) {
       const list = D.commentsByPath.get(file.path) || [];
       if (list.length) {
-        parts.push(`<div style="font-size:12px;color:var(--ink-3);margin:4px 0;">历史评论（${list.length}）</div>`);
+        parts.push(`<div style="font-size:var(--fs-meta);color:var(--muted);margin:4px 0;">历史评论（${list.length}）</div>`);
         parts.push(list.map((c) => `<div class="commentnote"><b>${esc(c.author)} · L${c.line || c.originalLine}</b><br>${esc(c.body.replace(/\n+/g, " "))}${c.url ? ` <a href="${esc(c.url)}" target="_blank" rel="noopener">→</a>` : ""}</div>`).join(""));
       }
     }
@@ -1091,7 +1130,7 @@
     }
     // drafts
     if (D.drafts.length) {
-      parts.push(`<div style="font-size:12px;color:var(--ink-3);margin:10px 0 4px;">本地草稿（${D.drafts.length}）</div>`);
+      parts.push(`<div style="font-size:var(--fs-meta);color:var(--muted);margin:10px 0 4px;">本地草稿（${D.drafts.length}）</div>`);
       parts.push(D.drafts.map((d, idx) => {
         const outdated = !d.headSha || d.headSha !== D.meta?.headSha;
         return `<div class="ddraft"><div class="dloc">${esc(d.path.split("/").pop())} · ${lineSpan(d.start, d.end)}${d.unanchored ? ` <span class="dflag">文字评论</span>` : ""}${outdated ? " · 版本已变化" : ""}</div>`
@@ -1150,7 +1189,7 @@
     D.navIdx = (D.navIdx + dir + els.length) % els.length;
     const target = els[D.navIdx];
     target.scrollIntoView({ block: "center", behavior: "smooth" });
-    target.style.outline = "2px solid var(--mod)";
+    target.style.outline = "2px solid var(--text)";
     setTimeout(() => { target.style.outline = ""; }, 1500);
     document.getElementById("navCount").textContent = `${D.navIdx + 1}/${els.length}`;
   }
@@ -1465,7 +1504,7 @@
         : "";
       return bar + `<div class="error-box">${esc(ref.error)}<br><span class="refdoc-hint">${esc(ref.path)}</span></div>` + cands;
     }
-    const body = isCsv(ref.path) ? refCsvHTML(ref.text) : window.DiffModel.renderMarkdown(ref.text);
+    const body = isCsv(ref.path) ? refCsvHTML(ref.text) : window.DiffModel.renderMarkdown(ref.text, { demote: true });
     return bar + `<article class="md-block refdoc">${body}</article>`;
   }
 
@@ -1542,10 +1581,16 @@
     if (D.lastViewKey) {
       D.scrollPos[D.lastViewKey] = document.getElementById("wbDoc").scrollTop;
     }
-    document.getElementById("wbPrTitle").textContent = `#${meta.number} ${meta.title}`;
-    document.getElementById("wbStats").textContent =
-      `${meta.changedFiles} 文件 · +${meta.additions}/−${meta.deletions} · head ${meta.headSha.slice(0, 7)}`
-      + (D.stale ? " · 缓存数据" : "");
+    /* 屏幕标题：对象的名字；编号、作者、规模、head 落在副行 */
+    const titleEl = document.getElementById("wbPrTitle");
+    titleEl.textContent = meta.title;
+    titleEl.title = meta.title;
+    const bits = [`#${meta.number}`];
+    if (meta.user) bits.push(meta.user);
+    if (meta.updatedAt) bits.push(`更新 ${shortTime(meta.updatedAt)}`);
+    bits.push(`${meta.changedFiles} 个文件`, `+${meta.additions}/−${meta.deletions}`, `head ${meta.headSha.slice(0, 7)}`);
+    if (D.stale) bits.push("缓存数据");
+    document.getElementById("wbStats").textContent = bits.join(" · ");
     document.querySelectorAll(".wb-mode").forEach((b) => {
       const on = b.dataset.mode === D.mode;
       b.classList.toggle("on", on);
@@ -1553,6 +1598,9 @@
     });
     document.getElementById("wbMarks").checked = D.marks;
     document.getElementById("wbDraftCount").textContent = String(D.drafts.length);
+    const seen = D.files.filter((f) => reviewInfo(f.path).reviewed).length;
+    document.getElementById("wbProgress").textContent =
+      D.files.length ? `已审 ${seen}/${D.files.length}` : "";
 
     /* 原始 PR 链接：顶栏露出一份，可点开也可复制 */
     const origUrl = D.meta.url || "";
@@ -1562,7 +1610,8 @@
       const orig = document.getElementById("wbOrig");
       orig.href = origUrl;
       orig.title = origUrl;
-      orig.textContent = origUrl.replace(/^https?:\/\//, "");
+      orig.textContent = "原始 PR ↗";
+      orig.setAttribute("aria-label", `在 GitHub 打开 ${origUrl}`);
     }
 
     renderFiles();
@@ -1718,6 +1767,12 @@
     const body = document.body;
 
     doc.addEventListener("click", (e) => {
+      const drail = e.target.closest("[data-drail]");
+      if (drail) {
+        const line = Number(drail.dataset.drail) || 0;
+        if (line) { D.pendingAnchor = { line }; applyAnchor(); }
+        return;
+      }
       const retry = e.target.closest("[data-retry]");
       if (retry) { if (D.file) selectFile(D.file, true); return; }
       /* 标题「#」：把本段行号写进地址并复制整条深链 */
@@ -2204,6 +2259,7 @@
     D.syncLook = () => {
       lookPop.querySelectorAll("[data-theme]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.theme === D.theme)));
       lookPop.querySelectorAll("[data-tbl]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.tbl === D.tbl)));
+      lookPop.querySelectorAll("[data-read]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.read === D.read)));
     };
     lookPop.querySelectorAll("[data-theme]").forEach((b) => b.addEventListener("click", () => {
       D.theme = b.dataset.theme;
@@ -2213,6 +2269,11 @@
     lookPop.querySelectorAll("[data-tbl]").forEach((b) => b.addEventListener("click", () => {
       D.tbl = b.dataset.tbl;
       writePref(PREF.tbl, D.tbl);
+      applyTheme();
+    }));
+    lookPop.querySelectorAll("[data-read]").forEach((b) => b.addEventListener("click", () => {
+      D.read = b.dataset.read;
+      writePref(PREF.read, D.read);
       applyTheme();
     }));
     document.getElementById("wbDrawerBtn").addEventListener("click", () => {
@@ -2268,6 +2329,7 @@
     D.view = readPref(PREF.view, "tree") === "flat" ? "flat" : "tree";
     D.theme = THEMES.includes(readPref(PREF.theme, "paper")) ? readPref(PREF.theme, "paper") : "paper";
     D.tbl = TBL_STYLES.includes(readPref(PREF.tbl, "grid")) ? readPref(PREF.tbl, "grid") : "grid";
+    D.read = READ_WIDTHS.includes(readPref(PREF.read, "standard")) ? readPref(PREF.read, "standard") : "standard";
     const folded = readPref(PREF.folded(number), []);
     D.folded = new Set(Array.isArray(folded) ? folded : []);
     /* 窄屏下文件导航默认收起，避免占满阅读宽度；宽屏保持展开 */
