@@ -656,23 +656,8 @@ body.wb-mode-on .layout { display: none; }
 
 /* ===== CSV 数据表 ===== */
 .csv-block { margin: 0 0 8px; }
-.csv-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  margin-bottom: 10px;
-  color: var(--faint);
-  font-size: 12px;
-  line-height: 1.6;
-}
 .csv-delta { color: var(--mod); font-family: var(--mono); }
 .csv-delta.none { color: var(--faint); }
-.csv-wrap {
-  overflow: auto;
-  border: 1px solid var(--border);
-  border-radius: 8px;
-}
 .csv-table {
   width: 100%;
   border-collapse: collapse;
@@ -1227,4 +1212,515 @@ body.wb-mode-on .layout { display: none; }
   .scol .dline { grid-template-columns: 38px minmax(0, 1fr); }
 
   .nav-float { right: 12px; bottom: 12px; }
+}
+
+/* =====================================================================
+   表格外壳：宽表横向滚动 + 高表纵向滚动都在壳内完成，表头与行号列固定在视野里。
+   CSV 与 Markdown 表格共用同一套外壳，CSV 额外提供列设置。
+   ===================================================================== */
+.table-shell {
+  position: relative;
+  margin: 0 0 1.1em;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--sheet);
+}
+.csv-block > .table-shell { margin-bottom: 0; }
+
+/* 表头工具条：统计在左，操作在右 */
+.tbar {
+  position: relative;
+  z-index: 3;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--rule);
+  background: var(--sheet);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.tstat { color: var(--faint); font-variant-numeric: tabular-nums; }
+.tgrow { flex: 1 1 auto; }
+
+.tbtn {
+  padding: 2px 9px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--sheet);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 18px;
+  white-space: nowrap;
+}
+.tbtn:hover { border-color: var(--control); color: var(--text); }
+.tbtn[aria-pressed="true"] {
+  border-color: var(--control);
+  background: var(--active);
+  color: var(--text);
+  font-weight: 500;
+}
+
+/* 滚动容器：宽表横滚、高表竖滚，两者都留在壳里 */
+.tscroll {
+  max-height: min(68vh, 620px);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: var(--control) transparent;
+}
+.tscroll:focus-visible { outline: 2px solid var(--mod); outline-offset: -2px; }
+.tscroll::-webkit-scrollbar { width: 10px; height: 10px; }
+.tscroll::-webkit-scrollbar-thumb {
+  border: 2px solid var(--sheet);
+  border-radius: 999px;
+  background: var(--control);
+}
+.tscroll::-webkit-scrollbar-track { background: transparent; }
+
+/* 表格在壳里恢复成真正的表格布局（外面那条 display:block 会破坏粘性定位） */
+.table-shell table {
+  display: table;
+  width: 100%;
+  margin: 0;
+  overflow: visible;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+.table-shell table:not(.csv-table) th,
+.table-shell table:not(.csv-table) td { min-width: 88px; }
+
+/* 粘性表头：竖滚时列名不丢 */
+.table-shell thead th,
+.table-shell thead td {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--sheet);
+}
+.table-shell thead th { box-shadow: inset 0 -1px 0 var(--control); }
+.table-shell .csv-table thead th { background: var(--raised); }
+
+/* 边缘渐隐：提示左右还有内容 */
+.tshadow {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  z-index: 1;
+  width: 26px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+.tshadow.l { left: 0; background: linear-gradient(to right, rgba(22, 24, 26, 0.08), transparent); }
+.tshadow.r { right: 0; background: linear-gradient(to left, rgba(22, 24, 26, 0.08), transparent); }
+.table-shell.has-overflow:not(.at-start) .tshadow.l { opacity: 1; }
+.table-shell.has-overflow:not(.at-end) .tshadow.r { opacity: 1; }
+
+/* 粘性行号列 / 固定列：必须有底色，否则横向滚动时后面的内容会透过来 */
+.table-shell .csv-table .csv-ln {
+  position: sticky;
+  left: 0;
+  z-index: 1;
+  background-color: var(--sheet);
+}
+.table-shell .csv-table .csv-row.is-added > .csv-ln { background-color: var(--positive-soft); }
+.table-shell .csv-table .csv-row.is-modified > .csv-ln,
+.table-shell .csv-table .csv-row.is-partial > .csv-ln { background-color: var(--mod-soft); }
+.table-shell .csv-table .csv-row.is-removed > .csv-ln { background-color: var(--negative-soft); }
+.table-shell .csv-table thead .csv-ln { z-index: 3; background-color: var(--raised); }
+
+.table-shell th.is-pinned,
+.table-shell td.is-pinned {
+  position: sticky;
+  left: var(--ln-w, 0px);
+  z-index: 1;
+  background-color: var(--sheet);
+  box-shadow: inset -1px 0 0 var(--border);
+}
+.table-shell thead th.is-pinned { z-index: 3; background-color: var(--raised); }
+
+/* 标记全关时粘性单元格回到中性色，避免透字 */
+.wb-doc.marks-off .table-shell .csv-table .csv-ln,
+.wb-doc.marks-off .table-shell .csv-table .is-pinned { background-color: var(--sheet); }
+.wb-doc.marks-off .table-shell .csv-table thead .csv-ln,
+.wb-doc.marks-off .table-shell .csv-table thead .is-pinned { background-color: var(--raised); }
+
+/* 长单元格：单行截断，点开看全文 */
+.table-shell td.is-clip {
+  max-width: 320px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: zoom-in;
+}
+.table-shell td.is-clip:hover { background-color: var(--raised); }
+
+/* 紧凑密度 */
+.table-shell.is-compact .csv-table th,
+.table-shell.is-compact .csv-table td { padding: 3px 9px; line-height: 1.45; }
+
+/* 全屏：整张表铺满视口，工具条留在顶部 */
+.table-shell.is-full {
+  position: fixed;
+  inset: 12px;
+  z-index: 70;
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+  border-radius: 12px;
+  box-shadow: 0 24px 64px rgba(0, 0, 0, 0.24);
+}
+.table-shell.is-full .tscroll { flex: 1 1 auto; max-height: none; }
+.table-shell.is-full .tbar { flex: none; }
+body.tbl-full-on { overflow: hidden; }
+
+/* 列设置浮层 */
+.colpanel {
+  position: absolute;
+  top: 42px;
+  right: 8px;
+  z-index: 20;
+  width: 250px;
+  max-height: min(52vh, 380px);
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--sheet);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.14);
+  font-size: 12px;
+}
+.colpanel[hidden] { display: none; }
+.colpanel-head {
+  padding: 2px 6px 8px;
+  color: var(--muted);
+  font-weight: 600;
+}
+.colpanel-count { color: var(--faint); font-weight: 400; font-variant-numeric: tabular-nums; }
+.colpanel-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 2px;
+  border-radius: 6px;
+}
+.colpanel-item:hover { background: var(--raised); }
+.colpanel-item label {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 4px 4px;
+  cursor: pointer;
+}
+.colpanel-item label span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+.colpanel-item input[type="checkbox"] { flex: none; accent-color: var(--mod); }
+.colpanel-pin {
+  flex: none;
+  padding: 0 5px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--faint);
+  font-size: 12px;
+  line-height: 20px;
+}
+.colpanel-pin:hover { border-color: var(--border); color: var(--text); }
+.colpanel-pin.is-on { border-color: var(--control); background: var(--mod-soft); color: var(--mod); }
+.colpanel-foot { padding: 6px 4px 2px; border-top: 1px solid var(--rule); margin-top: 6px; }
+
+/* 单元格全文浮层 */
+.cellpop {
+  position: fixed;
+  z-index: 90;
+  width: min(440px, calc(100vw - 24px));
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--sheet);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.18);
+}
+.cellpop-body {
+  max-height: 44vh;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 12.5px;
+  line-height: 1.7;
+}
+.cellpop-row { display: flex; gap: 6px; padding-top: 8px; }
+
+/* 隐藏列/行：本文件有 display 覆盖（卡片模式、单元格布局），这里统一兜住 */
+.table-shell table td[hidden],
+.table-shell table th[hidden],
+.table-shell table tr[hidden] { display: none; }
+
+/* ===== 引用文档（文档里指向 PR 之外的链接） ===== */
+.refdoc-bar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: -4px 0 18px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--raised);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.refdoc-back {
+  padding: 3px 10px;
+  border: 1px solid var(--control);
+  border-radius: 6px;
+  background: var(--sheet);
+  color: var(--muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.refdoc-back:hover { border-color: var(--text); color: var(--text); }
+.refdoc-path {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+.refdoc-tag {
+  flex: none;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--mod-soft);
+  color: var(--mod);
+  font-size: 11px;
+}
+.refdoc-open {
+  flex: none;
+  color: var(--mod);
+  font-size: 12px;
+  text-decoration: none;
+  white-space: nowrap;
+}
+.refdoc-open:hover { text-decoration: underline; text-underline-offset: 2px; }
+.refdoc-hint { color: var(--muted); font-family: var(--mono); font-size: 11.5px; }
+.refdoc-cands {
+  margin: -6px 0 16px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--raised);
+}
+.refdoc-candhead { margin-bottom: 6px; color: var(--muted); font-size: 12px; }
+.refdoc-cand {
+  display: block;
+  width: 100%;
+  margin: 2px 0;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--sheet);
+  color: var(--mod);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  text-align: left;
+  overflow-wrap: anywhere;
+}
+.refdoc-cand:hover { border-color: var(--mod); }
+
+/* ===== 独立文档页 / 缺失页 ===== */
+.doc-body { min-height: 100vh; background: var(--ground); }
+.doc-top {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  height: 48px;
+  padding: 0 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--ground);
+}
+.doc-home {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: none;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 600;
+}
+.doc-crumb {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: rtl;
+  text-align: left;
+}
+.doc-ref { flex: none; color: var(--faint); font-family: var(--mono); font-size: 11.5px; }
+.doc-main {
+  max-width: 860px;
+  margin: 8px;
+  padding: 40px 44px 96px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--sheet);
+}
+.doc-page { font-size: 16px; line-height: 1.8; }
+.doc-page[hidden] { display: none; }
+.doc-state[hidden] { display: none; }
+.doc-state-box {
+  max-width: 620px;
+  padding: 8px 0 40px;
+  color: var(--muted);
+  font-size: 14px;
+}
+.doc-state-msg { margin: 0 0 14px; color: var(--text); font-size: 15px; }
+.doc-state-head { margin: 0 0 6px; font-size: 12.5px; color: var(--muted); }
+.doc-cands { margin: 0 0 16px; padding-left: 18px; font-family: var(--mono); font-size: 12px; }
+.doc-cands a { text-decoration: none; }
+.doc-cands a:hover { text-decoration: underline; text-underline-offset: 2px; }
+.doc-state-foot { margin: 0; font-size: 13px; }
+.doc-missing { max-width: 520px; padding: 24px 0 40px; }
+.doc-missing h1 { margin: 0 0 10px; font-size: 20px; font-weight: 600; }
+.doc-missing p { margin: 0 0 10px; color: var(--muted); font-size: 14px; }
+.doc-missing-act { margin-top: 18px; }
+
+@media (max-width: 720px) {
+  .doc-top { padding: 0 12px; gap: 8px; }
+  .doc-home-name { display: none; }
+  .doc-main { margin: 6px; padding: 24px 20px 80px; border-radius: 12px; }
+  .doc-page { font-size: 15px; }
+  .refdoc-bar { margin-bottom: 14px; }
+  .refdoc-path { flex: 1 1 100%; order: 3; }
+}
+
+/* 窄屏：CSV 转卡片，逐行展开字段，不再横滚 */
+@media (max-width: 640px) {
+  .table-shell.is-csv .tshadow { display: none; }
+  .table-shell.is-csv .tscroll { max-height: none; overflow: visible; }
+  .table-shell.is-csv table,
+  .table-shell.is-csv thead,
+  .table-shell.is-csv tbody,
+  .table-shell.is-csv tr,
+  .table-shell.is-csv th,
+  .table-shell.is-csv td { display: block; }
+  .table-shell.is-csv thead { display: none; }
+  .table-shell.is-csv tbody .csv-row {
+    padding: 6px 0 8px;
+    border-bottom: 1px solid var(--rule);
+    border-left: 2px solid transparent;
+  }
+  .table-shell.is-csv tbody .csv-row:last-child { border-bottom: 0; }
+  .table-shell.is-csv tbody .csv-row.is-added { border-left-color: var(--positive); }
+  .table-shell.is-csv tbody .csv-row.is-modified,
+  .table-shell.is-csv tbody .csv-row.is-partial { border-left-color: var(--mod); }
+  .table-shell.is-csv tbody .csv-row.is-removed { border-left-color: var(--negative); }
+  .table-shell.is-csv tbody .csv-row > * { background: none; box-shadow: none; }
+  .table-shell.is-csv tbody td {
+    position: static;
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 8px;
+    max-width: none;
+    padding: 3px 12px;
+    border: 0;
+  }
+  .table-shell.is-csv tbody td::before {
+    content: attr(data-label);
+    color: var(--faint);
+    font-size: 11.5px;
+    line-height: 1.7;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .table-shell.is-csv tbody td.csv-ln {
+    grid-template-columns: 1fr;
+    padding: 0 12px 4px;
+    color: var(--faint);
+    font-size: 11px;
+  }
+  .table-shell.is-csv tbody td.csv-ln::before { content: none; }
+  /* 卡片模式把单元格改成 grid，hidden 需要在这里重新声明 */
+  .table-shell.is-csv tbody tr[hidden],
+  .table-shell.is-csv tbody td[hidden],
+  .table-shell.is-csv tbody th[hidden] { display: none; }
+  .table-shell.is-csv td.is-clip {
+    max-width: none;
+    white-space: normal;
+    text-overflow: clip;
+    cursor: auto;
+  }
+  .colpanel { right: 6px; width: min(260px, calc(100vw - 28px)); }
+}
+
+/* ===== 顶栏：原始 PR 链接（可点开、可复制） ===== */
+.wb-orig-wrap {
+  flex: 0 1 260px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+.wb-orig-wrap[hidden] { display: none; }
+.wb-orig {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--muted);
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.6;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-decoration: none;
+}
+.wb-orig:hover {
+  color: var(--mod);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.wb-orig-copy {
+  flex: none;
+  height: 24px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--sheet);
+  color: var(--muted);
+  font-size: 11.5px;
+  line-height: 22px;
+}
+.wb-orig-copy:hover { border-color: var(--control); color: var(--text); }
+
+@media (max-width: 1180px) {
+  .wb-orig-wrap { flex: 0 1 180px; }
+}
+@media (max-width: 1100px) {
+  .wb-orig-wrap { order: 6; flex: 1 1 100%; max-width: 100%; }
+}
+@media (max-width: 700px) {
+  .wb-orig { font-size: 11px; }
 }

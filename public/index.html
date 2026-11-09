@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Markdown 文档审批工作台 · noware-cn/workspace</title>
-<link rel="stylesheet" href="/styles.css?v=301">
+<link rel="stylesheet" href="/styles.css?v=304">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -66,6 +66,10 @@
     <button class="wb-nav-toggle" id="wbNavToggle" type="button" title="切换文件导航">☰</button>
     <h1 class="wb-pr" id="wbPrTitle">—</h1>
     <div class="wb-stats" id="wbStats"></div>
+    <span class="wb-orig-wrap" id="wbOrigWrap" hidden>
+      <a class="wb-orig" id="wbOrig" href="#" target="_blank" rel="noopener">原始 PR</a>
+      <button class="wb-orig-copy" id="wbOrigCopy" type="button" title="复制 PR 链接">复制</button>
+    </span>
     <div class="wb-modes" role="group" aria-label="视图模式">
       <button type="button" class="wb-mode on" data-mode="reading" aria-pressed="true">阅读改动</button>
       <button type="button" class="wb-mode" data-mode="sidebyside" aria-pressed="false">前后对照</button>
@@ -120,8 +124,8 @@ window.DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   }
 });
 </script>
-<script src="/diff-model.js?v=209"></script>
-<script src="/diff.js?v=219"></script>
+<script src="/diff-model.js?v=210"></script>
+<script src="/diff.js?v=221"></script>
 <script src="/app.js?v=216"></script>
 </body>
 </html>

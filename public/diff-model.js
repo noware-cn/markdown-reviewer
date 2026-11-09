@@ -565,8 +565,115 @@
     };
   }
 
+  /* ---------- 文档链接：把 href 解析成仓库内路径 ---------- */
+  const DOC_SUFFIX = /\.(md|markdown|mdx|csv)$/i;
+
+  const safeDecode = (value) => {
+    try {
+      return decodeURIComponent(value);
+    } catch {
+      return value;
+    }
+  };
+
+  /** GitHub 风格的标题锚点：小写、去标点、空白转连字符。 */
+  function slugify(text) {
+    return String(text || "")
+      .trim()
+      .toLowerCase()
+      .replace(/[^\p{L}\p{N}\s_-]/gu, "")
+      .trim()
+      .replace(/\s+/g, "-")
+      .replace(/-{2,}/g, "-");
+  }
+
+  /**
+   * 文档里的一条链接能落到哪里：
+   * repo     —— 仓库内文件（相对路径 / 本站路径 / GitHub blob 链接）
+   * anchor   —— 本文内锚点
+   * external —— 外链，保持浏览器默认行为
+   */
+  function resolveDocLink(href, basePath, opts) {
+    const options = opts || {};
+    const raw = String(href || "").trim();
+    if (!raw) return { kind: "other" };
+    if (/^(mailto:|tel:|javascript:|data:)/i.test(raw)) return { kind: "other" };
+    if (raw.startsWith("#")) return { kind: "anchor", anchor: safeDecode(raw.slice(1)) };
+
+    let rest = raw;
+    const absolute = /^[a-z][a-z0-9+.-]*:/i.test(raw) || raw.startsWith("//");
+    if (absolute) {
+      let parsed;
+      try {
+        parsed = new URL(raw, "https://placeholder.invalid");
+      } catch {
+        return { kind: "other" };
+      }
+      if (options.host && parsed.host === options.host) {
+        rest = parsed.pathname + parsed.search + parsed.hash;
+      } else if (parsed.host === "github.com" && options.org && options.repo) {
+        const prefix = `/${options.org}/${options.repo}/blob/`;
+        if (!parsed.pathname.startsWith(prefix)) return { kind: "external", href: raw };
+        const tail = parsed.pathname.slice(prefix.length);
+        const cut = tail.indexOf("/");
+        if (cut <= 0) return { kind: "external", href: raw };
+        rest = `/${tail.slice(cut + 1)}${parsed.search}${parsed.hash}`;
+      } else {
+        return { kind: "external", href: raw };
+      }
+    }
+
+    const hashAt = rest.indexOf("#");
+    const anchor = hashAt >= 0 ? safeDecode(rest.slice(hashAt + 1)) : "";
+    let plain = hashAt >= 0 ? rest.slice(0, hashAt) : rest;
+    const queryAt = plain.indexOf("?");
+    if (queryAt >= 0) plain = plain.slice(0, queryAt);
+    if (!plain) return anchor ? { kind: "anchor", anchor } : { kind: "other" };
+
+    const fromRoot = plain.startsWith("/");
+    const segments = fromRoot ? [] : String(basePath || "").split("/").slice(0, -1).filter(Boolean);
+    for (const segment of plain.replace(/^\/+/, "").split("/")) {
+      if (!segment || segment === ".") continue;
+      if (segment === "..") {
+        if (!segments.length) return { kind: "other" };
+        segments.pop();
+        continue;
+      }
+      segments.push(safeDecode(segment));
+    }
+    if (!segments.length) return anchor ? { kind: "anchor", anchor } : { kind: "other" };
+    const path = segments.join("/");
+    return { kind: "repo", path, anchor, isDoc: DOC_SUFFIX.test(path) };
+  }
+
+  /** 整篇渲染（引用文档与独立文档页共用）：marked → 清洗 → 标题锚点 → 表格可滚动外壳。 */
+  function renderMarkdown(text) {
+    const src = String(text || "");
+    if (!window.marked) return `<pre class="plain-text">${esc(src)}</pre>`;
+    let html = "";
+    try {
+      html = window.marked.parse(src);
+    } catch {
+      return `<pre class="plain-text">${esc(src)}</pre>`;
+    }
+    const clean = window.DOMPurify ? window.DOMPurify.sanitize(html) : html;
+    const seen = new Map();
+    return clean
+      .replace(/<h([1-6])>([\s\S]*?)<\/h\1>/g, (match, level, inner) => {
+        const title = inner.replace(/<[^>]+>/g, "");
+        let id = slugify(title);
+        if (!id) return match;
+        const count = seen.get(id) || 0;
+        seen.set(id, count + 1);
+        if (count) id = `${id}-${count}`;
+        return `<h${level} id="${id}">${inner}</h${level}>`;
+      })
+      .replace(/<table>/g, `<div class="table-shell"><div class="tscroll"><table>`)
+      .replace(/<\/table>/g, `</table></div></div>`);
+  }
+
   window.DiffModel = {
     parsePatch, mdBlocks, buildModel, similarity, esc, listRanges, listItemLines, listItemRanges,
-    isCsvPath, csvParse, csvModel,
+    isCsvPath, csvParse, csvModel, slugify, resolveDocLink, renderMarkdown, DOC_SUFFIX,
   };
 })();
