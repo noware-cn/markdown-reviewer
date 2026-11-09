@@ -285,12 +285,16 @@
       if (tag.startsWith("</li")) {
         const itemLine = stack.pop();
         const inserts = byLine.get(itemLine) || [];
+        if (inserts.length) byLine.delete(itemLine);
         return tag + inserts.map((item) => `<li class="list-deleted-item">${insertionHtml(item.change, file)}</li>`).join("");
       }
       const mapped = /\bdata-line="(\d+)"/.exec(attrs || "");
       stack.push(mapped ? Number(mapped[1]) : null);
       return tag;
     });
+    // 行号映射被放弃（itemLines 与 <li> 数量不一致）或目标项未渲染时，
+    // byLine 中的删除内容不会插入列表；补回 unplaced，避免阅读模式漏看删除。
+    for (const items of byLine.values()) unplaced.push(...items);
     return { html, unplaced };
   }
 
@@ -746,6 +750,9 @@
       }
       removeSubmittedDrafts(myPr, submittedIds);
       if (D.generation !== myGen) {
+        // 期间可能已重新打开同一个 PR：D.drafts 被清理了，但抽屉仍是旧内容，
+        // 继续按旧索引删除会误删其他草稿，需要重画。
+        if (String(D.n) === String(myPr)) render();
         toast("已提交（但页面已刷新）");
         return;
       }

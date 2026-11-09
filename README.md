@@ -118,7 +118,7 @@ GitHub OAuth App 回调地址填 `<Worker 对外域名>/auth/callback`。仓库�
 | 断言 | 需要的环境变量 |
 |---|---|
 | `/api/health` 200、`status=ok`、`commit` 非空且等于 `EXPECT_COMMIT` | `PROD_BASE_URL`、可选 `EXPECT_COMMIT` |
-| 线上 Worker 的 `DEPLOY_COMMIT` 等于 `EXPECT_COMMIT`，且 4 个运行时 Secret 均已配置 | `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` |
+| 线上 Worker 的 `DEPLOY_COMMIT` 等于 `EXPECT_COMMIT`，且 3 个必需运行时 Secret 均已配置（`GITHUB_DATA_TOKEN` 可选） | `CLOUDFLARE_API_TOKEN`、`CLOUDFLARE_ACCOUNT_ID` |
 
 本地不设这些变量时两条用例自动 skip，`npm test` 可离线全绿；需要手动核对线上时跑 `PROD_BASE_URL=... npm run test:prod`（或把 `PROD_BASE_URL` 换成 `http://127.0.0.1:8787` 验证 `wrangler dev`）。
 
@@ -131,7 +131,7 @@ GitHub OAuth App 回调地址填 `<Worker 对外域名>/auth/callback`。仓库�
 
 仓库 Variable `PROD_BASE_URL`（当前值 `https://approval-visualization-worker.dante-sun-4ec.workers.dev`）：线上验证的地址；绑自定义域后改成自定义域名即可。`deploy-worker.yml` 在变量缺失时会退化为从 `wrangler deploy` 输出里解析 `*.workers.dev` 地址。
 
-- Worker 运行时 Secret（`SESSION_SECRET`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`、`GITHUB_DATA_TOKEN`）与 CI 无关：部署不会覆盖，首次仍需 `npx wrangler secret put <NAME>`；线上验证会断言这 4 个 Secret 存在。
+- Worker 运行时 Secret（`SESSION_SECRET`、`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`、`GITHUB_DATA_TOKEN`）与 CI 无关：部署不会覆盖，首次仍需 `npx wrangler secret put <NAME>`；线上验证会断言必需的 3 个 Secret 存在（`GITHUB_DATA_TOKEN` 可选，缺省时读取接口回退登录者令牌）。
 - 部署提交号写入 Worker 变量 `DEPLOY_COMMIT`，`GET /api/health` 的 `commit` 字段可直接核对；部署后验证会断言 `/api/health` 与线上绑定都等于本次提交。
 - 手动部署：`npm run deploy`；带提交号：`npm run deploy:ci`（优先读 `GITHUB_SHA`，回退 `WORKERS_CI_COMMIT_SHA`）。
 - 部署是全量上传后切流量，构建/测试失败时不会改动线上版本。

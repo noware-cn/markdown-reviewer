@@ -313,6 +313,20 @@ test('列表删除项在原列表项位置插入', () => {
   assert.deepEqual(Array.from(result.unplaced), []);
 });
 
+test('列表行号映射被放弃时，删除内容回退到 unplaced 而不丢失', () => {
+  const world = makeWorld();
+  const app = mountApp(world);
+  // marked 去掉嵌套缩进后 item.raw 在原文匹配不上，行号映射整体放弃。
+  const block = app.ctx.window.DiffModel.mdBlocks('- a\n  - b\n    c\n  - d\n- e').find((b) => b.type === 'ul');
+  const result = app.ctx.window.__listBlockWithInsertions(block, [{
+    afterNewLine: 2,
+    change: { id: 'del-b', oldStart: 2, oldEnd: 2, oldText: '- b' },
+  }], { path: 'a.md' });
+  assert.ok(!/<li[^>]*\bdata-line=/.test(result.html), '行号映射应被整体放弃');
+  assert.ok(!result.html.includes('删除（Base L2）'), '不应把删除内容错配到其他列表项');
+  assert.deepEqual(Array.from(result.unplaced, (item) => item.change.id), ['del-b']);
+});
+
 test('提交成功只删除快照草稿，保留请求期间新增的草稿', async () => {
   const world = makeWorld();
   const app = mountApp(world);
@@ -365,4 +379,8 @@ test('切换并重新打开原 PR 后，旧提交只清除旧快照草稿', asyn
   assert.deepEqual(app.ctx.window.__D.drafts.map((draft) => draft.id), ['new-after-reopen']);
   const saved = JSON.parse(app.store['wb.drafts.1']);
   assert.deepEqual(saved.map((draft) => draft.id), ['new-after-reopen']);
+  // 抽屉必须同步重画，否则旧草稿仍按旧索引可被删除，误删新草稿。
+  const drawer = app.els.get('wbDrawerBody').innerHTML;
+  assert.ok(drawer.includes('新意见'));
+  assert.ok(!drawer.includes('旧意见'));
 });

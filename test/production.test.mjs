@@ -37,7 +37,10 @@ test('线上 Worker 绑定正确：DEPLOY_COMMIT 匹配、运行时 Secret 齐�
   assert.match(commit, /^[0-9a-f]{7,40}$/, `DEPLOY_COMMIT 未写入或格式异常：${JSON.stringify(commit)}`);
   if (expectedCommit) assert.equal(commit, expectedCommit, '线上版本不是本次提交');
 
-  for (const name of ['SESSION_SECRET', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET', 'GITHUB_DATA_TOKEN']) {
+  for (const name of ['SESSION_SECRET', 'GITHUB_CLIENT_ID', 'GITHUB_CLIENT_SECRET']) {
     assert.equal(binding(name)?.type, 'secret_text', `${name} 未配置为 Secret`);
   }
+  // GITHUB_DATA_TOKEN 可选：未配置时读取接口回退到登录者令牌。
+  const dataToken = binding('GITHUB_DATA_TOKEN');
+  if (dataToken) assert.equal(dataToken.type, 'secret_text', 'GITHUB_DATA_TOKEN 未配置为 Secret');
 });
