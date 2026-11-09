@@ -15,6 +15,7 @@ import {
 import { MOCK_APPROVALS, MOCK_DETAIL } from "./mock";
 import { MOCK_DIFF, type MockDiffPayload } from "./mock-diff";
 import { MOCK_DIFF_16 } from "./mock-diff-16";
+import { defaultBranch, DOC_PATH, normalizeDocPath, resolveDocPath } from "./doc";
 import { createSession, readCookie, readSession, type SessionPayload } from "./session";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store, max-age=0" };
@@ -369,6 +370,43 @@ export default {
       }
     }
 
+    /** 文档正文：PR 里的文件与"文档里引用的其他文件"共用；只有 PR 文件能写行评论。 */
+    if (path === "/api/doc") {
+      if (!session) return json({ status: "error", message: "unauthenticated" }, 401);
+      const normalized = normalizeDocPath(url.searchParams.get("path") || "");
+      if (!normalized) return json({ status: "error", message: "path 不合法" }, 400);
+      if (isMock) {
+        const mock = mockDiffOf(Number(url.searchParams.get("pr") || 16));
+        const hit = mock.texts[normalized];
+        if (!hit) {
+          return json(
+            { status: "error", message: "演示模式只收录了该 PR 内改动的文件", path: normalized, candidates: [] },
+            404,
+          );
+        }
+        return json({ path: normalized, ref: mock.meta.headSha, text: hit.head, truncated: false, source: "mock" });
+      }
+      const token = dataToken(env, session);
+      if (!token) {
+        return json({ status: "error", message: "缺少取数令牌：未配置 GITHUB_DATA_TOKEN，且会话中没有登录者令牌。" }, 503);
+      }
+      try {
+        const ref = url.searchParams.get("ref") || (await defaultBranch(env, token));
+        const { path: resolved, candidates } = await resolveDocPath(env, token, ref, normalized);
+        if (!resolved) {
+          return json(
+            { status: "error", message: "该文档不在当前提交中", path: normalized, ref, candidates },
+            404,
+          );
+        }
+        const payload = await getFileText(env, token, resolved, ref);
+        return json({ ...payload, path: resolved, requested: normalized, ref, source: "github" });
+      } catch (error) {
+        const status = error instanceof GitHubError ? error.status : 502;
+        return json({ status: "error", message: String(error), path: normalized }, status >= 500 ? 502 : status);
+      }
+    }
+
     /** 草稿整体提交成一条 review；event 默认 COMMENT，可选 REQUEST_CHANGES。行号取 head 侧真实行。 */
     const commentRoute = path.match(/^\/api\/approvals\/(\d+)\/comments$/);
     if (commentRoute && request.method === "POST") {
@@ -480,9 +518,15 @@ export default {
       return session ? serveAsset(env, request, "/index.html") : serveAsset(env, request, "/login.html");
     }
 
+    /** 只读文档页：/doc/<路径> 与历史裸路径（….md / …csv）都交给同一个页面渲染，不再回 JSON。 */
+    if (request.method === "GET" && (path.startsWith("/doc/") || DOC_PATH.test(path))) {
+      return session ? serveAsset(env, request, "/doc.html") : serveAsset(env, request, "/login.html");
+    }
+
     const asset = await env.ASSETS.fetch(request);
     if (asset.status === 404) {
-      return json({ status: "error", message: "not_found", path }, 404);
+      if (path.startsWith("/api/")) return json({ status: "error", message: "not_found", path }, 404);
+      return serveAsset(env, request, "/not-found.html");
     }
     /** 非 HTML 静态资源：带版本号 ?v= 的按不可变长缓存（URL 变化即新版本），未带版本号只缓存 1 小时，避免部署后拿旧资源。 */
     const headers = new Headers(asset.headers);

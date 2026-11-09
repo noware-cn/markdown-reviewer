@@ -26,6 +26,8 @@
     scrollPos: {}, // "path:mode" -> scrollTop
     lastViewKey: null,
     generation: 0,
+    ref: null,       // 引用文档视图：{ stack, path, anchor, text, loading, error, candidates }
+    tstate: {},      // path -> 表格视图状态（隐藏列 / 固定列 / 仅看变化 / 密度）
   };
 
   const esc = window.DiffModel.esc;
@@ -103,6 +105,31 @@
     toast._t = setTimeout(() => el.classList.remove("show"), 2800);
   }
 
+  /** 复制原始 PR 链接：优先 Clipboard API，被拒时退回选中文本复制。 */
+  function copyPrLink() {
+    const url = D.meta && D.meta.url;
+    if (!url) return;
+    const done = () => toast("已复制 PR 链接");
+    const fallback = () => {
+      const box = document.createElement("textarea");
+      box.value = url;
+      box.setAttribute("readonly", "");
+      box.style.cssText = "position:fixed;top:-1000px;opacity:0";
+      document.body.appendChild(box);
+      box.select();
+      let ok = false;
+      try { ok = document.execCommand("copy"); } catch { ok = false; }
+      box.remove();
+      if (ok) done();
+      else toast("复制失败，请点链接手动复制");
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(url).then(done, fallback);
+      return;
+    }
+    fallback();
+  }
+
   /* ---------- 文件列表 ---------- */
   function renderFiles() {
     const box = document.getElementById("wbFiles");
@@ -129,6 +156,7 @@
   function renderChapters() {
     const box = document.getElementById("wbChapters");
     if (!box) return;
+    if (D.ref) { renderRefChapters(); return; }
     const file = curFile();
     const textState = file && D.texts[file.path];
     if (!textState || !textState.headLoaded) { box.innerHTML = `<div class="dempty">加载正文后显示章节…</div>`; return; }
@@ -345,11 +373,12 @@
     return `<span class="csv-num">${opts.oldLine ? "−" : ""}${row.startLine}</span>`;
   }
 
-  function csvCells(row, cols, tag) {
+  function csvCells(row, cols, tag, labels) {
     let out = "";
     for (let i = 0; i < cols; i += 1) {
       const changed = row.changedCells && row.changedCells.has(i);
-      out += `<${tag}${changed ? ' class="is-changed"' : ""}>${esc(row.cells[i] ?? "")}</${tag}>`;
+      const label = labels && labels[i] != null ? ` data-label="${esc(labels[i])}"` : "";
+      out += `<${tag} data-col="${i}"${label}${changed ? ' class="is-changed"' : ""}>${esc(row.cells[i] ?? "")}</${tag}>`;
     }
     return out;
   }
@@ -361,8 +390,23 @@
     const attrs = opts.anchors
       ? ` data-line="${row.startLine}" data-end-line="${row.endLine}"${row.commentLine ? ` data-comment-line="${row.commentLine}"` : ""}`
       : ` data-old-line="${row.startLine}"`;
-    return `<tr class="${cls}"${attrs}><${tag} class="csv-ln">${csvGutter(row, opts)}</${tag}>`
-      + `${csvCells(row, cols, tag)}</tr>`;
+    return `<tr class="${cls}"${attrs}><${tag} class="csv-ln" data-col="ln">${csvGutter(row, opts)}</${tag}>`
+      + `${csvCells(row, cols, tag, opts.labels)}</tr>`;
+  }
+
+  /* ---------- 表格外壳：表头/行号粘住 + 工具栏 + 边缘渐隐 ---------- */
+  const csvToolsHTML = () => `<button class="tbtn" type="button" data-tbl="only" aria-pressed="false">仅看变化行</button>`
+    + `<button class="tbtn" type="button" data-tbl="cols" aria-expanded="false">列</button>`
+    + `<button class="tbtn" type="button" data-tbl="density" aria-pressed="false">紧凑</button>`
+    + `<button class="tbtn" type="button" data-tbl="full" aria-pressed="false">全屏</button>`;
+
+  function tableShellHTML(opts) {
+    return `<div class="table-shell${opts.csv ? " is-csv" : ""}" data-table>`
+      + `<div class="tbar"><span class="tstat">${opts.stat || ""}</span><span class="tgrow"></span>${opts.tools || ""}</div>`
+      + `<div class="tscroll" tabindex="0" role="region" aria-label="${opts.label || "表格"}，可横向滚动">${opts.table}</div>`
+      + `<div class="tshadow l" aria-hidden="true"></div><div class="tshadow r" aria-hidden="true"></div>`
+      + (opts.csv ? `<div class="colpanel" hidden></div>` : "")
+      + `</div>`;
   }
 
   /* 阅读视图：Head 数据表，被删记录按锚点插回原位，被改记录上方保留旧记录。 */
@@ -371,41 +415,43 @@
     if (!rows.length) return `<div class="dempty">（空 CSV 文件）</div>`;
     const cols = model.columns;
     const [header, ...rest] = rows;
+    const labels = header.cells;
     const pending = model.removed;
     let pi = 0;
     let body = "";
     const flush = (beforeLine) => {
       while (pi < pending.length && pending[pi].afterLine < beforeLine) {
-        body += csvRowMarkup(pending[pi].row, cols, { state: "removed", oldLine: true });
+        body += csvRowMarkup(pending[pi].row, cols, { state: "removed", oldLine: true, labels });
         pi += 1;
       }
     };
     const headState = (row) => (forceAdded ? "added" : row.state);
-    let heading = csvRowMarkup(header, cols, { header: true, state: headState(header), anchors: true });
+    let heading = csvRowMarkup(header, cols, { header: true, state: headState(header), anchors: true, labels });
     if (!forceAdded && header.before) {
-      heading = csvRowMarkup(header.before, cols, { header: true, state: "removed", oldLine: true }) + heading;
+      heading = csvRowMarkup(header.before, cols, { header: true, state: "removed", oldLine: true, labels }) + heading;
     }
     flush(header.startLine);
     for (const row of rest) {
       flush(row.startLine);
       if (!forceAdded && row.before) {
-        body += csvRowMarkup(row.before, cols, { state: "removed", oldLine: true });
+        body += csvRowMarkup(row.before, cols, { state: "removed", oldLine: true, labels });
       }
-      body += csvRowMarkup(row, cols, { state: headState(row), anchors: true });
+      body += csvRowMarkup(row, cols, { state: headState(row), anchors: true, labels });
     }
     flush(Infinity);
-    return `<div class="csv-wrap"><table class="csv-table">`
-      + `<thead>${heading}</thead><tbody>${body}</tbody></table></div>`;
+    return `<table class="csv-table">`
+      + `<thead>${heading}</thead><tbody>${body}</tbody></table>`;
   }
 
   function csvSimpleTable(rows, cols, opts) {
     if (!rows.length) return `<div class="dempty">（空文件）</div>`;
     const [header, ...rest] = rows;
+    const labels = header.cells;
     const stateOf = opts.stateOf || ((row) => row.state);
-    return `<div class="csv-wrap"><table class="csv-table">`
-      + `<thead>${csvRowMarkup(header, cols, { header: true, state: stateOf(header), anchors: opts.anchors })}</thead>`
-      + `<tbody>${rest.map((row) => csvRowMarkup(row, cols, { state: stateOf(row), anchors: opts.anchors })).join("")}</tbody>`
-      + `</table></div>`;
+    return `<table class="csv-table">`
+      + `<thead>${csvRowMarkup(header, cols, { header: true, state: stateOf(header), anchors: opts.anchors, labels })}</thead>`
+      + `<tbody>${rest.map((row) => csvRowMarkup(row, cols, { state: stateOf(row), anchors: opts.anchors, labels })).join("")}</tbody>`
+      + `</table>`;
   }
 
   function csvBlockHTML(model, opts) {
@@ -414,13 +460,11 @@
     const rows = model.head.rows;
     const delta = [counts.added ? `+${counts.added}` : "", counts.modified ? `~${counts.modified}` : "",
       counts.removed ? `−${counts.removed}` : ""].filter(Boolean).join(" ");
+    const stat = (forceAdded ? `<span class="diff-tag add">新增</span> ` : "")
+      + `${rows.length} 行 · ${model.columns} 列 · 首行为表头 `
+      + (delta ? `<span class="csv-delta">${delta}</span>` : `<span class="csv-delta none">无单元格变化</span>`);
     return `<div class="csv-block">`
-      + `<div class="csv-bar">`
-      + (forceAdded ? `<span class="diff-tag add">新增</span>` : "")
-      + `<span class="csv-stat">${rows.length} 行 · ${model.columns} 列 · 首行为表头</span>`
-      + (delta ? `<span class="csv-delta">${delta}</span>` : `<span class="csv-delta none">无单元格变化</span>`)
-      + `</div>`
-      + csvReadingTable(model, forceAdded)
+      + tableShellHTML({ csv: true, stat, tools: csvToolsHTML(), table: csvReadingTable(model, forceAdded), label: "CSV 数据表" })
       + `</div>`;
   }
 
@@ -431,11 +475,18 @@
         return `<div class="error-box">删除文件超过读取上限（400 KB），Base 内容不完整，请用 GitHub 查看完整版本。</div>`;
       }
       const base = window.DiffModel.csvParse(textOf(file.path, "base"));
+      const table = csvSimpleTable(base.rows, base.columns, { stateOf: () => "removed" });
       return `<div class="del-block"><div class="del-head">此文件在本 PR 中已删除</div>`
         + `<div class="del-body">以下为删除前的数据表（Base 版本，共 ${base.rows.length} 行）：</div></div>`
-        + `<div class="csv-block">${csvSimpleTable(base.rows, base.columns, {
-          stateOf: () => "removed",
-        })}</div>`;
+        + `<div class="csv-block">`
+        + tableShellHTML({
+          csv: true,
+          stat: `Base · ${base.rows.length} 行 · ${base.columns} 列`,
+          tools: csvToolsHTML(),
+          table,
+          label: "CSV 数据表（删除前）",
+        })
+        + `</div>`;
     }
     if (textState.headTruncated) {
       return `<div class="error-box">文件超过读取上限（400 KB），当前内容不完整，请用 GitHub 原始文件查看。</div>`;
@@ -462,11 +513,15 @@
     const model = csvModelFor(file);
     const forceHead = file.status === "added";
     const forceBase = file.status === "removed";
+    const baseTable = csvSimpleTable(model.base.rows, model.columns, { stateOf: forceBase ? () => "removed" : undefined });
+    const headTable = csvSimpleTable(model.head.rows, model.columns, { anchors: true, stateOf: forceHead ? () => "added" : undefined });
     return `<div class="sb2">`
       + `<div class="sb-col sb-base"><div class="sb-col-head">Base（变更前）</div>`
-      + `${csvSimpleTable(model.base.rows, model.columns, { stateOf: forceBase ? () => "removed" : undefined })}</div>`
+      + tableShellHTML({ csv: true, stat: "Base", tools: csvToolsHTML(), table: baseTable, label: "Base CSV 数据表" })
+      + `</div>`
       + `<div class="sb-col sb-head"><div class="sb-col-head">Head（变更后）</div>`
-      + `${csvSimpleTable(model.head.rows, model.columns, { anchors: true, stateOf: forceHead ? () => "added" : undefined })}</div>`
+      + tableShellHTML({ csv: true, stat: "Head", tools: csvToolsHTML(), table: headTable, label: "Head CSV 数据表" })
+      + `</div>`
       + `</div>`;
   }
 
@@ -623,11 +678,371 @@
     const el = document.getElementById("navFloat");
     if (!el) return;
     const wb = document.getElementById("workbench");
-    el.hidden = wb.hidden || !D.file;
+    el.hidden = wb.hidden || !D.file || !!D.ref;
     if (!el.hidden) {
       const n = changeElements().length;
       document.getElementById("navCount").textContent = D.navIdx >= 0 ? `${D.navIdx + 1}/${n}` : `0/${n}`;
     }
+  }
+
+  /* ---------- 表格状态：列隐藏 / 固定列 / 仅看变化行 / 紧凑 / 全屏 ---------- */
+  const CHANGED_ROW = /(^|\s)is-(added|modified|partial|removed)(\s|$)/;
+  const tableStateKey = (path) => `wb.table.${path}`;
+
+  function tableStateOf() {
+    const key = (D.ref ? D.ref.path : D.file) || "_";
+    if (!D.tstate[key]) {
+      let saved = {};
+      try { saved = JSON.parse(localStorage.getItem(tableStateKey(key)) || "{}") || {}; } catch { saved = {}; }
+      D.tstate[key] = {
+        hidden: Array.isArray(saved.hidden) ? saved.hidden.filter((n) => Number.isInteger(n)) : [],
+        pinned: Number.isInteger(saved.pinned) ? saved.pinned : null,
+        only: !!saved.only,
+        density: saved.density === "compact" ? "compact" : "loose",
+      };
+    }
+    return D.tstate[key];
+  }
+
+  function saveTableState() {
+    const path = D.ref ? D.ref.path : D.file;
+    if (!path) return;
+    const st = tableStateOf();
+    try {
+      localStorage.setItem(tableStateKey(path), JSON.stringify({
+        hidden: st.hidden, pinned: st.pinned, only: st.only, density: st.density,
+      }));
+    } catch { /* ignore */ }
+  }
+
+  function syncTableScroll(scroller) {
+    if (!scroller || !scroller.closest) return;
+    const shell = scroller.closest(".table-shell");
+    if (!shell) return;
+    const max = scroller.scrollWidth - scroller.clientWidth;
+    shell.classList.toggle("has-overflow", max > 4);
+    shell.classList.toggle("at-start", scroller.scrollLeft <= 1);
+    shell.classList.toggle("at-end", scroller.scrollLeft >= max - 1);
+  }
+
+  function toggleTableFull(shell, force) {
+    const on = force === undefined ? !shell.classList.contains("is-full") : force;
+    document.querySelectorAll(".table-shell.is-full").forEach((other) => {
+      if (other !== shell) other.classList.remove("is-full");
+    });
+    shell.classList.toggle("is-full", on);
+    document.body.classList.toggle("tbl-full-on", !!document.querySelector(".table-shell.is-full"));
+    shell.querySelectorAll('[data-tbl="full"]').forEach((btn) => {
+      btn.setAttribute("aria-pressed", String(on));
+      btn.textContent = on ? "退出全屏" : "全屏";
+    });
+    if (on) {
+      const scroller = shell.querySelector(".tscroll");
+      if (scroller) requestAnimationFrame(() => syncTableScroll(scroller));
+    }
+  }
+
+  /** 表格外壳与状态：Markdown 表格补外壳，CSV 表格还原列/行/密度设置。 */
+  function decorateTables(root) {
+    root.querySelectorAll("table").forEach((table) => {
+      if (table.closest(".table-shell")) return;
+      const rows = table.querySelectorAll("tr").length;
+      const firstRow = table.querySelector("tr");
+      const cols = firstRow ? firstRow.children.length : 0;
+      const shell = document.createElement("div");
+      shell.className = "table-shell";
+      shell.setAttribute("data-table", "");
+      shell.innerHTML = `<div class="tbar"><span class="tstat">${rows} 行 × ${cols} 列</span>`
+        + `<span class="tgrow"></span><button class="tbtn" type="button" data-tbl="full" aria-pressed="false">全屏</button></div>`
+        + `<div class="tscroll" tabindex="0" role="region" aria-label="表格，可横向滚动"></div>`
+        + `<div class="tshadow l" aria-hidden="true"></div><div class="tshadow r" aria-hidden="true"></div>`;
+      table.parentNode.insertBefore(shell, table);
+      shell.querySelector(".tscroll").appendChild(table);
+    });
+
+    root.querySelectorAll(".table-shell").forEach((shell) => {
+      if (!shell.querySelector(".tbar")) {
+        const table = shell.querySelector("table");
+        const rows = table ? table.querySelectorAll("tr").length : 0;
+        const firstRow = table ? table.querySelector("tr") : null;
+        const cols = firstRow ? firstRow.children.length : 0;
+        shell.insertAdjacentHTML("afterbegin",
+          `<div class="tbar"><span class="tstat">${rows} 行 × ${cols} 列</span>`
+          + `<span class="tgrow"></span><button class="tbtn" type="button" data-tbl="full" aria-pressed="false">全屏</button></div>`);
+        if (!shell.querySelector(".tshadow")) {
+          shell.insertAdjacentHTML("beforeend",
+            `<div class="tshadow l" aria-hidden="true"></div><div class="tshadow r" aria-hidden="true"></div>`);
+        }
+      }
+
+      const table = shell.querySelector("table");
+      if (!table) return;
+      const st = tableStateOf();
+      shell.classList.toggle("is-compact", st.density === "compact");
+      table.querySelectorAll("[data-col]").forEach((cell) => {
+        const col = cell.dataset.col;
+        if (col === "ln") return;
+        const index = Number(col);
+        cell.hidden = st.hidden.includes(index);
+        cell.classList.toggle("is-pinned", st.pinned === index);
+      });
+      table.querySelectorAll("tbody tr").forEach((row) => {
+        row.hidden = st.only && !CHANGED_ROW.test(row.className);
+      });
+      table.querySelectorAll("tbody td[data-col]").forEach((cell) => {
+        if (cell.dataset.col === "ln") return;
+        cell.classList.toggle("is-clip", (cell.textContent || "").length > 80);
+      });
+
+      shell.querySelectorAll('[data-tbl="only"]').forEach((btn) => btn.setAttribute("aria-pressed", String(st.only)));
+      shell.querySelectorAll('[data-tbl="density"]').forEach((btn) => btn.setAttribute("aria-pressed", String(st.density === "compact")));
+
+      if (table.classList.contains("csv-table")) {
+        const labels = [];
+        table.querySelectorAll("thead [data-col]").forEach((cell) => {
+          if (cell.dataset.col === "ln") return;
+          labels.push({ index: Number(cell.dataset.col), label: cell.textContent.trim() || `列 ${Number(cell.dataset.col) + 1}` });
+        });
+        const panel = shell.querySelector(".colpanel");
+        if (panel) {
+          panel.innerHTML = `<div class="colpanel-head">显示列 <span class="colpanel-count">${labels.length - st.hidden.length}/${labels.length}</span></div>`
+            + labels.map(({ index, label }) => `<div class="colpanel-item">`
+              + `<label><input type="checkbox" data-col-toggle="${index}"${st.hidden.includes(index) ? "" : " checked"}>`
+              + `<span>${esc(label)}</span></label>`
+              + `<button type="button" class="colpanel-pin${st.pinned === index ? " is-on" : ""}" data-col-pin="${index}" title="固定这一列">⌐</button>`
+              + `</div>`).join("")
+            + `<div class="colpanel-foot"><button type="button" class="tbtn" data-col-reset="1">全部显示</button></div>`;
+        }
+        shell.querySelectorAll('[data-tbl="cols"]').forEach((btn) => {
+          btn.textContent = `列 ${labels.length - st.hidden.length}/${labels.length}`;
+        });
+      }
+
+      const scroller = shell.querySelector(".tscroll");
+      const lineCell = table.querySelector("thead .csv-ln");
+      if (scroller && lineCell) {
+        shell.style.setProperty("--ln-w", `${lineCell.getBoundingClientRect().width}px`);
+      }
+      if (scroller) requestAnimationFrame(() => syncTableScroll(scroller));
+    });
+  }
+
+  function closeCellPopover() {
+    const pop = document.getElementById("tblCellPop");
+    if (pop) pop.remove();
+  }
+
+  function showCellPopover(cell) {
+    closeCellPopover();
+    const pop = document.createElement("div");
+    pop.id = "tblCellPop";
+    pop.className = "cellpop";
+    pop.innerHTML = `<div class="cellpop-body">${esc(cell.textContent)}</div>`
+      + `<div class="cellpop-row"><button class="tbtn" type="button" data-pop="copy">复制</button>`
+      + `<button class="tbtn" type="button" data-pop="close">关闭</button></div>`;
+    document.body.appendChild(pop);
+    const rect = cell.getBoundingClientRect();
+    const left = Math.max(12, Math.min(rect.left, window.innerWidth - pop.offsetWidth - 12));
+    const top = Math.min(rect.bottom + 6, window.innerHeight - pop.offsetHeight - 12);
+    pop.style.left = `${left}px`;
+    pop.style.top = `${Math.max(12, top)}px`;
+  }
+
+  /* ---------- 引用文档：文档里指向 PR 之外文件的链接 ---------- */
+  const encPath = (path) => String(path).split("/").map(encodeURIComponent).join("/");
+  const refTextCache = new Map();
+
+  /** 一次标题与锚点的软跳转：先按 id 找，再按标题 slug 找回退。 */
+  function scrollToAnchor(anchor) {
+    if (!anchor) return false;
+    const doc = document.getElementById("wbDoc");
+    const byId = doc.querySelector(`[id="${String(anchor).replace(/"/g, '\\"')}"]`);
+    if (byId) {
+      byId.scrollIntoView({ block: "start", behavior: "smooth" });
+      return true;
+    }
+    const slug = String(anchor).toLowerCase();
+    for (const head of doc.querySelectorAll(".md-block[data-line] h1, .md-block h1, .md-block h2, .md-block h3, .md-block h4")) {
+      if (window.DiffModel.slugify(head.textContent) === slug) {
+        head.scrollIntoView({ block: "start", behavior: "smooth" });
+        return true;
+      }
+    }
+    return false;
+  }
+
+  async function openRefDoc(path, anchor, options) {
+    const opts = options || {};
+    const docEl = document.getElementById("wbDoc");
+    if (!D.ref) {
+      D.ref = { stack: [], path: "", anchor: "", text: "", loading: false, error: "", candidates: [], token: 0 };
+    } else if (!opts.fromBack && D.ref.path && D.ref.path !== path) {
+      D.ref.stack.push({ path: D.ref.path, anchor: D.ref.anchor, scroll: docEl.scrollTop });
+    }
+    D.ref.path = path;
+    D.ref.anchor = anchor || "";
+    D.ref.error = "";
+    D.ref.candidates = [];
+    D.ref.token += 1;
+    /* 请求按 token 认领：解析后的路径可能与请求的不同（后缀匹配），不能用字符串比对。 */
+    const token = D.ref.token;
+    D.active = null;
+    D.navIdx = -1;
+
+    const cached = refTextCache.get(`${path}@${D.meta?.headSha}`);
+    if (cached !== undefined) {
+      D.ref.text = cached;
+      D.ref.loading = false;
+      render();
+      if (D.ref.anchor) scrollToAnchor(D.ref.anchor);
+      return;
+    }
+
+    D.ref.text = "";
+    D.ref.loading = true;
+    render();
+    const myGen = D.generation;
+    const ref = D.meta?.headSha || "";
+    const current = () => D.generation === myGen && D.ref && D.ref.token === token;
+    try {
+      const response = await fetchJSON(
+        `/api/doc?pr=${D.n}&path=${encodeURIComponent(path)}${ref ? `&ref=${encodeURIComponent(ref)}` : ""}`,
+      );
+      const payload = await response.json().catch(() => ({}));
+      if (!current()) return;
+      if (!response.ok) {
+        D.ref.error = payload.message || `打不开该文档（${response.status}）`;
+        D.ref.candidates = Array.isArray(payload.candidates) ? payload.candidates : [];
+      } else {
+        D.ref.text = payload.text || "";
+        D.ref.path = payload.path || path;
+        refTextCache.set(`${D.ref.path}@${D.meta?.headSha}`, D.ref.text);
+        if (payload.requested && payload.requested !== payload.path) {
+          toast(`已按后缀匹配到 ${payload.path.split("/").slice(-2).join("/")}`);
+        }
+      }
+    } catch (err) {
+      if (!current()) return;
+      D.ref.error = err.name === "AbortError" ? "加载引用文档超时" : String(err);
+    }
+    if (!current()) return;
+    D.ref.loading = false;
+    render();
+    if (D.ref.anchor) scrollToAnchor(D.ref.anchor);
+  }
+
+  function closeRefDoc() {
+    if (!D.ref) return;
+    const previous = D.ref.stack.pop();
+    if (!previous) {
+      D.ref = null;
+      render();
+      return;
+    }
+    openRefDoc(previous.path, previous.anchor, { fromBack: true });
+    requestAnimationFrame(() => {
+      const docEl = document.getElementById("wbDoc");
+      if (docEl) docEl.scrollTop = previous.scroll || 0;
+    });
+  }
+
+  function refCsvHTML(text) {
+    const parsed = window.DiffModel.csvParse(text);
+    if (!parsed.rows.length) return `<div class="dempty">（空 CSV 文件）</div>`;
+    /* 引用文档只读：没有差异可比，去掉「仅看变化行」 */
+    const tools = `<button class="tbtn" type="button" data-tbl="cols" aria-expanded="false">列</button>`
+      + `<button class="tbtn" type="button" data-tbl="density" aria-pressed="false">紧凑</button>`
+      + `<button class="tbtn" type="button" data-tbl="full" aria-pressed="false">全屏</button>`;
+    return tableShellHTML({
+      csv: true,
+      stat: `${parsed.rows.length} 行 · ${parsed.columns} 列 · 首行为表头`,
+      tools,
+      table: csvSimpleTable(parsed.rows, parsed.columns, { stateOf: () => "normal" }),
+      label: "引用 CSV 数据表",
+    });
+  }
+
+  function refDocHTML() {
+    const ref = D.ref;
+    const backLabel = ref.stack.length
+      ? "← 返回上一篇"
+      : D.file ? `← 返回 ${D.file.split("/").pop()}` : "← 返回";
+    const openHref = `/doc/${encPath(ref.path)}${D.meta?.headSha ? `?ref=${encodeURIComponent(D.meta.headSha)}` : ""}`;
+    const bar = `<div class="refdoc-bar">`
+      + `<button class="btn ghost refdoc-back" type="button" data-ref="back">${esc(backLabel)}</button>`
+      + `<span class="refdoc-path" title="${esc(ref.path)}">${esc(ref.path)}</span>`
+      + `<span class="refdoc-tag">引用文档 · 只读</span>`
+      + (ref.loading ? "" : `<a class="refdoc-open" href="${esc(openHref)}" target="_blank" rel="noopener">新页签打开 ↗</a>`)
+      + `</div>`;
+    if (ref.loading) return bar + `<div class="dempty">正在加载引用文档…</div>`;
+    if (ref.error) {
+      const cands = ref.candidates.length
+        ? `<div class="refdoc-cands"><div class="refdoc-candhead">可能是：</div>`
+          + ref.candidates.map((c) => `<button type="button" class="refdoc-cand" data-ref-open="${esc(c)}">${esc(c)}</button>`).join("")
+          + `</div>`
+        : "";
+      return bar + `<div class="error-box">${esc(ref.error)}<br><span class="refdoc-hint">${esc(ref.path)}</span></div>` + cands;
+    }
+    const body = isCsv(ref.path) ? refCsvHTML(ref.text) : window.DiffModel.renderMarkdown(ref.text);
+    return bar + `<article class="md-block refdoc">${body}</article>`;
+  }
+
+  function renderRefChapters() {
+    const box = document.getElementById("wbChapters");
+    if (!box) return;
+    if (D.ref.loading) { box.innerHTML = `<div class="dempty">加载中…</div>`; return; }
+    if (D.ref.error || !D.ref.text) { box.innerHTML = `<div class="dempty">—</div>`; return; }
+    if (isCsv(D.ref.path)) {
+      const parsed = window.DiffModel.csvParse(D.ref.text);
+      box.innerHTML = `<div class="chapter-stat">引用 CSV · ${parsed.rows.length} 行 × ${parsed.columns} 列</div>`
+        + `<div class="dempty">只读文档不做逐行导航</div>`;
+      return;
+    }
+    const heads = window.DiffModel.mdBlocks(D.ref.text).filter((b) => /^h[1-4]$/.test(b.type));
+    if (!heads.length) { box.innerHTML = `<div class="dempty">本文档没有标题</div>`; return; }
+    box.innerHTML = heads.map((b) => {
+      const lvl = Number(b.type[1]);
+      return `<div class="chapter l${lvl}" data-ref-anchor="${esc(window.DiffModel.slugify(b.title || ""))}">`
+        + `${esc(b.title || "(无标题)")}</div>`;
+    }).join("");
+  }
+
+  /** 拦截文档内链接：PR 文件就地切换，仓库其他文件用引用视图，外链照旧。 */
+  function handleDocLink(event, link) {
+    const orgRepo = /github\.com\/([^/]+)\/([^/]+)\//.exec(D.meta?.url || "");
+    const resolved = window.DiffModel.resolveDocLink(link.getAttribute("href"), D.ref ? D.ref.path : D.file, {
+      host: location.host,
+      org: orgRepo ? orgRepo[1] : "",
+      repo: orgRepo ? orgRepo[2] : "",
+    });
+    if (resolved.kind === "external") {
+      link.target = "_blank";
+      link.rel = "noopener";
+      return false;
+    }
+    if (resolved.kind === "anchor") {
+      event.preventDefault();
+      scrollToAnchor(resolved.anchor);
+      return true;
+    }
+    if (resolved.kind !== "repo") return false;
+
+    event.preventDefault();
+    if (!resolved.isDoc) {
+      const href = `https://github.com/${orgRepo ? orgRepo[1] : ""}/${orgRepo ? orgRepo[2] : ""}`
+        + `/blob/${encodeURIComponent(D.meta?.headSha || "")}/${encPath(resolved.path)}`;
+      window.open(href, "_blank", "noopener");
+      return true;
+    }
+    if (D.files.some((f) => f.path === resolved.path)) {
+      D.ref = null;
+      Promise.resolve(selectFile(resolved.path)).then(() => {
+        if (resolved.anchor) scrollToAnchor(resolved.anchor);
+      });
+      return true;
+    }
+    openRefDoc(resolved.path, resolved.anchor);
+    return true;
   }
 
   /* ---------- 主渲染 ---------- */
@@ -657,6 +1072,17 @@
     document.getElementById("wbMarks").checked = D.marks;
     document.getElementById("wbDraftCount").textContent = String(D.drafts.length);
 
+    /* 原始 PR 链接：顶栏露出一份，可点开也可复制 */
+    const origUrl = D.meta.url || "";
+    const origWrap = document.getElementById("wbOrigWrap");
+    origWrap.hidden = !origUrl;
+    if (origUrl) {
+      const orig = document.getElementById("wbOrig");
+      orig.href = origUrl;
+      orig.title = origUrl;
+      orig.textContent = origUrl.replace(/^https?:\/\//, "");
+    }
+
     renderFiles();
     renderChapters();
 
@@ -664,17 +1090,20 @@
     doc.classList.toggle("marks-off", !D.marks);
     doc.dataset.mode = D.mode;
     const file = curFile();
-    doc.dataset.kind = file && isCsv(file.path) ? "csv" : "";
+    doc.dataset.kind = D.ref ? "ref" : file && isCsv(file.path) ? "csv" : "";
     const content = document.getElementById("wbContent");
-    if (!file) { content.innerHTML = `<div class="dempty">该 PR 没有变更文件。</div>`; }
+    if (D.ref) content.innerHTML = refDocHTML();
+    else if (!file) { content.innerHTML = `<div class="dempty">该 PR 没有变更文件。</div>`; }
     else if (D.mode === "unified") content.innerHTML = unifiedHTML(file);
     else if (D.mode === "split") content.innerHTML = splitHTML(file);
     else if (D.mode === "sidebyside") content.innerHTML = sideBySideHTML(file);
     else content.innerHTML = readingHTML(file);
 
+    decorateTables(content);
+
     document.getElementById("wbDrawerBody").innerHTML = drawerHTML();
     // 恢复当前视图的滚动位置，记录本次 key
-    const key = `${D.file}:${D.mode}`;
+    const key = D.ref ? `ref:${D.ref.path}` : `${D.file}:${D.mode}`;
     D.lastViewKey = key;
     const saved = D.scrollPos[key];
     const docEl = document.getElementById("wbDoc");
@@ -729,10 +1158,104 @@
         setTimeout(() => { const ta = document.getElementById("wbcText"); if (ta) ta.focus(); }, 50);
         return;
       }
+      const refBack = e.target.closest("[data-ref]");
+      if (refBack) { closeRefDoc(); return; }
+      const refCandidate = e.target.closest("[data-ref-open]");
+      if (refCandidate) { openRefDoc(refCandidate.dataset.refOpen, ""); return; }
+      const link = e.target.closest("a[href]");
+      if (link && handleDocLink(e, link)) return;
+    });
+
+    /* 表格工具栏：全屏 / 仅看变化行 / 列设置 / 密度 */
+    const content = document.getElementById("wbContent");
+    content.addEventListener("click", (e) => {
+      const tool = e.target.closest("[data-tbl]");
+      if (tool) {
+        const shell = tool.closest(".table-shell");
+        const st = tableStateOf();
+        if (tool.dataset.tbl === "full") { toggleTableFull(shell); return; }
+        if (tool.dataset.tbl === "only") { st.only = !st.only; saveTableState(); decorateTables(content); return; }
+        if (tool.dataset.tbl === "density") {
+          st.density = st.density === "compact" ? "loose" : "compact";
+          saveTableState();
+          decorateTables(content);
+          return;
+        }
+        if (tool.dataset.tbl === "cols") {
+          const panel = shell.querySelector(".colpanel");
+          if (panel) {
+            panel.hidden = !panel.hidden;
+            tool.setAttribute("aria-expanded", String(!panel.hidden));
+          }
+          return;
+        }
+      }
+      const colToggle = e.target.closest("[data-col-toggle]");
+      if (colToggle) {
+        const st = tableStateOf();
+        const index = Number(colToggle.dataset.colToggle);
+        st.hidden = colToggle.checked ? st.hidden.filter((n) => n !== index) : [...new Set([...st.hidden, index])];
+        if (st.pinned === index && !colToggle.checked) st.pinned = null;
+        saveTableState();
+        decorateTables(content);
+        return;
+      }
+      const colPin = e.target.closest("[data-col-pin]");
+      if (colPin) {
+        const st = tableStateOf();
+        const index = Number(colPin.dataset.colPin);
+        st.pinned = st.pinned === index ? null : index;
+        if (st.pinned !== null) st.hidden = st.hidden.filter((n) => n !== st.pinned);
+        saveTableState();
+        decorateTables(content);
+        return;
+      }
+      if (e.target.closest("[data-col-reset]")) {
+        const st = tableStateOf();
+        st.hidden = [];
+        saveTableState();
+        decorateTables(content);
+        return;
+      }
+      const clip = e.target.closest("td.is-clip, th.is-clip");
+      if (clip && !String(window.getSelection() || "")) {
+        showCellPopover(clip);
+        return;
+      }
+    });
+    content.addEventListener("scroll", (e) => {
+      const target = e.target;
+      if (target && target.classList && target.classList.contains("tscroll")) syncTableScroll(target);
+    }, true);
+    document.addEventListener("click", (e) => {
+      if (!e.target.closest(".table-shell")) {
+        document.querySelectorAll(".colpanel:not([hidden])").forEach((panel) => {
+          panel.hidden = true;
+          const btn = panel.closest(".table-shell")?.querySelector('[data-tbl="cols"]');
+          if (btn) btn.setAttribute("aria-expanded", "false");
+        });
+      } else if (!e.target.closest(".colpanel") && !e.target.closest('[data-tbl="cols"]')) {
+        document.querySelectorAll(".colpanel:not([hidden])").forEach((panel) => { panel.hidden = true; });
+      }
+      const pop = document.getElementById("tblCellPop");
+      if (!pop) return;
+      const inside = e.target.closest("#tblCellPop");
+      if (inside) {
+        const btn = e.target.closest("[data-pop]");
+        if (btn && btn.dataset.pop === "copy") {
+          const text = pop.querySelector(".cellpop-body")?.textContent || "";
+          navigator.clipboard?.writeText(text).then(() => toast("已复制"), () => toast("复制失败"));
+        }
+        if (btn && btn.dataset.pop === "close") closeCellPopover();
+        return;
+      }
+      if (!e.target.closest("td.is-clip, th.is-clip")) closeCellPopover();
     });
 
     // 章节跳转（绑在 wbNav 上，因为章节元素在导航栏内）
     document.getElementById("wbChapters").addEventListener("click", (e) => {
+      const refChapter = e.target.closest("[data-ref-anchor]");
+      if (refChapter) { scrollToAnchor(refChapter.dataset.refAnchor); return; }
       const chapter = e.target.closest("[data-chapter]");
       if (chapter) {
         const line = Number(chapter.dataset.chapter);
@@ -808,6 +1331,14 @@
       if (e.ctrlKey || e.metaKey || e.altKey) return;
       const tag = document.activeElement?.tagName;
       if (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT") return;
+      if (e.key === "Escape") {
+        const full = document.querySelector(".table-shell.is-full");
+        if (full) { toggleTableFull(full, false); return; }
+        if (document.getElementById("tblCellPop")) { closeCellPopover(); return; }
+        const panel = document.querySelector(".colpanel:not([hidden])");
+        if (panel) { panel.hidden = true; return; }
+        return;
+      }
       if (e.key === "n") { e.preventDefault(); gotoChange(1); }
       else if (e.key === "p") { e.preventDefault(); gotoChange(-1); }
       else if (e.key === "1") { D.active = null; D.mode = "reading"; render(); }
@@ -1045,6 +1576,7 @@
       document.getElementById("wbBody").classList.toggle("nav-collapsed");
     });
     document.getElementById("wbFilter").addEventListener("input", (e) => { D.filter = e.target.value; renderFiles(); });
+    document.getElementById("wbOrigCopy").addEventListener("click", () => copyPrLink());
     document.getElementById("wbFiles").addEventListener("click", (e) => {
       const item = e.target.closest(".fitem");
       if (item) selectFile(item.dataset.path);
@@ -1060,12 +1592,17 @@
       /* 窄屏下文件导航默认收起，避免占满阅读宽度；宽屏保持展开 */
       document.getElementById("wbBody").classList.toggle("nav-collapsed", window.innerWidth <= 900);
       document.getElementById("wbLoading").hidden = false;
+      D.ref = null;
+      refTextCache.clear();
       await load(number, false, false);
     },
     refresh: (number, force) => load(number, true, !!force),
     unmount: () => {
       document.getElementById("workbench").hidden = true;
       document.body.classList.remove("wb-mode-on");
+      document.body.classList.remove("tbl-full-on");
+      closeCellPopover();
+      D.ref = null;
     },
   };
 })();

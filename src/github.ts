@@ -191,7 +191,7 @@ const mapWithConcurrency = async <T, R>(items: T[], limit: number, fn: (item: T)
   return results;
 };
 
-const repoPath = (env: Env): string =>
+export const repoPath = (env: Env): string =>
   `/repos/${env.GITHUB_ORG ?? "noware-cn"}/${env.GITHUB_REPO ?? "workspace"}`;
 
 export const listApprovals = async (env: Env, token: string): Promise<Approval[]> => {

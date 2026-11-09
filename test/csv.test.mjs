@@ -202,13 +202,17 @@ test('csvModel：表头变化保留旧表头与变化列', () => {
 test('阅读视图：表头、修改行、旧行与列高亮', () => {
   const file = mountFile(fileOf({ patch: PATCH_MOD }), BASE, HEAD);
   const html = win.__reading(file);
-  assert.ok(html.includes('<div class="csv-bar">'));
-  assert.ok(html.includes('<span class="csv-stat">4 行 · 3 列 · 首行为表头</span>'));
+  assert.ok(html.includes('<div class="table-shell is-csv"'));
+  assert.ok(html.includes('<span class="tstat">4 行 · 3 列 · 首行为表头'));
   assert.ok(html.includes('<span class="csv-delta">~2</span>'));
+  assert.ok(html.includes('data-tbl="only"'), '宽表工具条：仅看变化行');
+  assert.ok(html.includes('data-tbl="cols"'), '宽表工具条：列设置');
+  assert.ok(html.includes('data-tbl="full"'), '宽表工具条：全屏');
+  assert.ok(html.includes('<div class="tscroll"'), '横向滚动容器');
   assert.ok(html.includes('<thead><tr class="csv-row is-header"'));
   assert.equal((html.match(/<tr class="csv-row is-modified"/g) || []).length, 2);
   assert.equal((html.match(/<tr class="csv-row is-removed"/g) || []).length, 2);
-  assert.ok(html.includes('<td class="is-changed">120</td>'));
+  assert.ok(html.includes('<td data-col="2" data-label="amount" class="is-changed">120</td>'));
   assert.ok(html.includes('data-comment-line="2"'));
   assert.ok(html.includes('<span class="line-anchor" data-line="2"'), '改动行可直接评论');
   assert.equal((html.match(/class="line-anchor"/g) || []).length, 4, 'hunk 内的行都有行号锚点');
@@ -232,7 +236,7 @@ test('阅读视图：纯删除行插回原位，插在删除点后的记录之�
   const patch = ['@@ -1,4 +1,3 @@', ' id,name', ' 1,a', '-2,b', ' 3,c'].join('\n');
   const file = mountFile(fileOf({ patch }), base, head);
   const html = win.__reading(file);
-  const removedAt = html.indexOf('<td>2</td>');
+  const removedAt = html.indexOf('<td data-col="0" data-label="id">2</td>');
   const nextRow = html.indexOf('data-line="3"');
   assert.ok(removedAt > 0 && removedAt < nextRow, '删除行应出现在 L3 之前');
   assert.ok(html.includes('<span class="csv-num">−3</span>'), '删除行显示原 Base 行号');
