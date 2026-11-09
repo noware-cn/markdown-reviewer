@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+  <!-- 白纸张（带右上折角），浅灰描边 -->
+  <path d="M12 10 H70 L88 28 V90 H12 Z" fill="#ffffff" stroke="#e3e5e8" stroke-width="2"/>
+  <!-- 折角阴影 -->
+  <path d="M70 10 V28 H88 Z" fill="#eef0f2"/>
+  <path d="M70 10 L70 28 L88 28 Z" fill="#dfe2e6"/>
+  <!-- 红色审批章戳 -->
+  <rect x="28" y="30" width="44" height="44" rx="10" fill="#C7000B"/>
+  <!-- 白色粗对勾 -->
+  <path d="M40 52 L47 59 L63 41" fill="none" stroke="#ffffff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

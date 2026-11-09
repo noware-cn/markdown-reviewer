@@ -1,0 +1,27 @@
+{
+  // Cloudflare Workers 生产配置（部署：合入 main 由 .github/workflows/deploy-worker.yml 自动执行）
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "approval-visualization-worker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  "workers_dev": true,
+  // 只保留生产环境；不配置 preview_urls，避免多套环境
+  "preview_urls": false,
+  "observability": {
+    "enabled": true
+  },
+  // 静态资源：登录页与审批可视化页面
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    // 这些路径先进 Worker，用于登录门禁、接口处理与缓存头控制
+    "run_worker_first": ["/", "/index.html", "/login.html", "/api/*", "/auth/*", "/styles.css", "/app.js", "/diff.js"]
+  },
+  "vars": {
+    "SERVICE_NAME": "approval-visualization-worker",
+    "ENVIRONMENT": "production",
+    "GITHUB_ORG": "noware-cn",
+    "GITHUB_REPO": "workspace",
+    "MOCK_MODE": "0"
+  }
+}

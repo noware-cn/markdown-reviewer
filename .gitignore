@@ -1,0 +1,7 @@
+# .gitignore — 本工程本地开发产物
+node_modules/
+.wrangler/
+dist/
+.dev.vars
+*.log
+.DS_Store
