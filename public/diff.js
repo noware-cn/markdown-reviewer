@@ -130,30 +130,384 @@
     fallback();
   }
 
-  /* ---------- 文件列表 ---------- */
+  /* ---------- 左侧面板：本地偏好 ---------- */
+  const PREF = {
+    view: "wb.nav.view",
+    folded: (n) => `wb.nav.folded.${n}`,
+    filesH: "wb.nav.filesH",
+    navW: "wb.nav.w",
+    sections: "wb.nav.sections",
+  };
+  const readPref = (key, fallback) => {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw === null ? fallback : JSON.parse(raw);
+    } catch { return fallback; }
+  };
+  const writePref = (key, value) => {
+    try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 存不下就只保留本次会话 */ }
+  };
+  const saveFolded = () => writePref(PREF.folded(D.n), Array.from(D.folded));
+
+  const statusMark = (status) => (status === "added" ? "A" : status === "removed" ? "D" : status === "renamed" ? "R" : "M");
+  const reviewInfo = (path) => {
+    const drafts = D.drafts.filter((d) => d.path === path).length;
+    const comments = D.commentsByPath ? (D.commentsByPath.get(path) || []).length : 0;
+    return { drafts, comments, reviewed: drafts > 0 || comments > 0 };
+  };
+
+  /* ---------- 文件列表：树状 / 平铺 ---------- */
+  function fileTree(filter) {
+    const tree = window.DiffModel.buildFileTree(D.files);
+    const q = filter.toLowerCase();
+    if (!q) return { nodes: tree, hits: D.files.length };
+
+    const hits = [];
+    const prune = (nodes) => nodes.reduce((acc, node) => {
+      if (node.type === "file") {
+        if (node.path.toLowerCase().includes(q)) { acc.push(node); hits.push(node.path); }
+        return acc;
+      }
+      const kids = prune(node.children);
+      if (kids.length) {
+        acc.push(Object.assign({}, node, {
+          children: kids,
+          count: kids.reduce((sum, kid) => sum + (kid.type === "dir" ? kid.count : 1), 0),
+        }));
+      }
+      return acc;
+    }, []);
+    const nodes = prune(tree);
+    return { nodes, hits: hits.length };
+  }
+
+  function fileRowHTML(file) {
+    const mark = statusMark(file.status);
+    const info = reviewInfo(file.path);
+    return `<div class="trow tfile${D.file === file.path ? " is-active" : ""}${info.reviewed ? " reviewed" : ""}"`
+      + ` data-path="${esc(file.path)}" role="treeitem" tabindex="-1" aria-selected="${D.file === file.path}"`
+      + ` title="${esc(file.path)}">`
+      + `<span class="twisty" aria-hidden="true"></span>`
+      + `<span class="fmark ${mark}">${mark}</span>`
+      + `<span class="tname">${esc(file.name)}</span>`
+      + (info.reviewed ? `<span class="fdot" title="草稿 ${info.drafts} · 已有评论 ${info.comments}"></span>` : "")
+      + (info.drafts ? `<span class="wb-badge" style="position:static">${info.drafts}</span>` : "")
+      + `<span class="fnum"><em>+${file.additions}</em> −${file.deletions}</span>`
+      + `</div>`;
+  }
+
+  function treeHTML(nodes, opts) {
+    return nodes.map((node) => {
+      if (node.type === "file") return fileRowHTML(node);
+      const folded = !opts.forceOpen && D.folded.has(node.path);
+      const head = `<div class="trow tdir${folded ? " is-folded" : ""}" data-dir="${esc(node.path)}" role="treeitem"`
+        + ` aria-expanded="${!folded}" tabindex="-1" title="${esc(node.path)}">`
+        + `<span class="twisty" aria-hidden="true"></span>`
+        + `<span class="tname">${esc(node.name)}</span>`
+        + `<span class="tcount">${node.count}</span>`
+        + `</div>`;
+      return folded ? head : head + `<div class="tnest" role="group">${treeHTML(node.children, opts)}</div>`;
+    }).join("");
+  }
+
+  function flatListHTML(filter) {
+    const q = filter.toLowerCase();
+    const shown = D.files.filter((f) => !q || f.path.toLowerCase().includes(q));
+    const html = shown.map((f) => {
+      const mark = statusMark(f.status);
+      const info = reviewInfo(f.path);
+      return `<div class="fitem${D.file === f.path ? " is-active" : ""}${info.reviewed ? " reviewed" : ""}"`
+        + ` data-path="${esc(f.path)}" title="${esc(f.path)}">`
+        + `<span class="fmark ${mark}">${mark}</span>`
+        + `<span class="fname" title="${esc(f.path)}">${esc(f.path.split("/").pop())}</span>`
+        + `<span class="fnum"><em>+${f.additions}</em> −${f.deletions}</span>`
+        + (info.reviewed ? `<span class="fdot" title="草稿 ${info.drafts} · 已有评论 ${info.comments}"></span>` : "")
+        + (info.drafts ? `<span class="wb-badge" style="position:static">${info.drafts}</span>` : "")
+        + `</div>`;
+    }).join("");
+    return { html, hits: shown.length };
+  }
+
   function renderFiles() {
     const box = document.getElementById("wbFiles");
     if (!box) return;
-    const filter = D.filter.toLowerCase();
-    box.innerHTML = D.files
-      .filter((f) => !filter || f.path.toLowerCase().includes(filter))
-      .map((f) => {
-        const mark = f.status === "added" ? "A" : f.status === "removed" ? "D" : f.status === "renamed" ? "R" : "M";
-        const draftCount = D.drafts.filter((d) => d.path === f.path).length;
-        const commentCount = D.commentsByPath ? (D.commentsByPath.get(f.path) || []).length : 0;
-        const reviewed = draftCount > 0 || commentCount > 0;
-        return `<div class="fitem${D.file === f.path ? " active" : ""}${reviewed ? " reviewed" : ""}" data-path="${esc(f.path)}" title="${reviewed ? "已有意见" : "未审阅"}">`
-          + `<span class="fmark ${mark}">${mark}</span>`
-          + `<span class="fname" title="${esc(f.path)}">${esc(f.path.split("/").pop())}</span>`
-          + `<span class="fnum"><em>+${f.additions}</em> −${f.deletions}</span>`
-          + (reviewed ? `<span class="fdot" title="草稿 ${draftCount} · 已有评论 ${commentCount}"></span>` : "")
-          + (draftCount ? `<span class="wb-badge" style="position:static">${draftCount}</span>` : "")
-          + `</div>`;
-      }).join("") || `<div class="dempty">没有匹配的文件</div>`;
+    const tree = D.view === "tree";
+    const { hits, html } = tree
+      ? (() => {
+        const { nodes, hits: matched } = fileTree(D.filter);
+        return {
+          hits: matched,
+          html: nodes.length
+            ? `<div class="wb-tree" role="group">${treeHTML(nodes, { forceOpen: !!D.filter })}</div>`
+            : `<div class="dempty">没有匹配的文件</div>`,
+        };
+      })()
+      : (() => {
+        const { html: rows, hits: matched } = flatListHTML(D.filter);
+        return {
+          hits: matched,
+          html: rows ? `<div class="wb-tree" role="group">${rows}</div>` : `<div class="dempty">没有匹配的文件</div>`,
+        };
+      })();
+    box.innerHTML = html;
+    setMeta("wbFilesMeta", D.filter ? `${hits}/${D.files.length} 个文件` : `${D.files.length} 个文件`);
+    document.querySelectorAll(".wb-viewseg [data-view]").forEach((btn) => {
+      btn.setAttribute("aria-pressed", String(btn.dataset.view === D.view));
+    });
+  }
+
+  const setMeta = (id, text) => {
+    const el = document.getElementById(id);
+    if (el) el.textContent = text;
+  };
+
+  function toggleDir(path, node) {
+    const row = node || null;
+    if (D.folded.has(path)) D.folded.delete(path);
+    else D.folded.add(path);
+    saveFolded();
+    renderFiles();
+    const next = Array.from(document.querySelectorAll('#wbFiles [data-dir]')).find((el) => el.dataset.dir === path);
+    if (next) next.focus({ preventScroll: false });
+    else if (row) row.focus();
+  }
+
+  /* 选中文件时展开祖先目录，保证左侧能看见当前文件 */
+  function unfoldAncestors(path) {
+    const parts = path.split("/").slice(0, -1);
+    let prefix = "";
+    let changed = false;
+    parts.forEach((part) => {
+      prefix = prefix ? `${prefix}/${part}` : part;
+      if (D.folded.delete(prefix)) changed = true;
+    });
+    if (changed) saveFolded();
+    return changed;
+  }
+
+  function initFileList() {
+    const box = document.getElementById("wbFiles");
+    if (!box) return;
+    box.addEventListener("click", (e) => {
+      const dir = e.target.closest("[data-dir]");
+      if (dir) { toggleDir(dir.dataset.dir, dir); return; }
+      const file = e.target.closest("[data-path]");
+      if (file) selectFile(file.dataset.path);
+    });
+
+    box.addEventListener("focus", () => {
+      if (!box.contains(document.activeElement) || document.activeElement === box) {
+        const target = box.querySelector(".trow.is-active, .trow") || box.querySelector(".fitem");
+        if (target) target.focus();
+      }
+    });
+
+    /* 键盘：↑↓ 移动，← 折叠/回父级，→ 展开/进子级，Enter 打开 */
+    box.addEventListener("keydown", (e) => {
+      const rows = Array.from(box.querySelectorAll(".trow"));
+      if (!rows.length) return;
+      const current = document.activeElement;
+      const index = rows.indexOf(current);
+      const focusAt = (i) => {
+        const row = rows[Math.max(0, Math.min(rows.length - 1, i))];
+        if (row) row.focus();
+      };
+      if (e.key === "ArrowDown") { focusAt(index < 0 ? 0 : index + 1); e.preventDefault(); return; }
+      if (e.key === "ArrowUp") { focusAt(index < 0 ? rows.length - 1 : index - 1); e.preventDefault(); return; }
+      if (e.key === "Home") { focusAt(0); e.preventDefault(); return; }
+      if (e.key === "End") { focusAt(rows.length - 1); e.preventDefault(); return; }
+      if (!current || index < 0) return;
+
+      const isDir = current.classList.contains("tdir");
+      if (e.key === "ArrowRight") {
+        e.preventDefault();
+        if (!isDir) return;
+        if (current.classList.contains("is-folded")) { toggleDir(current.dataset.dir); return; }
+        const nest = current.nextElementSibling;
+        const first = nest && nest.classList.contains("tnest") ? nest.querySelector(".trow") : null;
+        if (first) first.focus();
+        return;
+      }
+      if (e.key === "ArrowLeft") {
+        e.preventDefault();
+        if (isDir && !current.classList.contains("is-folded")) { toggleDir(current.dataset.dir); return; }
+        const path = current.dataset.dir || current.dataset.path;
+        const parentPath = path.split("/").slice(0, -1).join("/");
+        const parent = rows.find((row) => row.dataset.dir === parentPath);
+        if (parent) parent.focus();
+        return;
+      }
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        if (isDir) toggleDir(current.dataset.dir);
+        else if (current.dataset.path) selectFile(current.dataset.path);
+      }
+    });
+  }
+
+  /* ---------- 分区折叠 + 两处拖动 ---------- */
+  function setSection(name, expanded) {
+    const view = document.getElementById(name === "files" ? "wbFilesView" : "wbChaptersView");
+    const head = document.getElementById(name === "files" ? "wbFilesHead" : "wbChaptersHead");
+    if (!view || !head) return;
+    view.classList.toggle("is-collapsed", !expanded);
+    head.setAttribute("aria-expanded", String(expanded));
+    const sections = readPref(PREF.sections, {});
+    sections[name] = expanded;
+    writePref(PREF.sections, sections);
+  }
+
+  function initSections() {
+    const sections = readPref(PREF.sections, {});
+    setSection("files", sections.files !== false);
+    setSection("chapters", sections.chapters !== false);
+    [["files", "wbFilesHead"], ["chapters", "wbChaptersHead"]].forEach(([name, id]) => {
+      const head = document.getElementById(id);
+      if (!head) return;
+      head.addEventListener("click", () => {
+        setSection(name, head.getAttribute("aria-expanded") !== "true");
+      });
+      head.addEventListener("keydown", (e) => {
+        if (e.key !== "Enter" && e.key !== " ") return;
+        e.preventDefault();
+        setSection(name, head.getAttribute("aria-expanded") !== "true");
+      });
+    });
+  }
+
+  const clamp = (value, min, max) => Math.min(Math.max(value, min), max);
+
+  function initSashes() {
+    const body = document.getElementById("wbBody");
+    const nav = document.getElementById("wbNav");
+    const filesView = document.getElementById("wbFilesView");
+    const filesHead = document.getElementById("wbFilesHead");
+    const sashY = document.getElementById("wbSashY");
+    const sashX = document.getElementById("wbSashX");
+    if (!body || !nav || !sashX || !sashY) return;
+
+    const NAV_MIN = 180;
+    const FILES_MIN = 96;
+    const CHAPTERS_MIN = 72;
+
+    const navMax = () => Math.min(460, Math.max(NAV_MIN, Math.round(window.innerWidth * 0.5)));
+    const filesMax = () => {
+      const headH = filesHead ? filesHead.getBoundingClientRect().height || 24 : 24;
+      return Math.max(FILES_MIN, (nav.clientHeight || 0) - headH - 8 - CHAPTERS_MIN);
+    };
+
+    const rootStyle = document.documentElement ? document.documentElement.style : null;
+    const setVar = (el, name, value) => {
+      if (el && el.style && typeof el.style.setProperty === "function") el.style.setProperty(name, value);
+    };
+    const cssNavW = () => {
+      if (!window.getComputedStyle || !document.documentElement) return 0;
+      return parseFloat(window.getComputedStyle(document.documentElement).getPropertyValue("--nav-w")) || 0;
+    };
+
+    let navW = readPref(PREF.navW, 0) || cssNavW() || 228;
+    setNavWidth(clamp(navW, NAV_MIN, navMax()));
+
+    const savedH = readPref(PREF.filesH, 0);
+    if (savedH) setFilesHeight(clamp(savedH, FILES_MIN, filesMax()));
+
+    function setNavWidth(width) {
+      setVar(rootStyle && document.documentElement, "--nav-w", `${Math.round(width)}px`);
+      navW = width;
+    }
+    function setFilesHeight(height) {
+      setVar(filesView, "--files-h", `${Math.round(height)}px`);
+    }
+
+    const drag = (ev, onMove, onEnd) => {
+      ev.preventDefault();
+      body.classList.add("is-dragging");
+      const move = (e) => onMove(e);
+      const end = () => {
+        body.classList.remove("is-dragging");
+        window.removeEventListener("pointermove", move);
+        window.removeEventListener("pointerup", end);
+        window.removeEventListener("pointercancel", end);
+        onEnd();
+      };
+      window.addEventListener("pointermove", move);
+      window.addEventListener("pointerup", end);
+      window.addEventListener("pointercancel", end);
+    };
+
+    sashX.addEventListener("pointerdown", (ev) => {
+      const startX = ev.clientX;
+      const startW = nav.getBoundingClientRect().width;
+      drag(ev, (e) => setNavWidth(clamp(startW + (e.clientX - startX), NAV_MIN, navMax())), () => writePref(PREF.navW, Math.round(navW)));
+    });
+    sashX.addEventListener("dblclick", () => {
+      setNavWidth(228);
+      writePref(PREF.navW, 228);
+    });
+    sashX.addEventListener("keydown", (e) => {
+      const step = e.shiftKey ? 48 : 16;
+      if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+      e.preventDefault();
+      setNavWidth(clamp(navW + (e.key === "ArrowRight" ? step : -step), NAV_MIN, navMax()));
+      writePref(PREF.navW, Math.round(navW));
+    });
+
+    sashY.addEventListener("pointerdown", (ev) => {
+      if (document.getElementById("wbFilesView").classList.contains("is-collapsed")) setSection("files", true);
+      const startY = ev.clientY;
+      const startH = filesView.getBoundingClientRect().height;
+      drag(ev, (e) => setFilesHeight(clamp(startH + (e.clientY - startY), FILES_MIN, filesMax())),
+        () => writePref(PREF.filesH, Math.round(filesView.getBoundingClientRect().height)));
+    });
+    sashY.addEventListener("dblclick", () => {
+      filesView.style.removeProperty("--files-h");
+      writePref(PREF.filesH, 0);
+    });
+    sashY.addEventListener("keydown", (e) => {
+      const step = e.shiftKey ? 48 : 12;
+      if (e.key !== "ArrowUp" && e.key !== "ArrowDown") return;
+      e.preventDefault();
+      const now = filesView.getBoundingClientRect().height;
+      setFilesHeight(clamp(now + (e.key === "ArrowDown" ? step : -step), FILES_MIN, filesMax()));
+      writePref(PREF.filesH, Math.round(filesView.getBoundingClientRect().height));
+    });
+
+    if (typeof window.addEventListener === "function") {
+      window.addEventListener("resize", () => {
+        setNavWidth(clamp(navW, NAV_MIN, navMax()));
+        const h = readPref(PREF.filesH, 0);
+        if (h) setFilesHeight(clamp(h, FILES_MIN, filesMax()));
+      });
+    }
+  }
+
+  /* 正文顶部：当前文件的仓库相对路径 */
+  function renderFilepath() {
+    const bar = document.getElementById("wbFilepath");
+    if (!bar) return;
+    const file = D.ref ? null : curFile();
+    if (!file) { bar.hidden = true; return; }
+    const parts = file.path.split("/");
+    const name = parts.pop();
+    const mark = statusMark(file.status);
+    bar.hidden = false;
+    bar.title = file.path;
+    const markEl = document.getElementById("wbFilepathMark");
+    if (markEl) { markEl.textContent = mark; markEl.className = `fp-mark ${mark}`; }
+    const dirEl = document.getElementById("wbFilepathDir");
+    if (dirEl) dirEl.textContent = parts.length ? `${parts.join("/")}/` : "";
+    const nameEl = document.getElementById("wbFilepathName");
+    if (nameEl) nameEl.textContent = name;
   }
 
   /* ---------- 章节树 ---------- */
   function renderChapters() {
+    renderChaptersInner();
+    const count = document.querySelectorAll("#wbChapters .chapter, #wbChapters [data-ref-anchor]").length;
+    setMeta("wbChaptersMeta", count ? `${count} 节` : "");
+  }
+
+  function renderChaptersInner() {
     const box = document.getElementById("wbChapters");
     if (!box) return;
     if (D.ref) { renderRefChapters(); return; }
@@ -240,9 +594,9 @@
     }
 
     const model = modelFor(file);
-    // added file: mark all blocks added
+    // 新增文件：整份都是新增，逐块涂色没有信息量，改为顶部一条说明
     if (file.status === "added") {
-      return model.headBlocks.map((b) => blockHtml(b, { forceAdded: true })).join("");
+      return addedFileNote() + model.headBlocks.map((b) => blockHtml(b, { plain: true })).join("");
     }
 
     // interleave head blocks + insertions
@@ -278,14 +632,16 @@
   function blockHtml(b, opts) {
     let cls = "md-block";
     let tag = "";
-    if (opts.forceAdded || b.changeState === "added") { cls += " is-added"; tag = `<span class="diff-tag add">新增</span>`; }
-    else if (b.changeState === "modified-new") {
-      cls += " is-modified-new";
-      tag = `<span class="diff-tag mod">修改</span>`;
-    }
-    else if (b.changeState === "partial") {
-      cls += " is-modified-new";
-      tag = `<span class="diff-tag mod">修改</span>`;
+    if (!opts.plain) {
+      if (b.changeState === "added") { cls += " is-added"; tag = `<span class="diff-tag add">新增</span>`; }
+      else if (b.changeState === "modified-new") {
+        cls += " is-modified-new";
+        tag = `<span class="diff-tag mod">修改</span>`;
+      }
+      else if (b.changeState === "partial") {
+        cls += " is-modified-new";
+        tag = `<span class="diff-tag mod">修改</span>`;
+      }
     }
     // 显示所有配对删除内容（可能有多处修改）
     const oldBlocks = (b.pairedChanges || (b.pairedChange ? [b.pairedChange] : []))
@@ -299,6 +655,15 @@
         const lines = code.split("\n");
         const wrapped = lines.map((ln, i) => `<span class="code-line" data-line="${b.startLine + i + 1}">${ln}</span>`).join("\n");
         return open + wrapped + close;
+      });
+    }
+    // 表格：每个 <tr> 绑定源行（raw 第 0 行是表头，第 1 行是分隔行，渲染时被丢弃）
+    if (b.type === "table" && b.startLine != null) {
+      let rowIdx = -1;
+      bodyHtml = bodyHtml.replace(/<tr\b([^>]*)>/g, (_m, attrs) => {
+        rowIdx += 1;
+        const rawIdx = rowIdx === 0 ? 0 : rowIdx + 1;
+        return `<tr${attrs} data-line="${b.startLine + rawIdx}">`;
       });
     }
     // 列表：给每个 <li> 绑定源码行号（按 raw 顺序，跳过围栏内的假标记行；嵌套项也有行号）
@@ -357,6 +722,12 @@
     return { html, unplaced };
   }
 
+  /* 新增文件的统一说明：整份都是新增，不逐块/逐行涂色，但要说清楚它是新增文件。 */
+  function addedFileNote() {
+    return `<div class="added-note"><span class="added-tag">新增文件</span>`
+      + `本 PR 新增，以下内容全部为新增行，未逐行标注。</div>`;
+  }
+
   function insertionHtml(ch, file) {
     return `<div class="del-block" data-old-line="${ch.oldStart}" data-change="${ch.id}">`
       + `<div class="del-head">删除（Base L${ch.oldStart}${ch.oldEnd > ch.oldStart ? "–" + ch.oldEnd : ""}）</div>`
@@ -395,7 +766,9 @@
   }
 
   /* ---------- 表格外壳：表头/行号粘住 + 工具栏 + 边缘渐隐 ---------- */
-  const csvToolsHTML = () => `<button class="tbtn" type="button" data-tbl="only" aria-pressed="false">仅看变化行</button>`
+  /* 新增文件的表没有"变化行"可言，不提供行过滤开关 */
+  const csvToolsHTML = (opts) => ((opts && opts.noRows) ? ""
+    : `<button class="tbtn" type="button" data-tbl="only" aria-pressed="false">仅看变化行</button>`)
     + `<button class="tbtn" type="button" data-tbl="cols" aria-expanded="false">列</button>`
     + `<button class="tbtn" type="button" data-tbl="density" aria-pressed="false">紧凑</button>`
     + `<button class="tbtn" type="button" data-tbl="full" aria-pressed="false">全屏</button>`;
@@ -410,13 +783,13 @@
   }
 
   /* 阅读视图：Head 数据表，被删记录按锚点插回原位，被改记录上方保留旧记录。 */
-  function csvReadingTable(model, forceAdded) {
+  function csvReadingTable(model, plain) {
     const rows = model.head.rows;
     if (!rows.length) return `<div class="dempty">（空 CSV 文件）</div>`;
     const cols = model.columns;
     const [header, ...rest] = rows;
     const labels = header.cells;
-    const pending = model.removed;
+    const pending = plain ? [] : model.removed;
     let pi = 0;
     let body = "";
     const flush = (beforeLine) => {
@@ -425,15 +798,15 @@
         pi += 1;
       }
     };
-    const headState = (row) => (forceAdded ? "added" : row.state);
+    const headState = (row) => (plain ? "normal" : row.state);
     let heading = csvRowMarkup(header, cols, { header: true, state: headState(header), anchors: true, labels });
-    if (!forceAdded && header.before) {
+    if (!plain && header.before) {
       heading = csvRowMarkup(header.before, cols, { header: true, state: "removed", oldLine: true, labels }) + heading;
     }
     flush(header.startLine);
     for (const row of rest) {
       flush(row.startLine);
-      if (!forceAdded && row.before) {
+      if (!plain && row.before) {
         body += csvRowMarkup(row.before, cols, { state: "removed", oldLine: true, labels });
       }
       body += csvRowMarkup(row, cols, { state: headState(row), anchors: true, labels });
@@ -455,16 +828,17 @@
   }
 
   function csvBlockHTML(model, opts) {
-    const forceAdded = !!opts.forceAdded;
+    const plain = !!opts.plain;
     const counts = model.stats;
     const rows = model.head.rows;
     const delta = [counts.added ? `+${counts.added}` : "", counts.modified ? `~${counts.modified}` : "",
       counts.removed ? `−${counts.removed}` : ""].filter(Boolean).join(" ");
-    const stat = (forceAdded ? `<span class="diff-tag add">新增</span> ` : "")
+    const stat = (opts.newFile ? `<span class="diff-tag add">新增</span> ` : "")
       + `${rows.length} 行 · ${model.columns} 列 · 首行为表头 `
-      + (delta ? `<span class="csv-delta">${delta}</span>` : `<span class="csv-delta none">无单元格变化</span>`);
+      + (plain ? `<span class="csv-delta none">全部行均为新增</span>`
+        : delta ? `<span class="csv-delta">${delta}</span>` : `<span class="csv-delta none">无单元格变化</span>`);
     return `<div class="csv-block">`
-      + tableShellHTML({ csv: true, stat, tools: csvToolsHTML(), table: csvReadingTable(model, forceAdded), label: "CSV 数据表" })
+      + tableShellHTML({ csv: true, stat, tools: csvToolsHTML({ noRows: plain }), table: csvReadingTable(model, plain), label: "CSV 数据表" })
       + `</div>`;
   }
 
@@ -494,7 +868,10 @@
     if (!file.patch && file.status !== "added") {
       return `<div class="error-box">GitHub 未返回该文件的差异（文件过大）。无法在工作台中安全审阅此文件，请在 GitHub 中查看完整 Diff。<br><br><a href="${D.meta.url}/files#diff-${encodeURIComponent(file.path)}" target="_blank" rel="noopener">在 GitHub 中查看完整 Diff →</a></div>`;
     }
-    return csvBlockHTML(csvModelFor(file), { forceAdded: file.status === "added" });
+    if (file.status === "added") {
+      return addedFileNote() + csvBlockHTML(csvModelFor(file), { plain: true, newFile: true });
+    }
+    return csvBlockHTML(csvModelFor(file), {});
   }
 
   function csvSideBySideHTML(file) {
@@ -615,7 +992,9 @@
     // active composer
     if (D.active) {
       const a = D.active;
-      parts.push(`<div class="composer"><div class="canchor">${esc(a.path.split("/").pop())} · L${a.start}${a.end > a.start ? "–" + a.end : ""} · side=RIGHT</div>`
+      parts.push(`<div class="composer"><div class="canchor">${esc(a.path.split("/").pop())} · ${lineSpan(a.start, a.end)}${a.unanchored ? " · 文字评论" : " · side=RIGHT"}</div>`
+        + (a.unanchored ? `<div class="cm-hint">该范围不在本次 Diff 的改动行内，无法挂行级评论：将以整条评论提交，正文自动附上 <code>${esc(a.path)}</code> ${lineSpan(a.start, a.end)}。</div>` : "")
+        + (a.quote ? `<blockquote class="cm-quote">${esc(a.quote)}</blockquote>` : "")
         + `<textarea id="wbcText" data-key="${esc(a.path + ":" + a.start + ":" + a.end)}" placeholder="写下判断依据或要求补充的内容。">${esc(a.body || "")}</textarea>`
         + `<div class="crow"><button class="btn" type="button" data-act="save">存为草稿</button><button class="btn ghost" type="button" data-act="cancel">取消</button></div></div>`);
     }
@@ -624,7 +1003,8 @@
       parts.push(`<div style="font-size:12px;color:var(--ink-3);margin:10px 0 4px;">本地草稿（${D.drafts.length}）</div>`);
       parts.push(D.drafts.map((d, idx) => {
         const outdated = !d.headSha || d.headSha !== D.meta?.headSha;
-        return `<div class="ddraft"><div class="dloc">${esc(d.path.split("/").pop())} · L${d.start}${d.end > d.start ? "–" + d.end : ""}${outdated ? " · 版本已变化" : ""}</div>`
+        return `<div class="ddraft"><div class="dloc">${esc(d.path.split("/").pop())} · ${lineSpan(d.start, d.end)}${d.unanchored ? ` <span class="dflag">文字评论</span>` : ""}${outdated ? " · 版本已变化" : ""}</div>`
+          + (d.quote ? `<div class="dquote">${esc(d.quote.split("\n").join(" ").slice(0, 120))}</div>` : "")
           + `<div class="dbody2">${esc((d.body || "").split("\n").filter(Boolean)[0] || "")}</div>`
           + `<button type="button" class="dop" data-del="${idx}">删除</button></div>`;
       }).join(""));
@@ -786,8 +1166,10 @@
         cell.hidden = st.hidden.includes(index);
         cell.classList.toggle("is-pinned", st.pinned === index);
       });
+      /* 新增文件整份都是新增，没有可比对的变化行：不看持久化的行过滤状态 */
+      const wholeFileNew = curFile()?.status === "added";
       table.querySelectorAll("tbody tr").forEach((row) => {
-        row.hidden = st.only && !CHANGED_ROW.test(row.className);
+        row.hidden = !wholeFileNew && st.only && !CHANGED_ROW.test(row.className);
       });
       table.querySelectorAll("tbody td[data-col]").forEach((cell) => {
         if (cell.dataset.col === "ln") return;
@@ -1085,6 +1467,7 @@
 
     renderFiles();
     renderChapters();
+    renderFilepath();
 
     const doc = document.getElementById("wbDoc");
     doc.classList.toggle("marks-off", !D.marks);
@@ -1112,32 +1495,113 @@
   }
 
   /* ---------- 选择文字反查行号 ---------- */
+  /** 行号范围写法：L7 / L3–L7 */
+  const lineSpan = (start, end) => (Number(end) > Number(start) ? `L${start}–L${end}` : `L${start}`);
+
+  /** 提交到 GitHub 的正文：引用拼成 blockquote 放在正文前；文字评论再补位置行。 */
+  function commentBody(draft) {
+    const quoted = draft.quote
+      ? `${String(draft.quote).split("\n").map((line) => `> ${line}`).join("\n")}\n\n`
+      : "";
+    if (!draft.unanchored) return quoted + draft.body;
+    /* GitHub 只接受 diff 内的行，范围之外的行走整条评论：正文自带路径与行号范围 */
+    return `${quoted}${draft.body}\n\n---\n位置：\`${draft.path}\` ${lineSpan(draft.start, draft.end)}（不在本次 Diff 范围内，按文字评论提交）`;
+  }
+
+  /** 引用原文：保留换行但截断到 6 行 / 400 字，避免把整段文档塞进评论。 */
+  function clipQuote(raw) {
+    const lines = String(raw || "").split("\n").map((line) => line.trim()).filter(Boolean).slice(0, 6);
+    let out = lines.join("\n");
+    if (out.length > 400) out = `${out.slice(0, 400)}…`;
+    return out;
+  }
+
+  /** 列表项在源码里的行范围：<li data-line> 只给了起始行，结束行从块的 raw 反查。 */
+  function listItemRange(li, block) {
+    const start = Number(li.dataset.line);
+    if (!Number.isInteger(start) || start <= 0) return null;
+    const model = curFile() ? modelFor(curFile()) : null;
+    const source = (model?.headBlocks || []).find((b) => b.startLine === Number(block.dataset.line));
+    if (!source?.raw) return { start, end: start };
+    const hit = window.DiffModel.listItemRanges(source.raw, source.startLine).find((r) => r.startLine === start);
+    return { start, end: hit ? hit.endLine : start };
+  }
+
+  /* 比较用：去掉 Markdown 行内语法与空白，只留正文文字 */
+  const normalizeText = (raw) => String(raw || "")
+    .replace(/!?\[([^\]]*)\]\([^)]*\)/g, "$1")
+    .replace(/[`*_~#>|]/g, "")
+    .replace(/\s+/g, "");
+
+  /** 多行块内按选中文字反查源码行：整行命中优先，否则用首尾片段匹配。 */
+  function matchLinesInBlock(block, selected) {
+    const start = Number(block.dataset.line);
+    const model = curFile() ? modelFor(curFile()) : null;
+    const source = (model?.headBlocks || []).find((b) => b.startLine === start);
+    if (!source?.raw) return null;
+    const rows = source.raw.split("\n").map((line, i) => ({ line: start + i, text: normalizeText(line) }))
+      .filter((r) => r.text);
+    const probe = normalizeText(selected);
+    if (!probe || !rows.length) return null;
+    const whole = rows.filter((r) => probe.includes(r.text));
+    if (whole.length) return { start: whole[0].line, end: whole[whole.length - 1].line };
+    const head = probe.slice(0, 20);
+    const tail = probe.slice(-20);
+    const part = rows.filter((r) => r.text.includes(head) || r.text.includes(tail)
+      || head.includes(r.text) || tail.includes(r.text));
+    if (!part.length) return null;
+    return { start: part[0].line, end: part[part.length - 1].line };
+  }
+
   function locateFromSelection(sel) {
     const elementOf = (n) => (n && n.nodeType === 1 ? n : n?.parentElement);
-    const lineOf = (n) => {
+    const blockOf = (n) => {
+      const el = elementOf(n);
+      return el?.closest ? el.closest(".md-block[data-line][data-end-line]") : null;
+    };
+    const rangeOf = (n) => {
       const el = elementOf(n);
       if (!el?.closest) return null;
       const row = el.closest(".csv-row[data-line]");
       if (row) {
         const line = Number(row.dataset.commentLine || row.dataset.line);
-        return Number.isInteger(line) && line > 0 ? line : null;
+        return Number.isInteger(line) && line > 0 ? { start: line, end: line } : null;
       }
       const codeLine = el.closest(".code-line[data-line]");
       if (codeLine) {
         const line = Number(codeLine.dataset.line);
-        return Number.isInteger(line) && line > 0 ? line : null;
+        return Number.isInteger(line) && line > 0 ? { start: line, end: line } : null;
+      }
+      const tr = el.closest("tr[data-line]");
+      if (tr) {
+        const line = Number(tr.dataset.line);
+        if (Number.isInteger(line) && line > 0) return { start: line, end: line };
       }
       const block = el.closest(".md-block[data-line][data-end-line]");
-      if (block && Number(block.dataset.line) === Number(block.dataset.endLine)) {
-        const line = Number(block.dataset.line);
-        return Number.isInteger(line) && line > 0 ? line : null;
-      }
-      return null;
+      if (!block) return null;
+      const start = Number(block.dataset.line);
+      const end = Number(block.dataset.endLine);
+      if (!Number.isInteger(start) || start <= 0) return null;
+      if (start === end) return { start, end };
+      /* 多行块：先落到具体列表项（<li data-line> 由渲染阶段标注） */
+      const li = el.closest("li[data-line]");
+      return li ? listItemRange(li, block) : null;
     };
-    const s = lineOf(sel?.anchorNode);
-    const e = lineOf(sel?.focusNode);
-    if (s && e) return { start: Math.min(s, e), end: Math.max(s, e) };
-    return null;
+    const s = rangeOf(sel?.anchorNode);
+    const e = rangeOf(sel?.focusNode);
+    if (s && e) return { start: Math.min(s.start, e.start), end: Math.max(s.end, e.end) };
+
+    /* 多行段落 / 引用 / 表格等：先按选中文字反查具体行，再退到整块范围 */
+    const ba = blockOf(sel?.anchorNode);
+    const bf = blockOf(sel?.focusNode);
+    if (!ba || !bf) return null;
+    if (ba === bf) {
+      const matched = matchLinesInBlock(ba, sel.toString());
+      if (matched) return matched;
+    }
+    const ra = { start: Number(ba.dataset.line), end: Number(ba.dataset.endLine) };
+    const rb = { start: Number(bf.dataset.line), end: Number(bf.dataset.endLine) };
+    return { start: Math.min(ra.start, rb.start), end: Math.max(ra.end, rb.end) };
   }
 
   /* ---------- 事件绑定 ---------- */
@@ -1274,7 +1738,10 @@
         if (act.dataset.act === "cancel") { D.active = null; render(); return; }
         if (!text) { toast("先写点内容再存草稿"); return; }
         const a = D.active;
-        D.drafts.push({ id: newDraftId(), path: a.path, start: a.start, end: a.end, body: text, headSha: D.meta.headSha });
+        D.drafts.push({
+          id: newDraftId(), path: a.path, start: a.start, end: a.end,
+          body: text, quote: a.quote || "", unanchored: !!a.unanchored, headSha: D.meta.headSha,
+        });
         D.active = null;
         saveDrafts();
         render();
@@ -1300,23 +1767,31 @@
       const rng = locateFromSelection(sel);
       if (!rng) {
         document.getElementById("dselchip").hidden = true;
-        toast("无法精确定位所选内容，请改选单行内容或代码行。");
+        toast("无法精确定位所选内容，请改选单行、列表项或代码行。");
         return;
       }
-      // 校验选区行号在 diff hunk 内，否则不显示评论按钮
+      // 选区落到 hunk 之外：夹到块内可评论的行；一行都没有则降级为纯文字评论（行号写进正文）
+      let unanchored = false;
       const cl = modelFor(curFile())?.parsed?.commentableHeadLines;
-      if (cl && (!cl.has(rng.start) || !cl.has(rng.end))) {
-        document.getElementById("dselchip").hidden = true;
-        toast("所选行不在当前 Diff 的可评论范围内。");
-        return;
+      if (cl && cl.size) {
+        const hit = [];
+        for (let line = rng.start; line <= rng.end; line += 1) if (cl.has(line)) hit.push(line);
+        if (hit.length) {
+          rng.start = hit[0];
+          rng.end = hit[hit.length - 1];
+        } else {
+          unanchored = true;
+        }
       }
       const chip = document.getElementById("dselchip");
       chip.dataset.start = String(rng.start);
       chip.dataset.end = String(rng.end);
+      chip.dataset.quote = text;
+      chip.dataset.unanchored = unanchored ? "1" : "";
       chip.style.left = Math.min(e.clientX + 8, window.innerWidth - 190) + "px";
       chip.style.top = (e.clientY + 10) + "px";
       chip.hidden = false;
-      chip.textContent = "评论所选 L" + rng.start + (rng.end > rng.start ? "–" + rng.end : "");
+      chip.textContent = (unanchored ? "文字评论 " : "评论所选 ") + lineSpan(rng.start, rng.end);
     });
     document.getElementById("dselchip").addEventListener("mousedown", (e) => e.preventDefault());
 
@@ -1348,7 +1823,13 @@
     });
     document.getElementById("dselchip").addEventListener("click", () => {
       const chip = document.getElementById("dselchip");
-      D.active = { path: D.file, start: Number(chip.dataset.start), end: Number(chip.dataset.end), quote: "" };
+      D.active = {
+        path: D.file,
+        start: Number(chip.dataset.start),
+        end: Number(chip.dataset.end),
+        quote: clipQuote(chip.dataset.quote || ""),
+        unanchored: chip.dataset.unanchored === "1",
+      };
       chip.hidden = true;
       window.getSelection().removeAllRanges();
       render();
@@ -1381,8 +1862,11 @@
     D.active = null;
     D.navIdx = -1;
     D.err = "";
+    if (D.view === "tree") unfoldAncestors(path);
     renderFiles();
     renderChapters();
+    const activeRow = document.getElementById("wbFiles")?.querySelector(".trow.is-active, .fitem.is-active");
+    if (activeRow && activeRow.scrollIntoView) activeRow.scrollIntoView({ block: "nearest" });
     const meta = D.meta;
     const file = D.files.find((item) => item.path === path);
     if (!file) return;
@@ -1427,9 +1911,12 @@
     const myDrafts = JSON.parse(JSON.stringify(D.drafts));
     const submittedIds = new Set(myDrafts.map((d) => d.id));
     const eventLabel = { APPROVE: "批准合并", COMMENT: "仅评论", REQUEST_CHANGES: "请求修改" }[myEvent] || myEvent;
-    const summary = myDrafts.length
-      ? `${eventLabel}（附 ${myDrafts.length} 条行级意见）`
-      : eventLabel;
+    const plainCount = myDrafts.filter((d) => d.unanchored).length;
+    const lineCount = myDrafts.length - plainCount;
+    const parts = [];
+    if (lineCount) parts.push(`${lineCount} 条行级意见`);
+    if (plainCount) parts.push(`${plainCount} 条文字评论（正文附行号范围）`);
+    const summary = parts.length ? `${eventLabel}（附 ${parts.join(" + ")}）` : eventLabel;
     if (!confirm(`确认提交 Review：${summary}？\n\n将以你的名义写入 GitHub，提交后不可撤回。`)) return;
     const btn = document.getElementById("wbSubmit");
     btn.disabled = true;
@@ -1439,8 +1926,12 @@
         commit_id: myHeadSha,
         event: myEvent,
         comments: myDrafts.map((d) => ({
-          path: d.path, body: d.body, line: d.end, side: "RIGHT",
+          path: d.path,
+          body: commentBody(d),
+          line: d.end,
+          side: "RIGHT",
           start_line: d.start < d.end ? d.start : undefined,
+          plain: !!d.unanchored,
         })),
       };
       const res = await fetchJSON(`/api/approvals/${myPr}/comments`, {
@@ -1464,7 +1955,10 @@
         toast("已提交（但页面已刷新）");
         return;
       }
-      toast(`已写入 GitHub：review #${data.review.id}（${data.review.comments} 条）`);
+      const wrote = [];
+      if (data.review) wrote.push(`review #${data.review.id}（${data.review.comments} 条行级）`);
+      if (data.plainCount) wrote.push(`${data.plainCount} 条文字评论`);
+      toast(`已写入 GitHub：${wrote.join(" + ") || "已提交"}`);
       await load(myPr, true, false);
     } catch (err) {
       if (D.generation !== myGen) return;
@@ -1577,10 +2071,17 @@
     });
     document.getElementById("wbFilter").addEventListener("input", (e) => { D.filter = e.target.value; renderFiles(); });
     document.getElementById("wbOrigCopy").addEventListener("click", () => copyPrLink());
-    document.getElementById("wbFiles").addEventListener("click", (e) => {
-      const item = e.target.closest(".fitem");
-      if (item) selectFile(item.dataset.path);
+    document.querySelectorAll(".wb-viewseg [data-view]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        if (D.view === btn.dataset.view) return;
+        D.view = btn.dataset.view;
+        writePref(PREF.view, D.view);
+        renderFiles();
+      });
     });
+    initFileList();
+    initSections();
+    initSashes();
   }
 
   let bound = false;
@@ -1589,6 +2090,9 @@
       if (!bound) { bind(); bindTopbar(); bound = true; }
       document.getElementById("workbench").hidden = false;
       document.body.classList.add("wb-mode-on");
+      D.view = readPref(PREF.view, "tree") === "flat" ? "flat" : "tree";
+      const folded = readPref(PREF.folded(number), []);
+      D.folded = new Set(Array.isArray(folded) ? folded : []);
       /* 窄屏下文件导航默认收起，避免占满阅读宽度；宽屏保持展开 */
       document.getElementById("wbBody").classList.toggle("nav-collapsed", window.innerWidth <= 900);
       document.getElementById("wbLoading").hidden = false;

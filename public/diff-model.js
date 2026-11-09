@@ -672,8 +672,67 @@
       .replace(/<\/table>/g, `</table></div></div>`);
   }
 
+  /** 目录树内部节点 → 对外节点（含汇总；连续的单子目录合并成一行，避免深层路径吃掉侧栏宽度）。 */
+  function treeNode(node, prefix) {
+    const dirs = Array.from(node.dirs.entries())
+      .map(([name, child]) => treeNode(child, prefix ? `${prefix}/${name}` : name))
+      .filter((dir) => dir.count > 0)
+      .sort((a, b) => a.name.localeCompare(b.name, "zh"));
+    const files = node.files
+      .map((file) => ({
+        type: "file",
+        name: file.name,
+        path: file.path,
+        status: file.status,
+        additions: file.additions || 0,
+        deletions: file.deletions || 0,
+      }))
+      .sort((a, b) => a.name.localeCompare(b.name, "zh"));
+
+    while (prefix && !files.length && dirs.length === 1) {
+      const only = dirs.pop();
+      return {
+        type: "dir",
+        name: `${node.name}/${only.name}`,
+        path: only.path,
+        children: only.children,
+        count: only.count,
+        additions: only.additions,
+        deletions: only.deletions,
+      };
+    }
+
+    const children = dirs.concat(files);
+    return {
+      type: "dir",
+      name: node.name,
+      path: prefix,
+      children,
+      count: children.reduce((sum, child) => sum + (child.type === "dir" ? child.count : 1), 0),
+      additions: children.reduce((sum, child) => sum + child.additions, 0),
+      deletions: children.reduce((sum, child) => sum + child.deletions, 0),
+    };
+  }
+
+  /** 变更文件列表 → 目录树（目录在前、文件在后，各自按名称排；单链目录合并）。 */
+  function buildFileTree(files) {
+    const root = { name: "", dirs: new Map(), files: [] };
+    (files || []).forEach((file) => {
+      const parts = String(file.path || "").split("/").filter(Boolean);
+      if (!parts.length) return;
+      let node = root;
+      for (let i = 0; i < parts.length - 1; i += 1) {
+        if (!node.dirs.has(parts[i])) node.dirs.set(parts[i], { name: parts[i], dirs: new Map(), files: [] });
+        node = node.dirs.get(parts[i]);
+      }
+      node.files.push(Object.assign({}, file, { name: parts[parts.length - 1] }));
+    });
+    const top = treeNode(root, "");
+    return (top.children || []).filter((child) => child.type !== "dir" || child.count > 0);
+  }
+
   window.DiffModel = {
     parsePatch, mdBlocks, buildModel, similarity, esc, listRanges, listItemLines, listItemRanges,
-    isCsvPath, csvParse, csvModel, slugify, resolveDocLink, renderMarkdown, DOC_SUFFIX,
+    isCsvPath, csvParse, csvModel, slugify, resolveDocLink, renderMarkdown, buildFileTree, DOC_SUFFIX,
   };
 })();

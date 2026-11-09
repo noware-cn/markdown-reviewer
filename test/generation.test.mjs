@@ -78,6 +78,7 @@ function makeDocument() {
     addEventListener() {}, removeEventListener() {},
     querySelector() { return null; }, querySelectorAll() { return []; },
     getBoundingClientRect() { return { top: 0 }; }, setSelectionRange() {}, focus() {}, closest() { return null; },
+    setAttribute() {}, getAttribute() { return 'true'; }, removeAttribute() {},
   });
   return {
     els,
@@ -274,12 +275,12 @@ test('提交失败不再把旧 PR 的错误弹到新 PR', async () => {
   assert.equal(app.ctx.window.__D.n, 2);
 });
 
-test('严格选区定位：多行块不回退到块首', () => {
+test('严格选区定位：多行块取整块范围，单行/代码行仍精确', () => {
   const world = makeWorld();
   const app = mountApp(world);
   const node = (selector, dataset) => ({ nodeType: 1, dataset, closest(q) { return q === selector ? this : null; } });
   const multi = node('.md-block[data-line][data-end-line]', { line: '4', endLine: '8' });
-  assert.equal(app.ctx.window.__locateFromSelection({ anchorNode: multi, focusNode: multi }), null);
+  assert.deepEqual({ ...app.ctx.window.__locateFromSelection({ anchorNode: multi, focusNode: multi }) }, { start: 4, end: 8 });
   const single = node('.md-block[data-line][data-end-line]', { line: '4', endLine: '4' });
   assert.deepEqual({ ...app.ctx.window.__locateFromSelection({ anchorNode: single, focusNode: single }) }, { start: 4, end: 4 });
   const codeA = node('.code-line[data-line]', { line: '10' });

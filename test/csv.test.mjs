@@ -22,6 +22,21 @@ function loadModel() {
 
 const model = loadModel();
 
+/* diff-model 里的 window.marked 是运行时全局：这些用例临时挂上真实 marked。 */
+const markedSrc = fs.readFileSync(`${REPO}public/marked.min.js`, 'utf8');
+const marked = (() => {
+  const c = { module: { exports: {} }, exports: {}, window: {}, self: {} };
+  c.globalThis = c;
+  vm.createContext(c);
+  vm.runInContext(markedSrc, c);
+  return c.exports.marked;
+})();
+const withMarked = (fn) => {
+  const prev = globalThis.window;
+  globalThis.window = { marked };
+  try { return fn(); } finally { globalThis.window = prev; }
+};
+
 function mountView() {
   const els = new Map();
   const classList = () => {
@@ -37,6 +52,7 @@ function mountView() {
     addEventListener() {}, removeEventListener() {},
     querySelector() { return null; }, querySelectorAll() { return []; },
     getBoundingClientRect() { return { top: 0 }; }, setSelectionRange() {}, focus() {}, closest() { return null; },
+    setAttribute() {}, getAttribute() { return 'true'; }, removeAttribute() {},
   });
   const store = {};
   const ctx = {
@@ -62,7 +78,7 @@ function mountView() {
   vm.createContext(ctx);
   const ANCHOR = '  let bound = false;';
   const exposed = diffSrc.replace(ANCHOR,
-    `  window.__D = D; window.__reading = csvReadingHTML; window.__sb = csvSideBySideHTML; window.__locate = locateFromSelection;\n${ANCHOR}`);
+    `  window.__D = D; window.__reading = csvReadingHTML; window.__sb = csvSideBySideHTML; window.__locate = locateFromSelection; window.__commentBody = commentBody; window.__tools = csvToolsHTML;\n${ANCHOR}`);
   vm.runInContext(exposed, ctx);
   return ctx.window;
 }
@@ -258,12 +274,13 @@ test('阅读视图：缺 patch 的修改文件给出 GitHub 跳转提示', () =>
   assert.ok(html.includes('GitHub 未返回该文件的差异'));
 });
 
-test('阅读视图：新增文件整表标记为新增', () => {
+test('阅读视图：新增文件不逐行标注，但显式说明是新增文件', () => {
   const file = mountFile(fileOf({ path: 'data/new.csv', status: 'added', patch: null }), '', 'a,b\n1,2');
   const html = win.__reading(file);
-  assert.ok(html.includes('<span class="diff-tag add">新增</span>'));
-  assert.ok(html.includes('<tr class="csv-row is-header is-added"'));
-  assert.equal((html.match(/<tr class="csv-row is-added"/g) || []).length, 1);
+  assert.ok(html.includes('class="added-note"'), '顶部有新增文件说明');
+  assert.ok(html.includes('<span class="diff-tag add">新增</span>'), '工具条仍标出新增');
+  assert.ok(html.includes('全部行均为新增'));
+  assert.ok(!html.includes('is-added'), '整表新增时不再逐行涂色');
 });
 
 test('前后对照：Base 侧标出被替换行，Head 侧标出修改行', () => {
@@ -276,6 +293,126 @@ test('前后对照：Base 侧标出被替换行，Head 侧标出修改行', () =
 });
 
 /* ---------- 选区定位 ---------- */
+
+test('选区定位：多行列表块里按 <li data-line> 落到具体列表项（含跨行项）', () => {
+  /* 第 3 行起是有序列表；第一项折行到第 4 行，第二项在第 5 行 */
+  const HEAD = '前文\n\n1. 第一条\n   折行内容\n2. 第二条\n';
+  const file = fileOf({ path: 'docs/list.md', isMarkdown: true, additions: 5, deletions: 0 });
+  mountFile(file, '', HEAD);
+  win.__D.files = [file];
+  win.__D.file = file.path;
+  const makeNode = (line) => ({
+    nodeType: 1,
+    dataset: { line: String(line) },
+    closest(sel) {
+      if (sel === '.md-block[data-line][data-end-line]') return { dataset: { line: '3', endLine: '5' } };
+      if (sel === 'li[data-line]') return this;
+      return null;
+    },
+  });
+  assert.deepEqual({ ...withMarked(() => win.__locate({ anchorNode: makeNode(3), focusNode: makeNode(3) })) },
+    { start: 3, end: 4 });
+  assert.deepEqual({ ...withMarked(() => win.__locate({ anchorNode: makeNode(5), focusNode: makeNode(5) })) },
+    { start: 5, end: 5 });
+});
+
+test('选区定位：跨多个列表项取首尾范围', () => {
+  const file = fileOf({ path: 'docs/list2.md', isMarkdown: true, additions: 3, deletions: 0 });
+  mountFile(file, '', '1. 甲\n2. 乙\n3. 丙\n');
+  win.__D.files = [file];
+  win.__D.file = file.path;
+  const makeNode = (line) => ({
+    nodeType: 1,
+    dataset: { line: String(line) },
+    closest(sel) {
+      if (sel === '.md-block[data-line][data-end-line]') return { dataset: { line: '1', endLine: '3' } };
+      if (sel === 'li[data-line]') return this;
+      return null;
+    },
+  });
+  const r = withMarked(() => win.__locate({ anchorNode: makeNode(1), focusNode: makeNode(3) }));
+  assert.deepEqual({ ...r }, { start: 1, end: 3 });
+});
+
+test('选区定位：表格行按 <tr data-line> 落到该行', () => {
+  const cell = {
+    nodeType: 1,
+    closest(sel) {
+      if (sel === 'tr[data-line]') return { dataset: { line: '12' } };
+      if (sel === '.md-block[data-line][data-end-line]') return { dataset: { line: '9', endLine: '14' } };
+      return null;
+    },
+  };
+  assert.deepEqual({ ...win.__locate({ anchorNode: cell, focusNode: cell }) }, { start: 12, end: 12 });
+});
+
+test('选区定位：多行段落按选中文字收窄到具体行', () => {
+  const HEAD = '标题\n\n第一行内容\n第二行内容\n第三行内容\n';
+  const file = fileOf({ path: 'docs/para.md', isMarkdown: true, additions: 5, deletions: 0 });
+  mountFile(file, '', HEAD);
+  win.__D.files = [file];
+  win.__D.file = file.path;
+  const block = { nodeType: 1, dataset: { line: '3', endLine: '5' },
+    closest(sel) { return sel === '.md-block[data-line][data-end-line]' ? this : null; } };
+  const sel = { anchorNode: block, focusNode: block, toString: () => '第二行内容' };
+  assert.deepEqual({ ...withMarked(() => win.__locate(sel)) }, { start: 4, end: 4 });
+});
+
+test('选区定位：文字匹配不到时回退整块范围，不拒绝', () => {
+  const file = fileOf({ path: 'docs/para2.md', isMarkdown: true, additions: 5, deletions: 0 });
+  mountFile(file, '', '标题\n\n甲\n乙\n丙\n');
+  win.__D.files = [file];
+  win.__D.file = file.path;
+  const block = { nodeType: 1, dataset: { line: '3', endLine: '5' },
+    closest(sel) { return sel === '.md-block[data-line][data-end-line]' ? this : null; } };
+  const sel = { anchorNode: block, focusNode: block, toString: () => '完全对不上的文字' };
+  assert.deepEqual({ ...withMarked(() => win.__locate(sel)) }, { start: 3, end: 5 });
+});
+
+test('选区定位：多行段落退到整块范围（有文字可反查时再收窄）', () => {
+  const node = {
+    nodeType: 1,
+    closest(sel) {
+      if (sel === '.md-block[data-line][data-end-line]') return { dataset: { line: '10', endLine: '14' } };
+      return null;
+    },
+  };
+  assert.deepEqual({ ...win.__locate({ anchorNode: node, focusNode: node }) }, { start: 10, end: 14 });
+  /* 块外（不属于任何块）仍然拒绝 */
+  const outside = { nodeType: 1, closest() { return null; } };
+  assert.equal(win.__locate({ anchorNode: outside, focusNode: outside }), null);
+});
+
+test('工具条：新增文件不给“仅看变化行”', () => {
+  assert.ok(win.__tools().includes('仅看变化行'));
+  assert.ok(!win.__tools({ noRows: true }).includes('仅看变化行'));
+  assert.ok(win.__tools({ noRows: true }).includes('全屏'));
+});
+
+test('评论正文：文字评论附路径与行号范围', () => {
+  const body = win.__commentBody({
+    path: 'docs/区域银行智能研发解决方案/README.md', start: 3, end: 7,
+    quote: '填写原则', body: '这一节需要补链接。', unanchored: true,
+  });
+  assert.ok(body.startsWith('> 填写原则'));
+  assert.ok(body.includes('这一节需要补链接。'));
+  assert.ok(body.includes('`docs/区域银行智能研发解决方案/README.md` L3–L7'));
+  assert.ok(body.includes('按文字评论提交'));
+  /* 单行时只写 L7 */
+  const single = win.__commentBody({ path: 'a.md', start: 7, end: 7, body: 'x', unanchored: true });
+  assert.ok(single.includes('`a.md` L7'));
+  assert.ok(!single.includes('L7–7'));
+});
+
+test('评论正文：行级评论不加位置行（GitHub 自带行号）', () => {
+  const body = win.__commentBody({ path: 'a.md', start: 3, end: 5, quote: '', body: 'x' });
+  assert.equal(body, 'x');
+});
+
+test('评论正文：有引用时拼成 blockquote', () => {
+  assert.equal(win.__commentBody({ quote: '', body: '正文' }), '正文');
+  assert.equal(win.__commentBody({ quote: '第一行\n第二行', body: '补充说明' }), '> 第一行\n> 第二行\n\n补充说明');
+});
 
 test('选区定位：CSV 行按 data-comment-line 取评论行', () => {
   const row = (dataset) => ({ nodeType: 1, dataset, closest(q) { return q === '.csv-row[data-line]' ? this : null; } });

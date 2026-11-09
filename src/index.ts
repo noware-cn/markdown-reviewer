@@ -1,6 +1,7 @@
 import type { Env } from "./github";
 import { getApproval, listApprovals } from "./github";
 import {
+  createIssueComment,
   createReview,
   getFileText,
   getPrFiles,
@@ -423,16 +424,20 @@ export default {
         : "COMMENT";
       const drafts = Array.isArray(body.comments) ? body.comments : [];
       if (!drafts.length && event !== "APPROVE") return json({ status: "error", message: "没有可提交的意见" }, 400);
-      const invalid = drafts.find(
-        (d) => !d || typeof d.path !== "string" || typeof d.body !== "string" || !Number.isFinite(d.line),
-      );
+      const invalid = drafts.find((d) => !d || typeof d.path !== "string" || typeof d.body !== "string"
+        || (!d.plain && !Number.isFinite(d.line)));
       if (invalid) return json({ status: "error", message: "意见缺少 path / line / body" }, 400);
+      const anchored = drafts.filter((d) => !d.plain);
+      const plains = drafts.filter((d) => d.plain);
 
       if (isMock) {
         return json({
           ok: true,
           event,
-          review: { id: 990001, url: "https://github.com/noware-cn/markdown-reviewer/pull/11#pullrequestreview-990001", comments: drafts.length },
+          review: anchored.length || event !== "COMMENT"
+            ? { id: 990001, url: "https://github.com/noware-cn/markdown-reviewer/pull/11#pullrequestreview-990001", comments: anchored.length }
+            : null,
+          plainCount: plains.length,
           source: "mock",
         });
       }
@@ -457,16 +462,15 @@ export default {
         const changedPaths = new Set(files.map((file) => file.path));
         const invalidDraft = drafts.find((draft) =>
           !changedPaths.has(draft.path)
-          || !Number.isInteger(Number(draft.line))
-          || Number(draft.line) < 1
           || !draft.body.trim()
-          || (draft.start_line !== undefined && (!Number.isInteger(Number(draft.start_line)) || Number(draft.start_line) < 1 || Number(draft.start_line) > Number(draft.line)))
+          || (!draft.plain && (!Number.isInteger(Number(draft.line)) || Number(draft.line) < 1))
+          || (!draft.plain && draft.start_line !== undefined && (!Number.isInteger(Number(draft.start_line)) || Number(draft.start_line) < 1 || Number(draft.start_line) > Number(draft.line)))
         );
         if (invalidDraft) return json({ status: "error", message: "草稿包含无效文件路径、行号或空评论，请重新定位。" }, 400);
         // 校验草稿行号在 patch hunk 范围内（GitHub 只允许评论 diff hunk 内的行）
-        if (drafts.length) {
+        if (anchored.length) {
           const patchByPath = new Map(files.map((f) => [f.path, f.patch]));
-          const outOfHunk = drafts.find((draft) => {
+          const outOfHunk = anchored.find((draft) => {
             const cl = commentableHeadLines(patchByPath.get(draft.path) ?? null);
             if (cl === null) return false; // 无 patch（新增文件）→ 所有行可评论
             const lineHunk = cl.get(Number(draft.line));
@@ -479,24 +483,28 @@ export default {
           });
           if (outOfHunk) return json({ status: "error", message: `草稿定位在 diff 之外（${outOfHunk.path.split("/").pop()} L${outOfHunk.line}），请只在变更行或相邻上下文行评论。` }, 400);
         }
-        const review = await createReview(
-          env,
-          token,
-          number,
-          meta.headSha,
-          drafts.map((d) => ({
-            path: d.path,
-            body: d.body,
-            line: Number(d.line),
-            side: "RIGHT" as const,
-            start_line: d.start_line && Number(d.start_line) < Number(d.line) ? Number(d.start_line) : undefined,
-          })),
-          event,
-        );
+        /* 行级意见进 review；diff 之外的行发 PR 整体评论（正文自带路径与行号范围） */
+        const review = anchored.length || event !== "COMMENT"
+          ? await createReview(
+            env,
+            token,
+            number,
+            meta.headSha,
+            anchored.map((d) => ({
+              path: d.path,
+              body: d.body,
+              line: Number(d.line),
+              side: "RIGHT" as const,
+              start_line: d.start_line && Number(d.start_line) < Number(d.line) ? Number(d.start_line) : undefined,
+            })),
+            event,
+          )
+          : null;
+        const plainComments = await Promise.all(plains.map((d) => createIssueComment(env, token, number, d.body)));
         // 新评论/新 Review 已写入：立刻失效该 PR 的 diff 缓存（meta+files+comments），
         // 否则客户端提交后的 /diff 会继续返回最长 5 分钟的旧评论。
         apiCache.delete(`${repoKey(env)}|/diff/${number}`);
-        return json({ ok: true, review, source: "github" });
+        return json({ ok: true, review, plainCount: plainComments.length, source: "github" });
       } catch (error) {
         const status = error instanceof GitHubError ? error.status : 502;
         const hint =

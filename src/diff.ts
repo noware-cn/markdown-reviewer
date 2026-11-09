@@ -258,6 +258,8 @@ export interface ReviewDraft {
   side: "RIGHT";
   start_line?: number;
   start_side?: "RIGHT";
+  /** true = 该范围不在 diff 内：不作为行级评论，改发 PR 整体评论（正文自带路径与行号） */
+  plain?: boolean;
 }
 
 export interface ReviewResult {
@@ -265,6 +267,31 @@ export interface ReviewResult {
   url: string;
   comments: number;
 }
+
+export interface IssueCommentResult {
+  id: number;
+  url: string;
+}
+
+/** PR 整体评论（不挂行）：用于 diff 之外的行，正文由客户端拼好路径与行号范围。 */
+export const createIssueComment = async (
+  env: Env,
+  token: string,
+  number: number,
+  body: string,
+): Promise<IssueCommentResult> => {
+  const comment = await call<{ id: number; html_url: string }>(
+    env,
+    token,
+    `${repoPath(env)}/issues/${number}/comments`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    },
+  );
+  return { id: comment.id, url: comment.html_url };
+};
 
 /** 一次提交把草稿合并成一条 review；event 默认 COMMENT，可指定 REQUEST_CHANGES 或 APPROVE。 */
 export const createReview = async (
