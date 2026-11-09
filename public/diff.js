@@ -29,6 +29,7 @@
   };
 
   const esc = window.DiffModel.esc;
+  const isCsv = (path) => window.DiffModel.isCsvPath(path);
 
   /* ---------- 草稿持久化 ---------- */
   const draftsKey = (n) => `wb.drafts.${n}`;
@@ -131,6 +132,29 @@
     const file = curFile();
     const textState = file && D.texts[file.path];
     if (!textState || !textState.headLoaded) { box.innerHTML = `<div class="dempty">加载正文后显示章节…</div>`; return; }
+    if (isCsv(file.path)) {
+      const csv = csvModelFor(file);
+      if (!csv.head.rows.length || (!file.patch && file.status !== "added")) {
+        box.innerHTML = `<div class="dempty">—</div>`;
+        return;
+      }
+      const rows = csv.head.rows;
+      const changed = rows.filter((r) => r.state === "added" || r.state === "modified");
+      const stat = `<div class="chapter-stat">CSV · ${rows.length} 行 × ${csv.columns} 列</div>`;
+      if (!changed.length) { box.innerHTML = stat + `<div class="dempty">没有内容变化</div>`; return; }
+      /* 整份文件都是新增 / 修改时逐行列没有导航价值，只留一条汇总。 */
+      if (changed.length === rows.length) {
+        box.innerHTML = stat + `<div class="chapter" data-line="${rows[0].startLine}" data-chapter="${rows[0].startLine}">`
+          + `<span class="cdot"></span>全文件 ${rows.length} 行均有变化</div>`;
+        return;
+      }
+      const shown = changed.slice(0, 40);
+      box.innerHTML = stat
+        + shown.map((r) => `<div class="chapter" data-line="${r.startLine}" data-chapter="${r.startLine}">`
+          + `<span class="cdot"></span>L${r.startLine} ${r.state === "added" ? "新增" : "修改"}</div>`).join("")
+        + (changed.length > shown.length ? `<div class="dempty">另有 ${changed.length - shown.length} 行变化，未列出</div>` : "");
+      return;
+    }
     const model = modelFor(file);
     if (!model) { box.innerHTML = `<div class="dempty">—</div>`; return; }
     const heads = model.headBlocks.filter((b) => b.type === "h1" || b.type === "h2" || b.type === "h3" || b.type === "h4");
@@ -146,17 +170,23 @@
 
   /* ---------- 差异模型缓存 ---------- */
   const modelCache = new Map();
-  function modelFor(file) {
-    if (!file) return null;
+  function cachedModel(file, kind, build) {
     const head = textOf(file.path, "head");
     const base = textOf(file.path, "base");
-    const key = file.path + "|" + (D.meta?.headSha || "");
+    const patch = file.patch || "";
+    const key = kind + "|" + file.path + "|" + (D.meta?.headSha || "");
     const hit = modelCache.get(key);
-    if (hit && hit.head === head && hit.base === base && hit.patch === (file.patch || "")) return hit.value;
-    const value = window.DiffModel.buildModel(head, base, file.patch || "");
-    modelCache.set(key, { head, base, patch: file.patch || "", value });
+    if (hit && hit.head === head && hit.base === base && hit.patch === patch) return hit.value;
+    const value = build(head, base, patch);
+    modelCache.set(key, { head, base, patch, value });
     return value;
   }
+  const modelFor = (file) => (file
+    ? cachedModel(file, "md", window.DiffModel.buildModel)
+    : null);
+  const csvModelFor = (file) => (file
+    ? cachedModel(file, "csv", window.DiffModel.csvModel)
+    : null);
 
   /* ---------- 阅读改动渲染 ---------- */
   function readingHTML(file) {
@@ -166,6 +196,7 @@
       if (errMsg) return `<div class="error-box">${esc(errMsg)} <button type="button" class="retry" data-retry="1">重试</button></div>`;
       return `<div class="dempty">正在加载正文…</div>`;
     }
+    if (isCsv(file.path)) return csvReadingHTML(file);
     if (textState.headTruncated) {
       return `<div class="error-box">文件超过读取上限（400 KB），当前内容不完整，请用 GitHub 原始文件查看。</div>`;
     }
@@ -305,7 +336,142 @@
       + `<div class="del-jump" data-jump-source="${esc(file.path)}">在源码 Diff 中查看 →</div></div>`;
   }
 
+  /* ---------- CSV 数据表 ---------- */
+  function csvGutter(row, opts) {
+    if (opts.anchors && row.commentLine) {
+      return `<span class="line-anchor" data-line="${row.commentLine}" data-side="RIGHT" title="在第 ${row.commentLine} 行评论">`
+        + `${row.commentLine}<i>+</i></span>`;
+    }
+    return `<span class="csv-num">${opts.oldLine ? "−" : ""}${row.startLine}</span>`;
+  }
+
+  function csvCells(row, cols, tag) {
+    let out = "";
+    for (let i = 0; i < cols; i += 1) {
+      const changed = row.changedCells && row.changedCells.has(i);
+      out += `<${tag}${changed ? ' class="is-changed"' : ""}>${esc(row.cells[i] ?? "")}</${tag}>`;
+    }
+    return out;
+  }
+
+  function csvRowMarkup(row, cols, opts) {
+    const tag = opts.header ? "th" : "td";
+    const state = opts.state || "normal";
+    const cls = "csv-row" + (opts.header ? " is-header" : "") + (state === "normal" ? "" : " is-" + state);
+    const attrs = opts.anchors
+      ? ` data-line="${row.startLine}" data-end-line="${row.endLine}"${row.commentLine ? ` data-comment-line="${row.commentLine}"` : ""}`
+      : ` data-old-line="${row.startLine}"`;
+    return `<tr class="${cls}"${attrs}><${tag} class="csv-ln">${csvGutter(row, opts)}</${tag}>`
+      + `${csvCells(row, cols, tag)}</tr>`;
+  }
+
+  /* 阅读视图：Head 数据表，被删记录按锚点插回原位，被改记录上方保留旧记录。 */
+  function csvReadingTable(model, forceAdded) {
+    const rows = model.head.rows;
+    if (!rows.length) return `<div class="dempty">（空 CSV 文件）</div>`;
+    const cols = model.columns;
+    const [header, ...rest] = rows;
+    const pending = model.removed;
+    let pi = 0;
+    let body = "";
+    const flush = (beforeLine) => {
+      while (pi < pending.length && pending[pi].afterLine < beforeLine) {
+        body += csvRowMarkup(pending[pi].row, cols, { state: "removed", oldLine: true });
+        pi += 1;
+      }
+    };
+    const headState = (row) => (forceAdded ? "added" : row.state);
+    let heading = csvRowMarkup(header, cols, { header: true, state: headState(header), anchors: true });
+    if (!forceAdded && header.before) {
+      heading = csvRowMarkup(header.before, cols, { header: true, state: "removed", oldLine: true }) + heading;
+    }
+    flush(header.startLine);
+    for (const row of rest) {
+      flush(row.startLine);
+      if (!forceAdded && row.before) {
+        body += csvRowMarkup(row.before, cols, { state: "removed", oldLine: true });
+      }
+      body += csvRowMarkup(row, cols, { state: headState(row), anchors: true });
+    }
+    flush(Infinity);
+    return `<div class="csv-wrap"><table class="csv-table">`
+      + `<thead>${heading}</thead><tbody>${body}</tbody></table></div>`;
+  }
+
+  function csvSimpleTable(rows, cols, opts) {
+    if (!rows.length) return `<div class="dempty">（空文件）</div>`;
+    const [header, ...rest] = rows;
+    const stateOf = opts.stateOf || ((row) => row.state);
+    return `<div class="csv-wrap"><table class="csv-table">`
+      + `<thead>${csvRowMarkup(header, cols, { header: true, state: stateOf(header), anchors: opts.anchors })}</thead>`
+      + `<tbody>${rest.map((row) => csvRowMarkup(row, cols, { state: stateOf(row), anchors: opts.anchors })).join("")}</tbody>`
+      + `</table></div>`;
+  }
+
+  function csvBlockHTML(model, opts) {
+    const forceAdded = !!opts.forceAdded;
+    const counts = model.stats;
+    const rows = model.head.rows;
+    const delta = [counts.added ? `+${counts.added}` : "", counts.modified ? `~${counts.modified}` : "",
+      counts.removed ? `−${counts.removed}` : ""].filter(Boolean).join(" ");
+    return `<div class="csv-block">`
+      + `<div class="csv-bar">`
+      + (forceAdded ? `<span class="diff-tag add">新增</span>` : "")
+      + `<span class="csv-stat">${rows.length} 行 · ${model.columns} 列 · 首行为表头</span>`
+      + (delta ? `<span class="csv-delta">${delta}</span>` : `<span class="csv-delta none">无单元格变化</span>`)
+      + `</div>`
+      + csvReadingTable(model, forceAdded)
+      + `</div>`;
+  }
+
+  function csvReadingHTML(file) {
+    const textState = D.texts[file.path];
+    if (file.status === "removed") {
+      if (textState.baseTruncated) {
+        return `<div class="error-box">删除文件超过读取上限（400 KB），Base 内容不完整，请用 GitHub 查看完整版本。</div>`;
+      }
+      const base = window.DiffModel.csvParse(textOf(file.path, "base"));
+      return `<div class="del-block"><div class="del-head">此文件在本 PR 中已删除</div>`
+        + `<div class="del-body">以下为删除前的数据表（Base 版本，共 ${base.rows.length} 行）：</div></div>`
+        + `<div class="csv-block">${csvSimpleTable(base.rows, base.columns, {
+          stateOf: () => "removed",
+        })}</div>`;
+    }
+    if (textState.headTruncated) {
+      return `<div class="error-box">文件超过读取上限（400 KB），当前内容不完整，请用 GitHub 原始文件查看。</div>`;
+    }
+    if (!file.patch && file.status !== "added") {
+      return `<div class="error-box">GitHub 未返回该文件的差异（文件过大）。无法在工作台中安全审阅此文件，请在 GitHub 中查看完整 Diff。<br><br><a href="${D.meta.url}/files#diff-${encodeURIComponent(file.path)}" target="_blank" rel="noopener">在 GitHub 中查看完整 Diff →</a></div>`;
+    }
+    return csvBlockHTML(csvModelFor(file), { forceAdded: file.status === "added" });
+  }
+
+  function csvSideBySideHTML(file) {
+    const textState = D.texts[file.path];
+    const errMsg = (textState && textState.error) || D.err;
+    if (!textState || !textState.headLoaded || !textState.baseLoaded) {
+      if (errMsg) return `<div class="error-box">${esc(errMsg)} <button type="button" class="retry" data-retry="1">重试</button></div>`;
+      return `<div class="dempty">正在加载前后版本…</div>`;
+    }
+    if (textState.headTruncated || textState.baseTruncated) {
+      return `<div class="error-box">文件超过读取上限（400 KB），前后对照内容不完整，请用 GitHub 查看完整版本。</div>`;
+    }
+    if (!file.patch && file.status !== "added" && file.status !== "removed") {
+      return `<div class="error-box">GitHub 未返回该文件的差异（文件过大）。<a href="${D.meta.url}/files#diff-${encodeURIComponent(file.path)}" target="_blank" rel="noopener">在 GitHub 中查看完整 Diff →</a></div>`;
+    }
+    const model = csvModelFor(file);
+    const forceHead = file.status === "added";
+    const forceBase = file.status === "removed";
+    return `<div class="sb2">`
+      + `<div class="sb-col sb-base"><div class="sb-col-head">Base（变更前）</div>`
+      + `${csvSimpleTable(model.base.rows, model.columns, { stateOf: forceBase ? () => "removed" : undefined })}</div>`
+      + `<div class="sb-col sb-head"><div class="sb-col-head">Head（变更后）</div>`
+      + `${csvSimpleTable(model.head.rows, model.columns, { anchors: true, stateOf: forceHead ? () => "added" : undefined })}</div>`
+      + `</div>`;
+  }
+
   function sideBySideHTML(file) {
+    if (isCsv(file.path)) return csvSideBySideHTML(file);
     const textState = D.texts[file.path];
     const errMsg = (textState && textState.error) || D.err;
     if (!textState || !textState.headLoaded || !textState.baseLoaded) {
@@ -449,7 +615,7 @@
     D.navIdx = (D.navIdx + dir + els.length) % els.length;
     const target = els[D.navIdx];
     target.scrollIntoView({ block: "center", behavior: "smooth" });
-    target.style.outline = "2px solid #c8102e";
+    target.style.outline = "2px solid var(--mod)";
     setTimeout(() => { target.style.outline = ""; }, 1500);
     document.getElementById("navCount").textContent = `${D.navIdx + 1}/${els.length}`;
   }
@@ -483,7 +649,11 @@
     document.getElementById("wbStats").textContent =
       `${meta.changedFiles} 文件 · +${meta.additions}/−${meta.deletions} · head ${meta.headSha.slice(0, 7)}`
       + (D.stale ? " · 缓存数据" : "");
-    document.querySelectorAll(".wb-mode").forEach((b) => b.classList.toggle("on", b.dataset.mode === D.mode));
+    document.querySelectorAll(".wb-mode").forEach((b) => {
+      const on = b.dataset.mode === D.mode;
+      b.classList.toggle("on", on);
+      b.setAttribute("aria-pressed", String(on));
+    });
     document.getElementById("wbMarks").checked = D.marks;
     document.getElementById("wbDraftCount").textContent = String(D.drafts.length);
 
@@ -492,7 +662,9 @@
 
     const doc = document.getElementById("wbDoc");
     doc.classList.toggle("marks-off", !D.marks);
+    doc.dataset.mode = D.mode;
     const file = curFile();
+    doc.dataset.kind = file && isCsv(file.path) ? "csv" : "";
     const content = document.getElementById("wbContent");
     if (!file) { content.innerHTML = `<div class="dempty">该 PR 没有变更文件。</div>`; }
     else if (D.mode === "unified") content.innerHTML = unifiedHTML(file);
@@ -516,6 +688,11 @@
     const lineOf = (n) => {
       const el = elementOf(n);
       if (!el?.closest) return null;
+      const row = el.closest(".csv-row[data-line]");
+      if (row) {
+        const line = Number(row.dataset.commentLine || row.dataset.line);
+        return Number.isInteger(line) && line > 0 ? line : null;
+      }
       const codeLine = el.closest(".code-line[data-line]");
       if (codeLine) {
         const line = Number(codeLine.dataset.line);
@@ -880,6 +1057,8 @@
       if (!bound) { bind(); bindTopbar(); bound = true; }
       document.getElementById("workbench").hidden = false;
       document.body.classList.add("wb-mode-on");
+      /* 窄屏下文件导航默认收起，避免占满阅读宽度；宽屏保持展开 */
+      document.getElementById("wbBody").classList.toggle("nav-collapsed", window.innerWidth <= 900);
       document.getElementById("wbLoading").hidden = false;
       await load(number, false, false);
     },

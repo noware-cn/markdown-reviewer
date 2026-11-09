@@ -11,6 +11,9 @@
  *   - 阅读改动：headBlocks 顺序渲染 + headInsertions 插入 + modified 块挂旧内容
  *   - 前后对照（P1）：分别渲染 headBlocks / baseBlocks
  *   - 源码 Diff：直接用 patch rows（unified/split），不依赖本模型
+ *
+ * .csv 文件不走 Markdown 分块：csvParse / csvModel 把文件解析成行记录，
+ * 用同一份 patch 标注每一行的状态（新增 / 修改 / 删除），供表格视图渲染。
  */
 (function () {
   const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) =>
@@ -282,6 +285,26 @@
   }
 
   /* ---------- 4. 构建 DocumentChange ---------- */
+  /* 把一个 hunk 的 op 序列切成 ctx / del-run / add-run 段，供 Markdown 与 CSV 共用。 */
+  function hunkSegments(ops) {
+    const segs = [];
+    let run = null;
+    for (const op of ops) {
+      if (op.t === "ctx") {
+        if (run) { segs.push(run); run = null; }
+        segs.push({ t: "ctx", op });
+      } else {
+        if (!run || run.t !== op.t) {
+          if (run) segs.push(run);
+          run = { t: op.t, ops: [] };
+        }
+        run.ops.push(op);
+      }
+    }
+    if (run) segs.push(run);
+    return segs;
+  }
+
   function buildModel(headText, baseText, patch) {
     const parsed = parsePatch(patch);
     const headBlocks = mdBlocks(headText);
@@ -308,22 +331,7 @@
     const MODIFIED_THRESHOLD = 0.18;
 
     for (const hunk of parsed.hunks) {
-      // segment: walk ops, group consecutive del and add
-      const segs = [];
-      let run = null;
-      for (const op of hunk.ops) {
-        if (op.t === "ctx") {
-          if (run) { segs.push(run); run = null; }
-          segs.push({ t: "ctx", op });
-        } else {
-          if (!run || run.t !== op.t) {
-            if (run) segs.push(run);
-            run = { t: op.t, ops: [] };
-          }
-          run.ops.push(op);
-        }
-      }
-      if (run) segs.push(run);
+      const segs = hunkSegments(hunk.ops);
 
       // pair adjacent del-run → add-run
       for (let i = 0; i < segs.length; i += 1) {
@@ -407,5 +415,158 @@
     return { parsed, headBlocks, baseBlocks, changes, headInsertions };
   }
 
-  window.DiffModel = { parsePatch, mdBlocks, buildModel, similarity, esc, listRanges, listItemLines, listItemRanges };
+  /* ---------- 5. CSV：RFC4180 解析 + 行级差异 ---------- */
+  const isCsvPath = (path) => /\.csv$/i.test(String(path || ""));
+
+  /* 一条记录可能跨多行（引号内的换行），因此记录带起止行号；
+     行号必须与 GitHub patch 的行号一致，评论才能定位。 */
+  function csvParse(text) {
+    const src = String(text || "").replace(/^\uFEFF/, "").replace(/\r\n?/g, "\n");
+    const rows = [];
+    let cells = [];
+    let field = "";
+    let quoted = false;
+    let inQuotes = false;
+    let line = 1;
+    let rowStart = 1;
+    const endField = () => { cells.push(field); field = ""; quoted = false; };
+    const endRow = () => {
+      endField();
+      rows.push({
+        cells,
+        startLine: rowStart,
+        endLine: line,
+        state: "normal",
+        before: null,
+        changedCells: null,
+        commentLine: null,
+      });
+      cells = [];
+      line += 1;
+      rowStart = line;
+    };
+    for (let i = 0; i < src.length; i += 1) {
+      const c = src[i];
+      if (inQuotes) {
+        if (c === '"') {
+          if (src[i + 1] === '"') { field += '"'; i += 1; }
+          else inQuotes = false;
+        } else if (c === "\n") {
+          line += 1;
+          field += "\n";
+        } else field += c;
+        continue;
+      }
+      if (c === '"' && !field && !quoted) { inQuotes = true; quoted = true; continue; }
+      if (c === ",") { endField(); continue; }
+      if (c === "\n") { endRow(); continue; }
+      field += c;
+    }
+    if (field || cells.length || quoted) endRow();
+    const columns = rows.reduce((max, row) => Math.max(max, row.cells.length), 0);
+    return { rows, columns };
+  }
+
+  const csvLineIndex = (rows) => {
+    const index = new Map();
+    for (const row of rows) for (let l = row.startLine; l <= row.endLine; l += 1) index.set(l, row);
+    return index;
+  };
+
+  /* run 里的行 → 记录（跨行记录只算一次）。 */
+  function csvRowsForLines(index, lines) {
+    const seen = new Set();
+    const out = [];
+    for (const line of lines) {
+      const row = index.get(line);
+      if (row && !seen.has(row)) { seen.add(row); out.push(row); }
+    }
+    return out.sort((a, b) => a.startLine - b.startLine);
+  }
+
+  /* 删除行落点：hunk 内最近的前一个上下文行；没有则用后一个上下文行 - 1。 */
+  function csvAnchorLine(segs, idx) {
+    for (let j = idx - 1; j >= 0; j -= 1) if (segs[j].t === "ctx") return segs[j].op.new;
+    for (let j = idx + 1; j < segs.length; j += 1) if (segs[j].t === "ctx") return segs[j].op.new - 1;
+    return 0;
+  }
+
+  function csvChangedCells(nextCells, prevCells) {
+    const changed = new Set();
+    const total = Math.max(nextCells.length, prevCells.length);
+    for (let i = 0; i < total; i += 1) if ((nextCells[i] ?? "") !== (prevCells[i] ?? "")) changed.add(i);
+    return changed;
+  }
+
+  /* 行级差异：把 patch 的 del-run / add-run 按顺序配成"修改行"，
+     多出来的行是纯新增 / 纯删除；跨行记录按任意一行命中即算该行发生变化。 */
+  function csvModel(headText, baseText, patch) {
+    const head = csvParse(headText);
+    const base = csvParse(baseText);
+    const parsed = parsePatch(patch || "");
+    const headAt = csvLineIndex(head.rows);
+    const baseAt = csvLineIndex(base.rows);
+    const removed = [];
+
+    for (const hunk of parsed.hunks) {
+      const segs = hunkSegments(hunk.ops);
+      for (let i = 0; i < segs.length; i += 1) {
+        const seg = segs[i];
+        if (seg.t === "add") {
+          for (const row of csvRowsForLines(headAt, seg.ops.map((op) => op.new))) {
+            if (row.state === "normal") row.state = "added";
+          }
+          continue;
+        }
+        if (seg.t !== "del") continue;
+        const delRows = csvRowsForLines(baseAt, seg.ops.map((op) => op.old));
+        const next = segs[i + 1];
+        const addRows = next && next.t === "add" ? csvRowsForLines(headAt, next.ops.map((op) => op.new)) : [];
+        const paired = Math.min(delRows.length, addRows.length);
+        for (let k = 0; k < paired; k += 1) {
+          const row = addRows[k];
+          const before = delRows[k];
+          row.state = "modified";
+          row.before = before;
+          row.changedCells = csvChangedCells(row.cells, before.cells);
+          before.state = "partial";
+        }
+        for (let k = paired; k < addRows.length; k += 1) addRows[k].state = "added";
+        // 配对的删除行已经体现在"修改行"里；多出来的删除行紧跟配对行之后
+        const afterLine = paired ? addRows[paired - 1].endLine : csvAnchorLine(segs, i);
+        for (let k = paired; k < delRows.length; k += 1) {
+          delRows[k].state = "removed";
+          removed.push({ row: delRows[k], afterLine });
+        }
+        if (addRows.length) i += 1;
+      }
+    }
+
+    // 评论锚点：记录内第一条落在 hunk 里的行（GitHub 只允许在 diff 行上评论）
+    for (const row of head.rows) {
+      for (let l = row.startLine; l <= row.endLine; l += 1) {
+        if (parsed.commentableHeadLines.has(l)) { row.commentLine = l; break; }
+      }
+    }
+
+    const stats = { added: 0, modified: 0, removed: removed.length };
+    for (const row of head.rows) {
+      if (row.state === "added") stats.added += 1;
+      else if (row.state === "modified") stats.modified += 1;
+    }
+
+    return {
+      head,
+      base,
+      parsed,
+      columns: Math.max(head.columns, base.columns),
+      removed: removed.sort((a, b) => a.afterLine - b.afterLine),
+      stats,
+    };
+  }
+
+  window.DiffModel = {
+    parsePatch, mdBlocks, buildModel, similarity, esc, listRanges, listItemLines, listItemRanges,
+    isCsvPath, csvParse, csvModel,
+  };
 })();
