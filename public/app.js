@@ -31,13 +31,15 @@ const renderList = () => {
     `共 ${state.items.length} 条 PR，当前显示 ${items.length} 条`;
   document.getElementById("list").innerHTML = items.map((item) => `
     <li class="item${String(item.number) === String(state.selected) ? " active" : ""}" data-number="${esc(item.number)}">
-      <div class="item-title">#${esc(item.number)} ${esc(item.title)}</div>
-      <div class="item-sub">
-        <span class="badge ${esc(item.state)}">${esc(stateLabel[item.state] || item.state)}</span>
-        <span>${esc(item.requester)}</span>
-        <span>更新于 ${fmtDate(item.updatedAt)}</span>
+      <span class="item-num">#${esc(item.number)}</span>
+      <div class="item-title">${esc(item.title)}</div>
+      <div class="item-meta">
+        <span class="item-author">${esc(item.requester)}</span>
+        <span class="dot" aria-hidden="true">·</span>
+        <span class="item-time">更新于 ${fmtDate(item.updatedAt)}</span>
       </div>
-    </li>`).join("") || `<li class="item-sub">没有匹配的 PR</li>`;
+      <span class="badge ${esc(item.state)}">${esc(stateLabel[item.state] || item.state)}</span>
+    </li>`).join("") || `<li class="list-empty">没有匹配的 PR</li>`;
 };
 
 const syncStatus = () => {
@@ -100,7 +102,9 @@ const boot = async () => {
   document.getElementById("userChip").textContent = profile.login;
   const data = await listR.json();
   if (!listR.ok) {
-    document.getElementById("detail").innerHTML = `<div class="error-box">读取列表失败：${esc(data.message || listR.status)}</div>`;
+    const detail = document.getElementById("detail");
+    detail.hidden = false;
+    detail.innerHTML = `<div class="error-box">读取列表失败：${esc(data.message || listR.status)}</div>`;
     return;
   }
   state.items = data.items || [];
@@ -114,8 +118,11 @@ const boot = async () => {
 document.getElementById("filters").addEventListener("click", (event) => {
   const chip = event.target.closest(".chip");
   if (!chip) return;
-  document.querySelectorAll(".chip").forEach((n) => n.classList.remove("active"));
-  chip.classList.add("active");
+  document.querySelectorAll(".chip").forEach((n) => {
+    const on = n === chip;
+    n.classList.toggle("active", on);
+    n.setAttribute("aria-pressed", String(on));
+  });
   state.filter = chip.dataset.state;
   renderList();
 });
