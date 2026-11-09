@@ -37,6 +37,10 @@
 | GET | `/api/approvals` | 是 | 单据列表（PR 列表） |
 | GET | `/api/approvals/{number}` | 是 | 单据详情（含审批链路） |
 | GET | `/` | 是 | 已登录返回界面，未登录返回登录页 |
+| GET | `/pr/{n}[/blob/{path}]` | 是 | 工作台深链，未登录时经 `next` 参数回跳 |
+| GET | `/doc/{path}` | 是 | 只读文档页（支持 `?ref=<sha>` 与 `#标题` 锚点） |
+
+`/auth/login` 接受 `?next=`（只允许站内路径，防开放重定向），登录后回到原地址。
 
 `/api/health` 返回示例：
 
@@ -61,6 +65,26 @@
 4. 通过后写入 AES-GCM 加密会话 Cookie（8 小时有效）；OAuth 访问令牌仅保存在加密会话中，不单独明文写入 Cookie 或数据库。
 
 会话密钥与 OAuth 凭据均为 Worker 侧 Secret，不写入仓库。
+
+## 地址（深链）
+
+页面状态完全由 URL 表达，刷新、收藏、转发都能回到同一处：
+
+| 地址 | 打开的内容 |
+|---|---|
+| `/` | 列表 |
+| `/?state=open&q=关键字` | 列表，带筛选（`all` / `open` / `merged`） |
+| `/pr/16` | 工作台，默认第一个文件 |
+| `/pr/16/blob/docs/a/b.md` | 工作台，指定文件 |
+| `/pr/16/blob/docs/a/b.md?mode=split` | 指定视图：`sidebyside` / `unified` / `split`（`reading` 是默认值，不写进 URL） |
+| `/pr/16/blob/docs/a/b.md#L120` | 指定行（head 侧 1-based，与 GitHub 行号一致） |
+| `/pr/16/blob/docs/a/b.md#L120-L140` | 行范围 |
+| `/pr/16/blob/docs/a/b.md#总体方案` | 标题锚点（行号不可用时的回退） |
+| `/doc/docs/a/b.md?ref=<sha>#标题` | 只读文档页 |
+
+规则：点 PR / 点文件用 `push`（可后退），切视图与滚动用 `replace`（不堆历史），滚动停下 450ms 后把顶部行号写回地址栏。
+
+外观偏好（文档主题、表格样式、文件树/平铺、面板宽度）属于个人设置，存在 `localStorage`，不进 URL。
 
 ## 数据源
 

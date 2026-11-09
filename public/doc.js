@@ -81,7 +81,18 @@
     if (payload.truncated) {
       pageEl.insertAdjacentHTML("afterbegin", `<div class="error-box">文件超过 400 KB，以下内容已截断。</div>`);
     }
+    applyHash();
   }
+
+  /* 正文是异步注入的，浏览器自带的 #锚点 跳转会落空：渲染完成后自己补一次 */
+  const applyHash = () => {
+    const raw = location.hash.replace(/^#/, "");
+    if (!raw) return;
+    let id = raw;
+    try { id = decodeURIComponent(raw); } catch { /* 保留原样 */ }
+    const target = document.getElementById(id) || document.getElementById(raw);
+    if (target) target.scrollIntoView({ block: "start" });
+  };
 
   /* 站内跳转仍留在文档页；外链交给浏览器新页签。 */
   document.addEventListener("click", (event) => {

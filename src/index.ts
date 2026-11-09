@@ -77,6 +77,14 @@ const apiCached = async <T>(
   }
 };
 
+/** 深链回跳只接受站内绝对路径：拒绝 //host、/\host 与协议串，避免开放重定向。 */
+const safeNext = (raw: string | null): string | null => {
+  if (!raw || raw.length > 300) return null;
+  if (!raw.startsWith("/") || raw.startsWith("//") || raw.startsWith("/\\")) return null;
+  if (raw.includes("://") || /[\r\n]/.test(raw)) return null;
+  return raw;
+};
+
 /** HTML：允许边缘缓存 60 秒（部署后最长 60 秒旧），浏览器每次重新验证，兼顾速度与新版本可见性。 */
 const serveAsset = async (env: Env, request: Request, path: string): Promise<Response> => {
   const response = await env.ASSETS.fetch(new Request(new URL(path, request.url).toString(), { method: "GET" }));
@@ -180,13 +188,11 @@ const handleCallback = async (env: Env, request: Request, url: URL): Promise<Res
   }
 
   const session = await signedSession(env, user, tokenBody.access_token);
-  return new Response(null, {
-    status: 302,
-    headers: {
-      Location: "/",
-      "Set-Cookie": cookie("sess", session, 28_800),
-    },
-  });
+  const next = safeNext(readCookie(request.headers.get("Cookie"), "oauth_next"));
+  const headers = new Headers({ Location: next ?? "/" });
+  headers.append("Set-Cookie", cookie("sess", session, 28_800));
+  headers.append("Set-Cookie", cookie("oauth_next", "", 0));
+  return new Response(null, { status: 302, headers });
 };
 
 /** mock 里按 PR 号取快照；未收录的号沿用 #11 的样例。 */
@@ -205,16 +211,18 @@ export default {
     if (path === "/api/health") return health(env);
 
     if (path === "/auth/login") {
+      /** 深链回跳：只接受站内绝对路径，防止开放重定向 */
+      const next = safeNext(url.searchParams.get("next"));
       if (isMock) {
         const login = env.DEV_FAKE_USER ?? "demo-reviewer";
         const mockSession = await createSession(
           { login, name: login, avatar: "", exp: Date.now() + 8 * 3_600_000 },
           secret,
         );
-        return new Response(null, {
-          status: 302,
-          headers: { Location: "/", "Set-Cookie": cookie("sess", mockSession, 28_800) },
-        });
+        const headers = new Headers({ Location: next ?? "/" });
+        headers.append("Set-Cookie", cookie("sess", mockSession, 28_800));
+        if (next) headers.append("Set-Cookie", cookie("oauth_next", next, 600));
+        return new Response(null, { status: 302, headers });
       }
       if (!env.GITHUB_CLIENT_ID) return denyPage("未配置 GITHUB_CLIENT_ID，无法发起登录。", 500);
 
@@ -224,13 +232,10 @@ export default {
       authorize.searchParams.set("redirect_uri", `${url.origin}/auth/callback`);
       authorize.searchParams.set("scope", "repo read:org");
       authorize.searchParams.set("state", state);
-      return new Response(null, {
-        status: 302,
-        headers: {
-          Location: authorize.toString(),
-          "Set-Cookie": cookie("oauth_state", state, 600),
-        },
-      });
+      const headers = new Headers({ Location: authorize.toString() });
+      headers.append("Set-Cookie", cookie("oauth_state", state, 600));
+      if (next) headers.append("Set-Cookie", cookie("oauth_next", next, 600));
+      return new Response(null, { status: 302, headers });
     }
 
     if (path === "/auth/callback") return handleCallback(env, request, url);
@@ -522,7 +527,7 @@ export default {
       }
     }
 
-    if (path === "/" || path === "/index.html") {
+    if (path === "/" || path === "/index.html" || /^\/pr\/\d+(\/|$)/.test(path)) {
       return session ? serveAsset(env, request, "/index.html") : serveAsset(env, request, "/login.html");
     }
 

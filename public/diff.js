@@ -28,7 +28,16 @@
     generation: 0,
     ref: null,       // 引用文档视图：{ stack, path, anchor, text, loading, error, candidates }
     tstate: {},      // path -> 表格视图状态（隐藏列 / 固定列 / 仅看变化 / 密度）
+    theme: "paper",  // 文档主题：paper 纸白 / sepia 暖纸 / night 夜读
+    tbl: "grid",     // 表格样式：grid 网格 / zebra 斑马 / plain 极简
+    pendingAnchor: null, // 深链待定位：{ line, endLine } 或 { heading }
+    pendingFile: null,
+    urlLine: null,   // 当前地址里的行号：重渲染（开评论、切标记）时保留，不要被清掉
   };
+
+  const THEMES = ["paper", "sepia", "night"];
+  const TBL_STYLES = ["grid", "zebra", "plain"];
+  const MODES = ["reading", "sidebyside", "unified", "split"];
 
   const esc = window.DiffModel.esc;
   const isCsv = (path) => window.DiffModel.isCsvPath(path);
@@ -137,6 +146,8 @@
     filesH: "wb.nav.filesH",
     navW: "wb.nav.w",
     sections: "wb.nav.sections",
+    theme: "wb.doc.theme",
+    tbl: "wb.doc.tbl",
   };
   const readPref = (key, fallback) => {
     try {
@@ -148,6 +159,81 @@
     try { localStorage.setItem(key, JSON.stringify(value)); } catch { /* 存不下就只保留本次会话 */ }
   };
   const saveFolded = () => writePref(PREF.folded(D.n), Array.from(D.folded));
+
+  /* ---------- 深链：主题、锚点、URL 同步 ---------- */
+  const applyTheme = () => {
+    const wb = document.getElementById("workbench");
+    if (!wb) return;
+    if (wb.dataset.theme !== D.theme) wb.dataset.theme = D.theme;
+    if (wb.dataset.tbl !== D.tbl) wb.dataset.tbl = D.tbl;
+    if (D.syncLook) D.syncLook();
+  };
+
+  const routeState = (extra) => Object.assign({
+    kind: "pr", n: D.n, file: D.file || null, mode: D.mode,
+    line: null, endLine: null, heading: null,
+  }, extra || {});
+
+  /** 引用文档视图有自己的地址语义，暂不与 URL 同步 */
+  const syncUrl = (method, extra) => {
+    if (!window.AppRoute || !D.n || D.ref) return;
+    (method === "push" ? window.AppRoute.push : window.AppRoute.replace)(routeState(extra));
+  };
+
+  const setDocumentTitle = () => {
+    if (!D.n) { document.title = "审批可视化"; return; }
+    if (D.ref) { document.title = `${D.ref.path.split("/").pop()} · #${D.n}`; return; }
+    const name = D.file ? D.file.split("/").pop() : "PR";
+    document.title = `#${D.n} · ${name} — 审批可视化`;
+  };
+
+  /** 顶栏可见的行号：滚动停下时把位置写回 URL */
+  function topLine() {
+    const docEl = document.getElementById("wbDoc");
+    if (!docEl) return null;
+    let line = null;
+    for (const el of docEl.querySelectorAll("[data-line]")) {
+      if (el.classList.contains("line-anchor")) continue;
+      const rect = el.getBoundingClientRect();
+      if (rect.top < 140) line = Number(el.dataset.line); else break;
+    }
+    return Number.isFinite(line) ? line : null;
+  }
+
+  /** 深链定位：精确行 → 包含该行的多行块 → 最近的前一个块 */
+  function applyAnchor() {
+    const target0 = D.pendingAnchor;
+    const content = document.getElementById("wbContent");
+    if (!target0 || !content) return false;
+    if (target0.heading) {
+      D.pendingAnchor = null;
+      scrollToAnchor(target0.heading);
+      return true;
+    }
+    const line = Number(target0.line) || 0;
+    if (!line) { D.pendingAnchor = null; return false; }
+    let target = content.querySelector(`[data-line="${line}"]:not(.line-anchor)`);
+    if (!target) {
+      for (const el of content.querySelectorAll("[data-line][data-end-line]")) {
+        if (Number(el.dataset.line) <= line && line <= Number(el.dataset.endLine)) { target = el; break; }
+      }
+    }
+    if (!target) {
+      for (const el of content.querySelectorAll("[data-line]")) {
+        if (Number(el.dataset.line) <= line) target = el; else break;
+      }
+    }
+    /* 正文还没渲染出来：保留锚点，等下一次 render 再试 */
+    if (!target) return false;
+    D.pendingAnchor = null;
+    target.scrollIntoView({ block: "center" });
+    target.style.outline = "2px solid var(--mod)";
+    target.style.outlineOffset = "3px";
+    setTimeout(() => { target.style.outline = ""; target.style.outlineOffset = ""; }, 1600);
+    D.urlLine = line;
+    syncUrl("replace", { line, endLine: target0.endLine || null });
+    return true;
+  }
 
   const statusMark = (status) => (status === "added" ? "A" : status === "removed" ? "D" : status === "renamed" ? "R" : "M");
   const reviewInfo = (path) => {
@@ -686,6 +772,11 @@
     const anchor = anchorLine
       ? `<span class="line-anchor" data-line="${anchorLine}" data-side="RIGHT" role="button" title="在第 ${anchorLine} 行评论">L${anchorLine} +</span>`
       : "";
+    /* 标题块：注入「#」，点击复制本段深链（与地址栏同一套 L 行号） */
+    if (b.startLine != null && /^\s*<h[1-4][\s>]/.test(bodyHtml)) {
+      bodyHtml = bodyHtml.replace(/^(\s*)<h([1-4])([^>]*)>/, (_m, pad, level, attrs) =>
+        `${pad}<h${level}${attrs} data-line="${b.startLine}"><a class="hlink" href="#L${b.startLine}" data-hlink="${b.startLine}" title="复制本段链接" aria-label="复制第 ${b.startLine} 行所在标题的链接">#</a>`);
+    }
     return `<div class="${cls}" data-line="${b.startLine}" data-end-line="${b.endLine}" data-block="${b.startLine}">${oldBlock}${tag}${bodyHtml}${anchor}</div>`;
   }
 
@@ -1043,6 +1134,15 @@
     if (!els.length) els = doc.querySelectorAll(".sb-head .is-added, .sb-head .is-modified-new, .sb-base .is-removed, .sb-base .is-partial");
     return Array.from(els);
   }
+  /** 切换阅读/对照视图：只替换 URL，不新增历史 */
+  function setMode(mode) {
+    const next = MODES.includes(mode) ? mode : "reading";
+    if (next === D.mode) return;
+    D.mode = next;
+    D.pendingAnchor = null;
+    render();
+  }
+
   function gotoChange(dir) {
     const els = changeElements();
     if (!els.length) return;
@@ -1490,7 +1590,15 @@
     D.lastViewKey = key;
     const saved = D.scrollPos[key];
     const docEl = document.getElementById("wbDoc");
-    requestAnimationFrame(() => { docEl.scrollTop = saved ?? 0; });
+    applyTheme();
+    setDocumentTitle();
+    D.lastRenderAt = Date.now();
+    if (!D.pendingAnchor) syncUrl("replace", D.urlLine ? { line: D.urlLine } : null);
+    requestAnimationFrame(() => {
+      /* 深链优先于「上次滚动位置」：定位成功就不再恢复旧位置 */
+      if (D.pendingAnchor) { applyAnchor(); return; }
+      docEl.scrollTop = saved ?? 0;
+    });
     updateNavFloat();
   }
 
@@ -1612,6 +1720,20 @@
     doc.addEventListener("click", (e) => {
       const retry = e.target.closest("[data-retry]");
       if (retry) { if (D.file) selectFile(D.file, true); return; }
+      /* 标题「#」：把本段行号写进地址并复制整条深链 */
+      const hlink = e.target.closest("a.hlink");
+      if (hlink) {
+        e.preventDefault();
+        const line = Number(hlink.dataset.hlink);
+        if (!D.n || !line) return;
+        const state = { kind: "pr", n: D.n, file: D.file, mode: D.mode, line };
+        const url = new URL(window.AppRoute.build(state), location.origin).toString();
+        window.AppRoute.replace(state);
+        if (navigator.clipboard?.writeText) {
+          navigator.clipboard.writeText(url).then(() => toast("已复制本段链接"), () => toast(url));
+        } else toast(url);
+        return;
+      }
       const anchor = e.target.closest(".line-anchor, [data-plus]");
       if (anchor) {
         const line = Number(anchor.dataset.line);
@@ -1816,10 +1938,10 @@
       }
       if (e.key === "n") { e.preventDefault(); gotoChange(1); }
       else if (e.key === "p") { e.preventDefault(); gotoChange(-1); }
-      else if (e.key === "1") { D.active = null; D.mode = "reading"; render(); }
-      else if (e.key === "2") { D.active = null; D.mode = "sidebyside"; render(); }
-      else if (e.key === "3") { D.active = null; D.mode = "unified"; render(); }
-      else if (e.key === "4") { D.active = null; D.mode = "split"; render(); }
+      else if (e.key === "1") { D.active = null; setMode("reading"); }
+      else if (e.key === "2") { D.active = null; setMode("sidebyside"); }
+      else if (e.key === "3") { D.active = null; setMode("unified"); }
+      else if (e.key === "4") { D.active = null; setMode("split"); }
     });
     document.getElementById("dselchip").addEventListener("click", () => {
       const chip = document.getElementById("dselchip");
@@ -1855,7 +1977,7 @@
   }
 
   /* ---------- 文件加载 ---------- */
-  async function selectFile(path, force) {
+  async function selectFile(path, force, fromRoute) {
     const myGen = D.generation;
     const myPr = D.n;
     D.file = path;
@@ -1870,6 +1992,9 @@
     const meta = D.meta;
     const file = D.files.find((item) => item.path === path);
     if (!file) return;
+    D.pendingAnchor = null;
+    D.urlLine = null;
+    if (!fromRoute) syncUrl("push");
     if (!force && D.texts[path] && D.texts[path].headLoaded && D.texts[path].baseLoaded
       && D.texts[path].headSha === meta.headSha && D.texts[path].baseSha === meta.baseSha) { render(); return; }
     spin(1);
@@ -1996,7 +2121,12 @@
       }
       if (!keepDrafts) { D.drafts = []; loadDrafts(); }
       if (oldSha && (oldSha !== D.meta.headSha || oldBaseSha !== D.meta.baseSha)) { D.texts = {}; modelCache.clear(); }
-      D.file = (D.files.find((f) => f.path === D.file) || D.files[0] || null)?.path || null;
+      const wanted = D.pendingFile && D.files.some((f) => f.path === D.pendingFile) ? D.pendingFile : null;
+      if (D.pendingFile && !wanted) toast("该文件不在本 PR 中，已切到第一个文件。");
+      D.file = wanted
+        || (D.files.find((f) => f.path === D.file) || D.files[0] || null)?.path
+        || null;
+      D.pendingFile = null;
       render();
 
       // 预加载：冻结 PR / SHA / 文件清单，后续只读快照；每个 await 后校验代次
@@ -2054,9 +2184,37 @@
   /* ---------- 顶栏/侧栏事件 ---------- */
   function bindTopbar() {
     document.querySelectorAll(".wb-mode").forEach((b) => {
-      b.addEventListener("click", () => { D.mode = b.dataset.mode; D.active = null; render(); });
+      b.addEventListener("click", () => setMode(b.dataset.mode));
     });
     document.getElementById("wbMarks").addEventListener("change", (e) => { D.marks = e.target.checked; render(); });
+
+    /* 外观弹层：文档主题 + 表格样式（只影响阅读呈现，不写进 URL） */
+    const lookBtn = document.getElementById("wbLookBtn");
+    const lookPop = document.getElementById("wbLookPop");
+    const closeLook = () => { lookPop.hidden = true; lookBtn.setAttribute("aria-expanded", "false"); };
+    lookBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      const open = lookPop.hidden;
+      lookPop.hidden = !open;
+      lookBtn.setAttribute("aria-expanded", String(open));
+    });
+    lookPop.addEventListener("click", (e) => e.stopPropagation());
+    document.addEventListener("click", () => { if (!lookPop.hidden) closeLook(); });
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !lookPop.hidden) closeLook(); });
+    D.syncLook = () => {
+      lookPop.querySelectorAll("[data-theme]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.theme === D.theme)));
+      lookPop.querySelectorAll("[data-tbl]").forEach((b) => b.setAttribute("aria-checked", String(b.dataset.tbl === D.tbl)));
+    };
+    lookPop.querySelectorAll("[data-theme]").forEach((b) => b.addEventListener("click", () => {
+      D.theme = b.dataset.theme;
+      writePref(PREF.theme, D.theme);
+      applyTheme();
+    }));
+    lookPop.querySelectorAll("[data-tbl]").forEach((b) => b.addEventListener("click", () => {
+      D.tbl = b.dataset.tbl;
+      writePref(PREF.tbl, D.tbl);
+      applyTheme();
+    }));
     document.getElementById("wbDrawerBtn").addEventListener("click", () => {
       document.getElementById("wbBody").classList.toggle("drawer-open");
     });
@@ -2085,21 +2243,76 @@
   }
 
   let bound = false;
+  let scrollSyncTimer = null;
+
+  /** 滚动停下后把「顶部行号」写回 URL，保证复制地址栏就是当前所在位置 */
+  function bindScrollSync() {
+    const docEl = document.getElementById("wbDoc");
+    if (!docEl) return;
+    docEl.addEventListener("scroll", () => {
+      clearTimeout(scrollSyncTimer);
+      scrollSyncTimer = setTimeout(() => {
+        if (!D.n || D.ref || D.pendingAnchor) return;
+        /* 渲染后的程序化滚动不算用户位移，避免每开一个文件就带 #L */
+        if (Date.now() - (D.lastRenderAt || 0) < 700) return;
+        const line = topLine();
+        if (line) { D.urlLine = line; syncUrl("replace", { line }); }
+      }, 450);
+    }, { passive: true });
+  }
+
+  async function mountPr(number, opts = {}) {
+    if (!bound) { bind(); bindTopbar(); bindScrollSync(); bound = true; }
+    document.getElementById("workbench").hidden = false;
+    document.body.classList.add("wb-mode-on");
+    D.view = readPref(PREF.view, "tree") === "flat" ? "flat" : "tree";
+    D.theme = THEMES.includes(readPref(PREF.theme, "paper")) ? readPref(PREF.theme, "paper") : "paper";
+    D.tbl = TBL_STYLES.includes(readPref(PREF.tbl, "grid")) ? readPref(PREF.tbl, "grid") : "grid";
+    const folded = readPref(PREF.folded(number), []);
+    D.folded = new Set(Array.isArray(folded) ? folded : []);
+    /* 窄屏下文件导航默认收起，避免占满阅读宽度；宽屏保持展开 */
+    document.getElementById("wbBody").classList.toggle("nav-collapsed", window.innerWidth <= 900);
+    document.getElementById("wbLoading").hidden = false;
+    D.ref = null;
+    refTextCache.clear();
+    if (MODES.includes(opts.mode)) D.mode = opts.mode;
+    D.pendingFile = opts.file || null;
+    D.pendingAnchor = opts.line
+      ? { line: opts.line, endLine: opts.endLine || null }
+      : opts.heading ? { heading: opts.heading } : null;
+    await load(number, false, false);
+  }
+
+  /** 前进/后退落回工作台：按 URL 切换 PR / 文件 / 视图 / 行号，不再写 URL */
+  async function applyRoute(state) {
+    if (!state || state.kind !== "pr") return;
+    const anchor = state.line
+      ? { line: state.line, endLine: state.endLine || null }
+      : state.heading ? { heading: state.heading } : null;
+    if (state.n !== D.n) { await mountPr(state.n, state); return; }
+    if (state.mode && MODES.includes(state.mode) && state.mode !== D.mode) {
+      D.mode = state.mode;
+      D.pendingAnchor = anchor || D.pendingAnchor;
+      render();
+      return;
+    }
+    if (state.file && state.file !== D.file) {
+      D.pendingAnchor = anchor;
+      await selectFile(state.file, false, true);
+      return;
+    }
+    if (anchor) {
+      D.pendingAnchor = anchor;
+      if (!applyAnchor()) render();
+      return;
+    }
+    const docEl = document.getElementById("wbDoc");
+    if (docEl) docEl.scrollTop = 0;
+  }
+
   window.DiffView = {
-    mount: async (number) => {
-      if (!bound) { bind(); bindTopbar(); bound = true; }
-      document.getElementById("workbench").hidden = false;
-      document.body.classList.add("wb-mode-on");
-      D.view = readPref(PREF.view, "tree") === "flat" ? "flat" : "tree";
-      const folded = readPref(PREF.folded(number), []);
-      D.folded = new Set(Array.isArray(folded) ? folded : []);
-      /* 窄屏下文件导航默认收起，避免占满阅读宽度；宽屏保持展开 */
-      document.getElementById("wbBody").classList.toggle("nav-collapsed", window.innerWidth <= 900);
-      document.getElementById("wbLoading").hidden = false;
-      D.ref = null;
-      refTextCache.clear();
-      await load(number, false, false);
-    },
+    mount: (number, opts) => mountPr(number, opts),
+    applyRoute,
     refresh: (number, force) => load(number, true, !!force),
     unmount: () => {
       document.getElementById("workbench").hidden = true;
@@ -2107,6 +2320,9 @@
       document.body.classList.remove("tbl-full-on");
       closeCellPopover();
       D.ref = null;
+      D.pendingAnchor = null;
+      D.pendingFile = null;
+      document.title = "审批可视化";
     },
   };
 })();

@@ -1,5 +1,9 @@
 const state = { items: [], filter: "all", keyword: "", selected: null, source: "", updatedAt: null, stale: false };
 
+const route = window.AppRoute;
+let enteredFromList = false;
+let searchTimer = null;
+
 const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (char) => ({
     "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
@@ -42,6 +46,33 @@ const renderList = () => {
     </li>`).join("") || `<li class="list-empty">没有匹配的 PR</li>`;
 };
 
+/* ---------- 列表状态 ↔ URL ---------- */
+
+/** 把 URL 上的筛选写回控件（刷新、前进后退都要走一遍） */
+const syncFilterControls = () => {
+  document.querySelectorAll("#filters .chip").forEach((chip) => {
+    const on = chip.dataset.state === state.filter;
+    chip.classList.toggle("active", on);
+    chip.setAttribute("aria-pressed", String(on));
+  });
+  const input = document.getElementById("search");
+  if (input.value !== state.keyword) input.value = state.keyword;
+};
+
+const syncListUrl = () => {
+  route.replace({
+    kind: "list",
+    state: state.filter === "all" ? null : state.filter,
+    q: state.keyword.trim() || null,
+  });
+};
+
+const applyListRoute = (parsed) => {
+  state.filter = parsed.state || "all";
+  state.keyword = parsed.q || "";
+  syncFilterControls();
+};
+
 const syncStatus = () => {
   const at = document.getElementById("syncAt");
   const badge = document.getElementById("sourceBadge");
@@ -62,15 +93,34 @@ const toastHint = (message) => {
   toastHint._t = setTimeout(() => el.classList.remove("show"), 2800);
 };
 
-/* 进入工作台：隐藏列表视图，全屏渲染 PR。 */
-const enterWorkbench = async (number) => {
+/* 进入工作台：hideList 时不写 URL（刷新恢复 / 前进后退已经由浏览器写好） */
+const enterWorkbench = async (number, opts = {}, historyMode = "push") => {
   state.selected = number;
   renderList();
-  if (window.DiffView) await window.DiffView.mount(number);
+  if (historyMode === "push") {
+    route.push({
+      kind: "pr",
+      n: number,
+      file: opts.file || null,
+      mode: opts.mode || null,
+      line: opts.line || null,
+      endLine: opts.endLine || null,
+      heading: opts.heading || null,
+    });
+  }
+  if (window.DiffView) await window.DiffView.mount(number, opts);
 };
 
-const exitWorkbench = () => {
+const exitWorkbench = (fromHistory) => {
   if (window.DiffView) window.DiffView.unmount();
+  state.selected = null;
+  document.title = "审批可视化";
+  renderList();
+  if (fromHistory) return;
+  /* 从列表点进来的可以回退；直接打开深链时没有上一页，改成替换成列表 */
+  if (enteredFromList) history.back();
+  else route.replace({ kind: "list" });
+  enteredFromList = false;
 };
 
 const doRefresh = async () => {
@@ -81,7 +131,7 @@ const doRefresh = async () => {
   }
   try {
     const res = await fetch("/api/approvals?refresh=1", { credentials: "same-origin" });
-    if (res.status === 401) { location.href = "/auth/login"; return; }
+    if (res.status === 401) { location.href = loginUrl(); return; }
     const data = await res.json();
     state.items = data.items || [];
     state.source = data.source || "";
@@ -92,12 +142,16 @@ const doRefresh = async () => {
   } catch { toastHint("同步失败"); }
 };
 
+/** 会话过期时把当前地址带回去，登录后回到原位 */
+const loginUrl = () => `/auth/login?next=${encodeURIComponent(location.pathname + location.search + location.hash)}`;
+
 const boot = async () => {
+  const parsed = route.parse();
   const [meR, listR] = await Promise.all([
     fetch("/api/me", { credentials: "same-origin" }),
     fetch("/api/approvals", { credentials: "same-origin" }),
   ]);
-  if (meR.status === 401 || listR.status === 401) { location.href = "/auth/login"; return; }
+  if (meR.status === 401 || listR.status === 401) { location.href = loginUrl(); return; }
   const profile = await meR.json();
   document.getElementById("userChip").textContent = profile.login;
   const data = await listR.json();
@@ -112,26 +166,54 @@ const boot = async () => {
   state.stale = !!data.stale;
   state.updatedAt = new Date();
   syncStatus();
+
+  if (parsed.kind === "pr") {
+    /* 深链直达：先把 URL 规范化（补零的 PR 号等），再挂工作台，避免闪一下列表 */
+    enteredFromList = false;
+    state.selected = parsed.n;
+    route.replace(parsed);
+    await enterWorkbench(parsed.n, parsed, "silent");
+    return;
+  }
+
+  applyListRoute(parsed);
   renderList();
 };
+
+/* ---------- 浏览器前进/后退 ---------- */
+route.onPop(async (parsed) => {
+  if (parsed.kind === "pr") {
+    enteredFromList = true;
+    state.selected = parsed.n;
+    await enterWorkbench(parsed.n, parsed, "silent");
+    return;
+  }
+  if (document.body.classList.contains("wb-mode-on")) exitWorkbench(true);
+  applyListRoute(parsed);
+  renderList();
+});
 
 document.getElementById("filters").addEventListener("click", (event) => {
   const chip = event.target.closest(".chip");
   if (!chip) return;
-  document.querySelectorAll(".chip").forEach((n) => {
-    const on = n === chip;
-    n.classList.toggle("active", on);
-    n.setAttribute("aria-pressed", String(on));
-  });
   state.filter = chip.dataset.state;
+  syncFilterControls();
   renderList();
+  syncListUrl();
 });
-document.getElementById("search").addEventListener("input", (e) => { state.keyword = e.target.value; renderList(); });
+document.getElementById("search").addEventListener("input", (e) => {
+  state.keyword = e.target.value;
+  renderList();
+  clearTimeout(searchTimer);
+  searchTimer = setTimeout(syncListUrl, 300);
+});
 document.getElementById("list").addEventListener("click", (e) => {
   const item = e.target.closest(".item");
-  if (item) enterWorkbench(Number(item.dataset.number));
+  if (!item) return;
+  enteredFromList = true;
+  enterWorkbench(Number(item.dataset.number));
 });
 document.getElementById("refreshBtn").addEventListener("click", doRefresh);
-document.getElementById("wbBack").addEventListener("click", exitWorkbench);
+document.getElementById("wbBack").addEventListener("click", () => exitWorkbench(false));
 
 boot();

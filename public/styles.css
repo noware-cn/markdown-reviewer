@@ -314,6 +314,7 @@ body.wb-mode-on .layout { display: none; }
   flex: 1 1 80px;
   min-width: 0;
   margin: 0;
+  color: var(--text);
   font-size: 16px;
   font-weight: 600;
   line-height: 1.4;
@@ -374,7 +375,7 @@ body.wb-mode-on .layout { display: none; }
   padding: 0 5px;
   border-radius: 999px;
   background: var(--text);
-  color: #fff;
+  color: var(--sheet);
   font-size: 11px;
   font-weight: 600;
   font-variant-numeric: tabular-nums;
@@ -1114,6 +1115,8 @@ body.wb-mode-on .layout { display: none; }
   .wb-pr { flex: 1 1 120px; }
   .wb-drawer-btn { order: 7; }
   .wb-marks { order: 8; }
+  .wb-look { order: 6; }
+  .wb-look-pop { right: -4px; }
   .wb-modes { order: 9; flex: 1 1 100%; margin-left: 0; padding-bottom: 4px; overflow-x: auto; }
   .wb-drawer {
     position: fixed;
@@ -1929,6 +1932,16 @@ body.tbl-full-on { overflow: hidden; }
 .table-shell table:not(.csv-table) tbody tr:last-child > * { border-bottom: 0; }
 
 @media (max-width: 900px) {
+  /* 手机上顶栏只留两行：控件压成图标/短词，标题继续独占剩余宽度 */
+  .wb-back { padding: 0 9px; font-size: 0; }
+  .wb-back::before { content: "←"; font-size: 15px; }
+  .wb-marks { font-size: 0; gap: 0; }
+  .wb-marks input { width: 16px; height: 16px; }
+  .wb-look-btn { padding: 0 8px; font-size: 11px; }
+  .wb-orig-wrap { flex: 0 1 92px; }
+  .wb-orig { font-size: 10.5px; }
+  .wb-drawer-btn { padding: 0 10px; }
+  .wb-pr { font-size: 14px; }
   .wb-sash-col { display: none; }
   .wb-body { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
   .wb-body.drawer-open { grid-template-columns: minmax(0, 1fr); }
@@ -2025,3 +2038,154 @@ body.tbl-full-on { overflow: hidden; }
   color: var(--mod);
   vertical-align: 1px;
 }
+
+/* =====================================================================
+   文档外观：主题（只作用于工作台）与表格样式
+   令牌在 :root 定义，这里按 [data-theme] 覆盖工作台子树，列表页不受影响。
+   ===================================================================== */
+#workbench[data-theme="sepia"] {
+  --sheet: #fbf6ec;
+  --ground: #f3ecdf;
+  --raised: #f5eddd;
+  --active: #ebe1cd;
+  --border: #e3d8c2;
+  --rule: #efe6d3;
+  --control: #d6cab0;
+  --text: #3b3326;
+  --muted: #5f563f;
+  --faint: #6b6249;
+  --positive-soft: #edf6ee;
+  --mod-soft: #eaf3f4;
+  --negative-soft: #fbeeea;
+  --warning-soft: #f9efd8;
+  --positive: #186b44;
+  --mod: #15606f;
+  --negative: #9c211b;
+  --warning: #77500b;
+}
+#workbench[data-theme="night"] {
+  color-scheme: dark;
+  --sheet: #17191c;
+  --ground: #101214;
+  --raised: #1d2126;
+  --active: #262b31;
+  --border: #2b2f35;
+  --rule: #23272c;
+  --control: #3a4048;
+  --text: #d9dbe0;
+  --muted: #9aa1a9;
+  --faint: #8b939b;
+  --positive-soft: #14251d;
+  --mod-soft: #12252a;
+  --negative-soft: #2a1b1a;
+  --warning-soft: #2a2318;
+  --positive: #4ec98a;
+  --negative: #f2857c;
+  --mod: #5cb8ce;
+  --warning: #d9a441;
+}
+/* 暗色下把几处写死的浅色底换掉，否则新增/修改角标会刺眼 */
+#workbench[data-theme="night"] .diff-tag.add { background: #1b3326; }
+#workbench[data-theme="night"] .diff-tag.mod { background: #12303a; }
+#workbench[data-theme="night"] .diff-tag.del { background: #3a1d1a; }
+#workbench[data-theme="night"] .csv-table .csv-row th.is-changed { background: #12303a; }
+#workbench[data-theme="night"] .del-block { background: #221a19; border-color: #3a2a27; }
+#workbench[data-theme="night"] .md-block.is-added { background: #14251d55; }
+#workbench[data-theme="night"] .md-block.is-modified-new { background: #12252a88; }
+#workbench[data-theme="night"] .wb-doc { background: var(--ground); }
+
+/* ---------- 表格样式 ---------- */
+/* 斑马：行底交替，去掉列间竖线，读长表更顺 */
+#workbench[data-tbl="zebra"] .table-shell table:not(.csv-table) tbody tr:nth-child(even) > * { background: var(--raised); }
+#workbench[data-tbl="zebra"] .table-shell table:not(.csv-table) tr > * + * { border-left-color: transparent; }
+/* CSV：只给没有变更标记的行上斑马底，新增/修改/删除的色块仍然优先 */
+#workbench[data-tbl="zebra"] .csv-table tbody tr:nth-child(even):not(.is-added):not(.is-modified):not(.is-partial):not(.is-removed) > * { background: var(--raised); }
+/* 极简：只留表头下的粗线和行间细线 */
+#workbench[data-tbl="plain"] .table-shell table:not(.csv-table) thead th,
+#workbench[data-tbl="plain"] .table-shell table:not(.csv-table) thead td { background: transparent; color: var(--text); }
+#workbench[data-tbl="plain"] .table-shell table:not(.csv-table) tr > * + * { border-left-color: transparent; }
+#workbench[data-tbl="plain"] .table-shell table:not(.csv-table) tbody tr > * { border-bottom-color: var(--rule); }
+#workbench[data-tbl="plain"] .table-shell table:not(.csv-table) tbody tr:first-child > * { border-top: 1px solid var(--control); }
+
+/* ---------- 顶栏外观弹层 ---------- */
+.wb-look { position: relative; }
+.wb-look-btn {
+  height: 30px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--sheet);
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.wb-look-btn:hover { background: var(--active); color: var(--text); }
+.wb-look-btn[aria-expanded="true"] { background: var(--active); color: var(--text); }
+.wb-look-pop {
+  position: absolute;
+  top: 38px;
+  right: 0;
+  z-index: 40;
+  width: 244px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--sheet);
+  box-shadow: 0 10px 28px rgba(16, 18, 20, 0.14);
+}
+.look-group + .look-group { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--rule); }
+.look-label { display: block; margin-bottom: 7px; font-size: 11px; color: var(--muted); }
+.look-swatches { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.look-swatches button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 5px;
+  padding: 7px 4px 6px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.look-swatches button[aria-checked="true"] { border-color: var(--text); color: var(--text); }
+.look-swatches .sw { width: 100%; height: 22px; border-radius: 5px; border: 1px solid var(--border); }
+.sw-paper { background: linear-gradient(180deg, #ffffff 0 60%, #f4f6f8 100%); }
+.sw-sepia { background: linear-gradient(180deg, #fbf6ec 0 60%, #f3ecdf 100%); }
+.sw-night { background: linear-gradient(180deg, #17191c 0 60%, #101214 100%); }
+.look-seg { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+.look-seg button {
+  padding: 6px 0;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+.look-seg button[aria-checked="true"] { border-color: var(--text); color: var(--text); background: var(--raised); }
+
+/* ---------- 标题锚点：悬停出「#」，点击复制本段链接 ---------- */
+#wbContent .hlink {
+  margin-left: 8px;
+  font-size: 0.72em;
+  font-weight: 600;
+  color: var(--control);
+  text-decoration: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+#wbContent :is(h1, h2, h3, h4):hover .hlink,
+#wbContent .hlink:focus-visible { opacity: 1; color: var(--mod); }
+#wbContent .hlink:hover { color: var(--mod); }
+
+/* ---------- 阅读排版微调（不改结构，只补细节） ---------- */
+#wbContent h2 { padding-top: 10px; border-top: 1px solid var(--rule); }
+#wbContent a:not(.hlink) { text-decoration: underline; text-decoration-color: var(--control); text-underline-offset: 2px; }
+#wbContent a:not(.hlink):hover { text-decoration-color: currentColor; }
+#wbContent img { max-width: 100%; border: 1px solid var(--border); border-radius: 8px; }
+#wbContent blockquote { border-left: 3px solid var(--control); color: var(--muted); }

@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Markdown 文档审批工作台 · noware-cn/workspace</title>
-<link rel="stylesheet" href="/styles.css?v=310">
+<link rel="stylesheet" href="/styles.css?v=312">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -62,7 +62,7 @@
 <div class="workbench" id="workbench" hidden>
   <div class="dloading" id="wbLoading" hidden><span class="spin"></span><span>正在从 GitHub 加载…</span></div>
   <header class="wb-topbar">
-    <button class="wb-back" id="wbBack" type="button" title="返回任务列表">← 返回列表</button>
+    <button class="wb-back" id="wbBack" type="button" title="返回任务列表" aria-label="返回任务列表">← 返回列表</button>
     <button class="wb-nav-toggle" id="wbNavToggle" type="button" title="切换文件导航">☰</button>
     <h1 class="wb-pr" id="wbPrTitle">—</h1>
     <div class="wb-stats" id="wbStats"></div>
@@ -76,7 +76,28 @@
       <button type="button" class="wb-mode" data-mode="unified" aria-pressed="false">统一 Diff</button>
       <button type="button" class="wb-mode" data-mode="split" aria-pressed="false">分栏 Diff</button>
     </div>
-    <label class="wb-marks"><input type="checkbox" id="wbMarks" checked> 显示变更标记</label>
+    <label class="wb-marks" title="显示变更标记"><input type="checkbox" id="wbMarks" checked aria-label="显示变更标记"> 显示变更标记</label>
+    <div class="wb-look">
+      <button class="wb-look-btn" id="wbLookBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="wbLookPop" title="文档主题与表格样式">外观</button>
+      <div class="wb-look-pop" id="wbLookPop" hidden>
+        <div class="look-group">
+          <span class="look-label">文档主题</span>
+          <div class="look-swatches" role="radiogroup" aria-label="文档主题">
+            <button type="button" data-theme="paper" role="radio" aria-checked="true"><span class="sw sw-paper"></span>纸白</button>
+            <button type="button" data-theme="sepia" role="radio" aria-checked="false"><span class="sw sw-sepia"></span>暖纸</button>
+            <button type="button" data-theme="night" role="radio" aria-checked="false"><span class="sw sw-night"></span>夜读</button>
+          </div>
+        </div>
+        <div class="look-group">
+          <span class="look-label">表格样式</span>
+          <div class="look-seg" role="radiogroup" aria-label="表格样式">
+            <button type="button" data-tbl="grid" role="radio" aria-checked="true">网格</button>
+            <button type="button" data-tbl="zebra" role="radio" aria-checked="false">斑马</button>
+            <button type="button" data-tbl="plain" role="radio" aria-checked="false">极简</button>
+          </div>
+        </div>
+      </div>
+    </div>
     <button class="wb-drawer-btn" id="wbDrawerBtn" type="button">意见 <span class="wb-badge" id="wbDraftCount">0</span></button>
   </header>
 
@@ -152,8 +173,9 @@ window.DOMPurify.addHook("afterSanitizeAttributes", (node) => {
   }
 });
 </script>
+<script src="/route.js?v=1"></script>
 <script src="/diff-model.js?v=210"></script>
-<script src="/diff.js?v=228"></script>
-<script src="/app.js?v=216"></script>
+<script src="/diff.js?v=230"></script>
+<script src="/app.js?v=217"></script>
 </body>
 </html>
