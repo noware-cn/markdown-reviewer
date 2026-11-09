@@ -71,6 +71,27 @@ const SPECS: Array<{ title: string; department: string; amount: number }> = [
 const cycle = (index: number): ApprovalState =>
   index % 5 === 0 ? "merged" : index % 7 === 3 ? "closed" : "open";
 
+/** 这张单据照 noware-cn/workspace#16 抄录，用来演示 CSV 台账文件的评审。 */
+const CSV_PR: Approval = build(
+  16,
+  "data: 区域银行智能研发中标台账（84 条 A 类，2024-12 至 2026-11）",
+  "dantesun",
+  "市场",
+  0,
+  "open",
+  "待合并",
+  "2026-11-08T05:55:00Z",
+  "2026-11-09T05:11:00Z",
+  stagesOf(
+    "dantesun",
+    [
+      { name: "张伟", status: "done", day: 1, comment: "台账口径与来源清单已核对" },
+      { name: "李静", status: "current", day: 0, comment: "等待审批" },
+    ],
+    "2026-11-08T05:55:00Z",
+  ),
+);
+
 export const MOCK_APPROVALS = (): Approval[] => {
   const items: Approval[] = [];
   for (let index = 0; index < 24; index += 1) {
@@ -123,7 +144,7 @@ export const MOCK_APPROVALS = (): Approval[] => {
       ),
     );
   }
-  return items;
+  return [CSV_PR, ...items];
 };
 
 export const MOCK_DETAIL = (number: number): Approval | null => {

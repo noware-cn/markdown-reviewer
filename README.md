@@ -8,7 +8,9 @@
 ├── src/index.ts          路由、登录门禁、OAuth 回调、接口
 ├── src/session.ts        会话签名与读取（HMAC-SHA256 Cookie）
 ├── src/diff.ts           GitHub API 封装（PR、文件、评论、Review）
-├── src/mock.ts           演示数据，仅 MOCK_MODE=1 使用
+├── src/mock.ts           演示单据列表，仅 MOCK_MODE=1 使用
+├── src/mock-diff.ts      演示 PR 快照（#11，Markdown 改动），仅 MOCK_MODE=1 使用
+├── src/mock-diff-16.ts   演示 PR 快照（#16，含两份 CSV 台账），仅 MOCK_MODE=1 使用
 ├── public/index.html     工作台页面
 ├── public/diff.js        工作台控制器
 ├── public/diff-model.js  统一差异模型
@@ -82,7 +84,7 @@ npx wrangler dev --local --var MOCK_MODE:1 --var SESSION_SECRET:local-dev-secret
 curl -c /tmp/jar http://localhost:8787/auth/login    # 直接建立演示会话
 ```
 
-演示模式下 `/auth/login` 直接建立会话，页面右上角标注「演示数据（MOCK）」。
+演示模式下 `/auth/login` 直接建立会话，页面右上角标注「演示数据（MOCK）」。演示数据的改动预览按 PR 号分派：`#16` 是 GitHub 真实 PR（含两份 CSV 台账）的抓取快照，可用来核对 CSV 表格视图；其余单据沿用 `#11` 的 Markdown 快照。
 
 ## 构建与检查
 
@@ -110,7 +112,7 @@ GitHub OAuth App 回调地址填 `<Worker 对外域名>/auth/callback`。仓库�
 
 | 工作流 | 触发 | 内容 |
 |---|---|---|
-| `.github/workflows/ci.yml` | Pull Request / 手动 | `npm ci` → `tsc --noEmit` → `node --test`（64 个用例）；另有 `Production health` 作业跑线上验证 |
+| `.github/workflows/ci.yml` | Pull Request / 手动 | `npm ci` → `tsc --noEmit` → `node --test`（86 个用例，另有 2 个线上专属用例默认 skip）；另有 `Production health` 作业跑线上验证 |
 | `.github/workflows/deploy-worker.yml` | 合入 `main` / 手动选分支 | 同上校验 → `wrangler deploy --var DEPLOY_COMMIT:<sha>` → 部署后跑线上验证 |
 
 线上验证统一写在 `test/production.test.mjs`（依赖 `*.workers.dev` 与 `api.cloudflare.com`）：
@@ -162,5 +164,6 @@ npx wrangler rollback --name approval-visualization-worker
 - 草稿绑定创建时的 head commit SHA；PR 有新提交时旧草稿会标记过期并禁止提交，必须重新定位。
 - 删除文件和重命名文件分别按 GitHub 文件状态读取 base/head 正文；新增文件的 base 侧和删除文件的 head 侧为空。
 - 渲染视图按 Markdown 原文分块，每块挂真实行号锚点，评论始终回落到 `path + line`。
+- `.csv` 文件不走 Markdown 分块：按 RFC4180 解析成行记录（引号内逗号、转义引号、跨行字段），以数据表呈现，假定首行为表头。行级底色标出增/删/改，修改行上方保留旧行、变化的单元格单独加底色；行号栏可直接评论，行号与 GitHub patch 一致。前后对照视图左右各成一张表。
 - 已合并或已关闭的 PR 不允许再写评论，接口返回 409，页面显示只读提示。
 - 提交 Review 成功后服务端立即失效该 PR 的 diff 缓存，页面无需整页强刷即可看到新评论；正文按 `path + headSha + baseSha` 复用，不因评论刷新重新拉取。

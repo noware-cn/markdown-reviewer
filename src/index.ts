@@ -13,7 +13,8 @@ import {
   type ReviewDraft,
 } from "./diff";
 import { MOCK_APPROVALS, MOCK_DETAIL } from "./mock";
-import { MOCK_DIFF } from "./mock-diff";
+import { MOCK_DIFF, type MockDiffPayload } from "./mock-diff";
+import { MOCK_DIFF_16 } from "./mock-diff-16";
 import { createSession, readCookie, readSession, type SessionPayload } from "./session";
 
 const JSON_HEADERS = { "content-type": "application/json; charset=utf-8", "cache-control": "no-store, max-age=0" };
@@ -186,6 +187,9 @@ const handleCallback = async (env: Env, request: Request, url: URL): Promise<Res
   });
 };
 
+/** mock 里按 PR 号取快照；未收录的号沿用 #11 的样例。 */
+const mockDiffOf = (number: number): MockDiffPayload => (number === 16 ? MOCK_DIFF_16() : MOCK_DIFF());
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -283,7 +287,7 @@ export default {
       if (!session) return json({ status: "error", message: "unauthenticated" }, 401);
       const number = Number(diffRoute[1]);
       if (isMock) {
-        return json({ ...MOCK_DIFF(), source: "mock" });
+        return json({ ...mockDiffOf(number), source: "mock" });
       }
       const token = dataToken(env, session);
       if (!token) {
@@ -315,7 +319,7 @@ export default {
       const filePath = url.searchParams.get("path");
       if (!filePath) return json({ status: "error", message: "缺少 path 参数" }, 400);
       if (isMock) {
-        const mock = MOCK_DIFF();
+        const mock = mockDiffOf(number);
         const cached = mock.texts[filePath];
         if (!cached) return json({ status: "error", message: "mock 中没有该文件正文" }, 404);
         const ref = url.searchParams.get("ref") || mock.meta.headSha;
