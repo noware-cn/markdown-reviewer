@@ -40,12 +40,14 @@
     const pr = path.match(/^\/pr\/(\d+)(?:\/blob\/(.+?))?\/?$/);
     if (pr) {
       const mode = url.searchParams.get("mode");
+      const commit = url.searchParams.get("commit");
       const anchor = parseAnchor(url.hash);
       return {
         kind: "pr",
         n: Number(pr[1]),
         file: pr[2] ? decPath(pr[2]) : null,
         mode: MODES.includes(mode) ? mode : null,
+        commit: commit && /^[0-9a-f]{7,40}$/i.test(commit) ? commit.toLowerCase() : null,
         line: anchor.line,
         endLine: anchor.endLine,
         heading: anchor.heading,
@@ -74,7 +76,10 @@
     }
     let url = `/pr/${state.n}`;
     if (state.file) url += `/blob/${encPath(state.file)}`;
-    if (state.mode && state.mode !== "reading") url += `?mode=${state.mode}`;
+    const params = new URLSearchParams();
+    if (state.mode && state.mode !== "reading") params.set("mode", state.mode);
+    if (state.commit) params.set("commit", state.commit);
+    if (params.toString()) url += `?${params.toString()}`;
     if (state.line) {
       url += `#L${state.line}${state.endLine && state.endLine > state.line ? `-L${state.endLine}` : ""}`;
     } else if (state.heading) {

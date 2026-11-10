@@ -72,6 +72,9 @@
       <a class="wb-orig" id="wbOrig" href="#" target="_blank" rel="noopener">原始 PR</a>
       <button class="wb-orig-copy" id="wbOrigCopy" type="button" title="复制 PR 链接">复制</button>
     </span>
+    <span class="wb-commit-pick" id="wbCommitPick" hidden>
+      <select class="wb-commit-select" id="wbCommitSelect" aria-label="选择提交"></select>
+    </span>
     <div class="wb-modes" role="group" aria-label="视图模式">
       <button type="button" class="wb-mode on" data-mode="reading" aria-pressed="true">阅读改动</button>
       <button type="button" class="wb-mode" data-mode="sidebyside" aria-pressed="false">前后对照</button>
@@ -153,6 +156,7 @@
           <p class="wb-subline" id="wbStats"></p>
         </div>
       </div>
+      <div class="wb-commit-bar" id="wbCommitBar" hidden></div>
       <main class="wb-doc" id="wbDoc">
       <div class="wb-filepath" id="wbFilepath" hidden>
         <span class="fp-mark" id="wbFilepathMark"></span>

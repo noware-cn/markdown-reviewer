@@ -37,8 +37,23 @@ test('列表 URL 构建', () => {
 
 test('PR：默认文件与无锚点', () => {
   assert.deepEqual({ ...R.parse('https://x.test/pr/16') },
-    { kind: 'pr', n: 16, file: null, mode: null, line: null, endLine: null, heading: null });
+    { kind: 'pr', n: 16, file: null, mode: null, commit: null, line: null, endLine: null, heading: null });
   assert.equal(R.build({ kind: 'pr', n: 16 }), '/pr/16');
+});
+
+test('PR：提交视图参数往返与非法 sha 忽略', () => {
+  const sha = '72a8b8132f0dcf12f22f684d8a69af800041f49a';
+  const url = R.build({ kind: 'pr', n: 16, file: 'a/b.md', commit: sha, mode: 'split' });
+  assert.equal(url, `/pr/16/blob/a/b.md?mode=split&commit=${sha}`);
+  const parsed = R.parse(`https://x.test${url}`);
+  assert.equal(parsed.commit, sha);
+  assert.equal(parsed.file, 'a/b.md');
+
+  /* 大写归一为小写；非十六进制或过短的值丢弃 */
+  assert.equal(R.parse(`https://x.test/pr/16?commit=${sha.toUpperCase()}`).commit, sha);
+  assert.equal(R.parse('https://x.test/pr/16?commit=zzzz').commit, null);
+  assert.equal(R.parse('https://x.test/pr/16?commit=abc').commit, null);
+  assert.equal(R.build({ kind: 'pr', n: 16, commit: null }), '/pr/16');
 });
 
 test('PR：中文路径按段编码，往返一致', () => {

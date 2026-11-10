@@ -32,9 +32,49 @@ function makeWorld() {
   const respond = (call, body) => {
     if (body) return { status: body.status, ok: body.status >= 200 && body.status < 300, json: async () => body.data };
     const u = new URL(call.url, 'http://x');
-    const m = /^\/api\/approvals\/(\d+)\/(diff|file|comments)$/.exec(u.pathname);
+    const sub = /^\/api\/approvals\/(\d+)\/commits\/([^/]+)(\/file)?$/.exec(u.pathname);
+    if (sub) {
+      const n = Number(sub[1]);
+      const sha = decodeURIComponent(sub[2]);
+      if (sub[3]) {
+        const p = u.searchParams.get('path');
+        return { status: 200, ok: true, json: async () => ({
+          path: p, ref: sha, side: u.searchParams.get('side') || 'head',
+          text: `# ${p} @ ${sha}\n\n- 项目\n`, truncated: false,
+        }) };
+      }
+      return { status: 200, ok: true, json: async () => ({
+        sha, shortSha: sha.slice(0, 7), headline: `提交 ${sha}`, message: `提交 ${sha}`,
+        author: 'u', authorName: 'u', date: '', parents: [world.prs[n].baseSha], isMerge: false,
+        url: `https://github.com/x/y/commit/${sha}`,
+        stats: { additions: 1, deletions: 0, total: 1 },
+        files: world.prs[n].files.slice(0, 1).map((f) => ({
+          path: f.path, previousPath: null, status: f.status, additions: 1, deletions: 0,
+          patch: '@@ -1,1 +1,1 @@\n-旧\n+新', isMarkdown: true,
+        })),
+        truncated: false,
+      }) };
+    }
+    const m = /^\/api\/approvals\/(\d+)\/(diff|file|comments|commits|merge-options)$/.exec(u.pathname);
     if (!m) return { status: 404, ok: false, json: async () => ({ message: 'not found' }) };
     const n = Number(m[1]);
+    if (m[2] === 'commits') {
+      return { status: 200, ok: true, json: async () => ({
+        items: [{
+          sha: world.prs[n].headSha, shortSha: world.prs[n].headSha.slice(0, 7),
+          headline: `提交 ${n}`, message: `提交 ${n}`, author: 'u', authorName: 'u',
+          date: '', parents: [], isMerge: false, url: `https://github.com/x/y/commit/${world.prs[n].headSha}`,
+        }],
+        truncated: false,
+      }) };
+    }
+    if (m[2] === 'merge-options') {
+      return { status: 200, ok: true, json: async () => ({
+        canMerge: true, reason: '', methods: ['merge', 'squash'], defaultMethod: 'merge',
+        draft: false, mergeable: true, mergeableState: 'clean',
+        headSha: world.prs[n].headSha, baseRef: 'main', headRef: `f${n}`, permissions: { push: true },
+      }) };
+    }
     if (m[2] === 'diff') {
       return { status: 200, ok: true, json: async () => ({
         meta: meta(n),
@@ -123,7 +163,7 @@ function mountApp(world) {
   ctx.window.DiffModel = modelCtx.window.DiffModel;
 
   const ANCHOR = '  let bound = false;';
-  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml;\n${ANCHOR}`);
+  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml;\n${ANCHOR}`);
   vm.runInContext(exposed, ctx);
   return { ctx, els, store };
 }
@@ -249,7 +289,7 @@ test('评论刷新复用已加载正文（0 次正文请求）', async () => {
   await releaseGated(world, (c) => c.url.includes('/file?'));
   await p;
   assert.equal(world.calls.filter((c) => c.url.includes('/file?')).length - before, 0);
-  assert.equal(app.ctx.window.__D.texts['a.md'].headSha, 'h1');
+  assert.equal(app.ctx.window.__D.texts[app.ctx.window.__D.revKey]['a.md'].headSha, 'h1');
 });
 
 test('提交失败不再把旧 PR 的错误弹到新 PR', async () => {
@@ -273,6 +313,54 @@ test('提交失败不再把旧 PR 的错误弹到新 PR', async () => {
   await sub;
   assert.equal(app.els.get('dtoast')?.textContent || '', '', '旧 PR 的失败提示不应显示在新 PR 上');
   assert.equal(app.ctx.window.__D.n, 2);
+});
+
+test('提交视图：只列该提交的文件，正文改用该提交的 ref，并标记只读', async () => {
+  const world = makeWorld();
+  const app = mountApp(world);
+  const p = app.ctx.window.DiffView.mount(1, { commit: 'h1' });
+  await tick();
+  const d = world.gated().find((c) => c.url.includes('/1/diff'));
+  if (d) d.release();
+  await tick();
+  await releaseGated(world, (c) => c.url.includes('/file?'));
+  await p;
+
+  const D = app.ctx.window.__D;
+  assert.equal(D.rev.kind, 'commit');
+  assert.equal(D.rev.sha, 'h1');
+  assert.deepEqual(D.files.map((f) => f.path), ['a.md'], '提交视图只列本次提交的文件');
+  const texts = D.texts[D.revKey]['a.md'];
+  assert.equal(texts.headSha, 'h1');
+  assert.equal(texts.baseSha, 'b1', 'base 侧取父提交');
+  assert.ok(world.calls.some((c) => c.url.includes('/api/approvals/1/commits/h1/file?')
+    && c.url.includes('side=head')));
+
+  const bar = app.els.get('wbCommitBar');
+  assert.equal(bar.hidden, false);
+  assert.ok(bar.innerHTML.includes('历史提交'));
+  assert.ok(bar.innerHTML.includes('回到全部改动'));
+  assert.equal(app.els.get('wbDoc').classList.contains('readonly'), true);
+});
+
+test('提交视图：切回全部改动会恢复 PR 的文件列表', async () => {
+  const world = makeWorld();
+  const app = mountApp(world);
+  const p = app.ctx.window.DiffView.mount(1, { commit: 'h1' });
+  await tick();
+  const d = world.gated().find((c) => c.url.includes('/1/diff'));
+  if (d) d.release();
+  await tick();
+  await releaseGated(world, (c) => c.url.includes('/file?'));
+  await p;
+
+  const D = app.ctx.window.__D;
+  assert.deepEqual(D.files.map((f) => f.path), ['a.md']);
+  app.ctx.window.__commitAll();
+  assert.equal(D.rev.kind, 'all');
+  assert.deepEqual(D.files.map((f) => f.path), ['a.md', 'b.md']);
+  assert.equal(app.els.get('wbCommitBar').hidden, true);
+  assert.equal(app.els.get('wbDoc').classList.contains('readonly'), false);
 });
 
 test('严格选区定位：多行块取整块范围，单行/代码行仍精确', () => {
@@ -357,7 +445,10 @@ test('手动强制刷新只刷新 PR 元数据，不强制刷新正文', async (
   await app.ctx.window.__load(1, true, true);
   assert.ok(world.calls.some((c) => c.url.includes('/1/diff') && c.url.includes('refreshMeta=1')));
   assert.equal(world.calls.filter((c) => c.url.includes('/file?')).length, beforeFiles);
-  assert.ok(world.calls.every((c) => !c.url.includes('refreshText=1') && !c.url.includes('refresh=1')));
+  /* 正文缓存不动；提交列表随强制刷新重取一次（?refresh=1 只出现在 commits 上） */
+  assert.ok(world.calls.every((c) => !c.url.includes('refreshText=1')));
+  const forced = world.calls.filter((c) => c.url.includes('refresh=1') && !c.url.includes('/commits'));
+  assert.deepEqual(forced, []);
 });
 
 test('切换并重新打开原 PR 后，旧提交只清除旧快照草稿', async () => {

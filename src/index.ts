@@ -3,12 +3,20 @@ import { getApproval, listApprovals } from "./github";
 import {
   createIssueComment,
   createReview,
+  getCommitDetail,
   getFileText,
+  getMergeOptions,
+  getPrCommits,
   getPrFiles,
   getPrMeta,
   getReviewComments,
+  mergePull,
   GitHubError,
+  type CommitDetail,
+  type CommitSummary,
   type DiffFile,
+  type MergeMethod,
+  type MergeOptions,
   type PrMeta,
   type ReviewComment,
   type ReviewDraft,
@@ -54,6 +62,8 @@ const dataToken = (env: Env, session: SessionPayload | null): string | null =>
 /** GitHub 取数结果内存缓存：5 分钟 TTL；key 按「组织/仓库 + 路径」，同一仓库所有协作者可见数据一致，跨用户共享。 */
 const apiCache = new Map<string, { at: number; body: unknown }>();
 const apiCacheTTL = 300_000;
+/** 简单容量上限：提交/合并接口会引入更多 key，避免 Worker 内存无界增长。 */
+const API_CACHE_MAX = 300;
 
 const repoKey = (env: Env): string => `${env.GITHUB_ORG}/${env.GITHUB_REPO}`;
 
@@ -69,7 +79,13 @@ const apiCached = async <T>(
   if (hit && !refresh && Date.now() - hit.at < apiCacheTTL) return { value: hit.body as T, stale: false };
   try {
     const body = await produce();
+    /** 重新写入时移到队尾，淘汰时优先丢最久未更新的 key。 */
+    apiCache.delete(mapKey);
     apiCache.set(mapKey, { at: Date.now(), body });
+    if (apiCache.size > API_CACHE_MAX) {
+      const oldest = apiCache.keys().next().value;
+      if (oldest) apiCache.delete(oldest);
+    }
     return { value: body, stale: false };
   } catch (error) {
     if (hit) return { value: hit.body as T, stale: true };
@@ -198,6 +214,68 @@ const handleCallback = async (env: Env, request: Request, url: URL): Promise<Res
 /** mock 里按 PR 号取快照；未收录的号沿用 #11 的样例。 */
 const mockDiffOf = (number: number): MockDiffPayload => (number === 16 ? MOCK_DIFF_16() : MOCK_DIFF());
 
+/** 演示模式只有一个合成提交：把 PR 的全部改动视为一次提交。 */
+const mockCommitOf = (number: number): CommitDetail => {
+  const payload = mockDiffOf(number);
+  const meta = payload.meta;
+  return {
+    sha: meta.headSha,
+    shortSha: meta.headSha.slice(0, 7),
+    headline: "演示提交：PR 全部改动",
+    message: "演示提交：PR 全部改动\n\n演示模式把 PR 的全部改动合并成一个提交。",
+    author: meta.author,
+    authorName: meta.author,
+    date: meta.createdAt,
+    parents: [meta.baseSha],
+    isMerge: false,
+    url: `${meta.url}/commits/${meta.headSha}`,
+    stats: {
+      additions: meta.additions,
+      deletions: meta.deletions,
+      total: meta.additions + meta.deletions,
+    },
+    files: payload.files,
+    truncated: false,
+  };
+};
+
+const mockCommitsOf = (number: number): { items: CommitSummary[]; truncated: boolean } => {
+  const detail = mockCommitOf(number);
+  return {
+    items: [{
+      sha: detail.sha,
+      shortSha: detail.shortSha,
+      headline: detail.headline,
+      message: detail.message,
+      author: detail.author,
+      authorName: detail.authorName,
+      date: detail.date,
+      parents: detail.parents,
+      isMerge: detail.isMerge,
+      url: detail.url,
+    }],
+    truncated: false,
+  };
+};
+
+const mockMergeOptionsOf = (number: number): MergeOptions => {
+  const meta = mockDiffOf(number).meta;
+  const canMerge = meta.state === "open" && !meta.merged;
+  return {
+    canMerge,
+    reason: canMerge ? null : meta.merged ? "PR 已合并" : "PR 已关闭",
+    methods: ["merge", "squash"],
+    defaultMethod: "merge",
+    draft: false,
+    mergeable: true,
+    mergeableState: "clean",
+    headSha: meta.headSha,
+    baseRef: meta.baseRef,
+    headRef: meta.headRef,
+    permissions: { push: true, maintain: false, admin: false },
+  };
+};
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     const url = new URL(request.url);
@@ -315,6 +393,242 @@ export default {
       } catch (error) {
         const status = error instanceof GitHubError ? error.status : 502;
         return json({ status: "error", message: `读取 GitHub 失败：${String(error)}` }, status >= 500 ? 502 : status);
+      }
+    }
+
+    /** PR 的提交列表：只读浏览用；合并后仍可读取。 */
+    const commitsRoute = path.match(/^\/api\/approvals\/(\d+)\/commits$/);
+    if (commitsRoute) {
+      if (!session) return json({ status: "error", message: "unauthenticated" }, 401);
+      const number = Number(commitsRoute[1]);
+      if (isMock) return json({ ...mockCommitsOf(number), source: "mock" });
+      const token = dataToken(env, session);
+      if (!token) {
+        return json({ status: "error", message: "缺少取数令牌：未配置 GITHUB_DATA_TOKEN，且会话中没有登录者令牌。" }, 503);
+      }
+      try {
+        const refresh = url.searchParams.has("refresh") || url.searchParams.has("refreshMeta");
+        const { value, stale } = await apiCached(env, `/commits/${number}`, refresh, () => getPrCommits(env, token, number));
+        return json({ ...value, source: "github", ...(stale ? { stale: true } : {}) });
+      } catch (error) {
+        const status = error instanceof GitHubError ? error.status : 502;
+        return json({ status: "error", message: `读取提交列表失败：${String(error)}` }, status >= 500 ? 502 : status);
+      }
+    }
+
+    /** 单次提交的完整改动；sha 必须在当前 PR 的提交列表内。 */
+    const commitDetailRoute = path.match(/^\/api\/approvals\/(\d+)\/commits\/([0-9a-fA-F]{7,40})$/);
+    if (commitDetailRoute) {
+      if (!session) return json({ status: "error", message: "unauthenticated" }, 401);
+      const number = Number(commitDetailRoute[1]);
+      const wanted = commitDetailRoute[2].toLowerCase();
+      if (isMock) {
+        const detail = mockCommitOf(number);
+        if (!detail.sha.toLowerCase().startsWith(wanted)) {
+          return json({ status: "error", message: "该提交不属于此 PR" }, 404);
+        }
+        return json({ ...detail, source: "mock" });
+      }
+      const token = dataToken(env, session);
+      if (!token) {
+        return json({ status: "error", message: "缺少取数令牌：未配置 GITHUB_DATA_TOKEN，且会话中没有登录者令牌。" }, 503);
+      }
+      try {
+        const commits = await apiCached(env, `/commits/${number}`, false, () => getPrCommits(env, token, number));
+        const hit = commits.value.items.find((item) => item.sha.toLowerCase().startsWith(wanted));
+        if (!hit) return json({ status: "error", message: "该提交不属于此 PR" }, 404);
+        const { value, stale } = await apiCached(
+          env,
+          `/commit/${number}/${hit.sha}`,
+          false,
+          () => getCommitDetail(env, token, hit.sha),
+        );
+        return json({ ...value, source: "github", ...(stale ? { stale: true } : {}) });
+      } catch (error) {
+        const status = error instanceof GitHubError ? error.status : 502;
+        return json({ status: "error", message: `读取提交失败：${String(error)}` }, status >= 500 ? 502 : status);
+      }
+    }
+
+    /** 提交视图的正文：head 侧是该提交，base 侧是它的第一个父提交。 */
+    const commitFileRoute = path.match(/^\/api\/approvals\/(\d+)\/commits\/([0-9a-fA-F]{7,40})\/file$/);
+    if (commitFileRoute) {
+      if (!session) return json({ status: "error", message: "unauthenticated" }, 401);
+      const number = Number(commitFileRoute[1]);
+      const wanted = commitFileRoute[2].toLowerCase();
+      const filePath = url.searchParams.get("path");
+      const side = url.searchParams.get("side") === "base" ? "base" : "head";
+      if (!filePath) return json({ status: "error", message: "缺少 path 参数" }, 400);
+      if (isMock) {
+        const detail = mockCommitOf(number);
+        if (!detail.sha.toLowerCase().startsWith(wanted)) {
+          return json({ status: "error", message: "该提交不属于此 PR" }, 404);
+        }
+        const mock = mockDiffOf(number);
+        const cached = mock.texts[filePath];
+        if (!cached) return json({ status: "error", message: "mock 中没有该文件正文" }, 404);
+        return json({
+          path: filePath,
+          ref: side === "base" ? detail.parents[0] : detail.sha,
+          side,
+          text: side === "base" ? cached.base : cached.head,
+          truncated: false,
+          source: "mock",
+        });
+      }
+      const token = dataToken(env, session);
+      if (!token) return json({ status: "error", message: "缺少取数令牌。" }, 503);
+      try {
+        const commits = await apiCached(env, `/commits/${number}`, false, () => getPrCommits(env, token, number));
+        const hit = commits.value.items.find((item) => item.sha.toLowerCase().startsWith(wanted));
+        if (!hit) return json({ status: "error", message: "该提交不属于此 PR" }, 404);
+        const { value: detail } = await apiCached(
+          env,
+          `/commit/${number}/${hit.sha}`,
+          false,
+          () => getCommitDetail(env, token, hit.sha),
+        );
+        const file = detail.files.find((item) => item.path === filePath);
+        if (!file) return json({ status: "error", message: "该文件不在这次提交的改动中。" }, 404);
+        const emptySide = (side === "head" && file.status === "removed")
+          || (side === "base" && file.status === "added");
+        if (emptySide) {
+          return json({
+            path: filePath,
+            ref: side === "base" ? (detail.parents[0] ?? "") : detail.sha,
+            side,
+            text: "",
+            truncated: false,
+            source: "github",
+          });
+        }
+        if (side === "base" && !detail.parents[0]) {
+          return json({ status: "error", message: "该提交没有父提交，无法读取改前正文。" }, 400);
+        }
+        const sourcePath = side === "base" && file.status === "renamed" && file.previousPath
+          ? file.previousPath
+          : file.path;
+        const ref = side === "base" ? detail.parents[0] : detail.sha;
+        const refreshText = url.searchParams.has("refreshText") || url.searchParams.has("refresh");
+        const payload = await getFileText(env, token, sourcePath, ref, refreshText);
+        return json({ ...payload, path: filePath, ref, side, source: "github" });
+      } catch (error) {
+        const status = error instanceof GitHubError ? error.status : 502;
+        return json({ status: "error", message: String(error) }, status >= 500 ? 502 : status);
+      }
+    }
+
+    /** 合并前置条件：由登录者令牌判断写权限，避免把只读令牌当成可合并。 */
+    const mergeOptionsRoute = path.match(/^\/api\/approvals\/(\d+)\/merge-options$/);
+    if (mergeOptionsRoute) {
+      if (!session) return json({ status: "error", message: "unauthenticated" }, 401);
+      const number = Number(mergeOptionsRoute[1]);
+      if (isMock) return json({ ...mockMergeOptionsOf(number), source: "mock" });
+      const token = session.token;
+      if (!token) return json({ status: "error", message: "当前登录会话没有 GitHub 写入令牌，请重新登录。" }, 503);
+      try {
+        const options = await getMergeOptions(env, token, number);
+        return json({ ...options, source: "github" });
+      } catch (error) {
+        const status = error instanceof GitHubError ? error.status : 502;
+        return json({ status: "error", message: `读取合并条件失败：${String(error)}` }, status >= 500 ? 502 : status);
+      }
+    }
+
+    /** 合并 PR：sha 锁定 head，服务端重新校验权限与状态，成功后失效列表/详情/提交缓存。 */
+    const mergeRoute = path.match(/^\/api\/approvals\/(\d+)\/merge$/);
+    if (mergeRoute && request.method === "POST") {
+      if (!session) return json({ status: "error", message: "unauthenticated" }, 401);
+      const number = Number(mergeRoute[1]);
+      let body: { sha?: string; method?: string; commitTitle?: string; commitMessage?: string };
+      try {
+        body = (await request.json()) as typeof body;
+      } catch {
+        return json({ status: "error", message: "请求体不是合法 JSON" }, 400);
+      }
+      const sha = String(body.sha ?? "").trim();
+      if (!/^[0-9a-f]{7,40}$/i.test(sha)) {
+        return json({ status: "error", message: "缺少有效的 head SHA。" }, 400);
+      }
+      const commitTitle = typeof body.commitTitle === "string" ? body.commitTitle.trim().slice(0, 200) : "";
+      const commitMessage = typeof body.commitMessage === "string" ? body.commitMessage.trim().slice(0, 10_000) : "";
+
+      if (isMock) {
+        const meta = mockDiffOf(number).meta;
+        if (meta.merged || meta.state !== "open") {
+          return json({ status: "error", message: `PR #${number} 已${meta.merged ? "合并" : "关闭"}，不能再次合并。` }, 409);
+        }
+        return json({
+          ok: true,
+          merged: true,
+          queued: false,
+          sha: `mock-merge-${number}`,
+          message: "演示模式：已模拟合并。",
+          source: "mock",
+        });
+      }
+
+      const token = session.token;
+      if (!token) return json({ status: "error", message: "当前登录会话没有 GitHub 写入令牌，请重新登录。" }, 503);
+      const readToken = dataToken(env, session) || token;
+      try {
+        const meta = await getPrMeta(env, readToken, number);
+        if (meta.merged || meta.state !== "open") {
+          return json({ status: "error", message: `PR #${number} 已${meta.merged ? "合并" : "关闭"}，不能再次合并。` }, 409);
+        }
+        if (meta.headSha.toLowerCase() !== sha.toLowerCase()) {
+          return json({ status: "error", message: "PR 已产生新提交，当前页面不是最新版本。请刷新后重试。" }, 409);
+        }
+        const options = await getMergeOptions(env, token, number);
+        if (!options.canMerge) {
+          return json({ status: "error", message: options.reason || "当前不满足合并条件。" }, 409);
+        }
+        if (!options.methods.length) {
+          return json({ status: "error", message: "仓库没有启用任何合并方式。" }, 409);
+        }
+        const requested = typeof body.method === "string" ? body.method : "";
+        const method = (requested || options.defaultMethod) as MergeMethod | null;
+        if (!method || !options.methods.includes(method)) {
+          return json({ status: "error", message: `不支持的合并方式：${requested || "(空)"}` }, 400);
+        }
+        const result = await mergePull(env, token, number, {
+          sha,
+          method,
+          ...(commitTitle ? { commitTitle } : {}),
+          ...(commitMessage ? { commitMessage } : {}),
+        });
+        for (const key of [
+          "/api/approvals",
+          `/api/approvals/${number}`,
+          `/diff/${number}`,
+          `/commits/${number}`,
+        ]) {
+          apiCache.delete(`${repoKey(env)}|${key}`);
+        }
+        return json({
+          ok: true,
+          merged: result.merged,
+          queued: !result.merged,
+          sha: result.sha,
+          message: result.message || (result.merged ? "已合并。" : "合并请求已受理。"),
+          source: "github",
+        });
+      } catch (error) {
+        const status = error instanceof GitHubError ? error.status : 502;
+        const clientStatus = status === 405 ? 409 : status === 422 ? 400 : status >= 500 ? 502 : status;
+        const hint = status === 403
+          ? "当前登录者没有合并权限，或分支保护拒绝了这次合并。"
+          : status === 405
+            ? "GitHub 拒绝合并（常见原因：存在冲突、缺少必需审批或状态检查）。"
+            : status === 409
+              ? "PR 状态已变化，请刷新后重试。"
+              : status === 422
+                ? "合并参数无效。"
+                : "GitHub 暂时不可用，请稍后重试。";
+        return json(
+          { status: "error", message: `${hint}（${String(error)}）`, retryable: status >= 500 },
+          clientStatus,
+        );
       }
     }
 

@@ -90,7 +90,9 @@ const fileOf = (extra) => ({
 });
 const mountFile = (file, base, head) => {
   win.__D.meta = { number: 1, headSha: 'h1', baseSha: 'b1', url: 'https://github.com/x/y/pull/1' };
-  win.__D.texts[file.path] = {
+  /* 正文缓存按视图分区（revKey）：测试里直接用当前分区的储位 */
+  win.__D.texts[win.__D.revKey] ||= {};
+  win.__D.texts[win.__D.revKey][file.path] = {
     base, head, headLoaded: true, baseLoaded: true, headTruncated: false, baseTruncated: false,
   };
   return file;

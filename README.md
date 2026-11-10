@@ -36,6 +36,11 @@
 | GET | `/api/me` | 是 | 当前登录账号 |
 | GET | `/api/approvals` | 是 | 单据列表（PR 列表） |
 | GET | `/api/approvals/{number}` | 是 | 单据详情（含审批链路） |
+| GET | `/api/approvals/{number}/commits` | 是 | PR 的提交列表（`sha`/`shortSha`/`headline`/作者/父提交） |
+| GET | `/api/approvals/{number}/commits/{sha}` | 是 | 单次提交的改动（`stats` 与 `files`，`sha` 可用 7 位以上前缀） |
+| GET | `/api/approvals/{number}/commits/{sha}/file?path=&side=` | 是 | 提交视图正文：`side=head` 取该提交，`side=base` 取父提交 |
+| GET | `/api/approvals/{number}/merge-options` | 是 | 合并前置条件（写权限、草稿、冲突、允许的合并方式） |
+| POST | `/api/approvals/{number}/merge` | 是 | 合并 PR，body：`{ sha, method, commitTitle?, commitMessage? }` |
 | GET | `/` | 是 | 已登录返回界面，未登录返回登录页 |
 | GET | `/pr/{n}[/blob/{path}]` | 是 | 工作台深链，未登录时经 `next` 参数回跳 |
 | GET | `/doc/{path}` | 是 | 只读文档页（支持 `?ref=<sha>` 与 `#标题` 锚点） |
@@ -80,6 +85,7 @@
 | `/pr/16/blob/docs/a/b.md#L120` | 指定行（head 侧 1-based，与 GitHub 行号一致） |
 | `/pr/16/blob/docs/a/b.md#L120-L140` | 行范围 |
 | `/pr/16/blob/docs/a/b.md#总体方案` | 标题锚点（行号不可用时的回退） |
+| `/pr/16/blob/docs/a/b.md?commit=<sha>` | 单次提交的只读视图（`sha` 可只写 7 位前缀；`全部改动` 时不写该参数） |
 | `/doc/docs/a/b.md?ref=<sha>#标题` | 只读文档页 |
 
 规则：点 PR / 点文件用 `push`（可后退），切视图与滚动用 `replace`（不堆历史），滚动停下 450ms 后把顶部行号写回地址栏。
@@ -91,7 +97,7 @@
 服务端使用 `GITHUB_DATA_TOKEN` 读取仓库数据；提交 Review 时使用当前登录会话中的 OAuth 令牌（OAuth scope 包含 `repo`），避免只读数据令牌导致提交失败。
 
 - `GITHUB_DATA_TOKEN` 仅用于读取 PR、Review、Diff 和文件正文，建议只读、仅限该仓库；
-- 登录会话令牌用于提交 Review 和行级评论；
+- 登录会话令牌用于提交 Review、行级评论与合并（合并需要仓库写权限）；
 - 未配置 `GITHUB_DATA_TOKEN` 时，读取接口回退到登录会话令牌。
 
 ## 本地开发
@@ -191,3 +197,24 @@ npx wrangler rollback --name approval-visualization-worker
 - `.csv` 文件不走 Markdown 分块：按 RFC4180 解析成行记录（引号内逗号、转义引号、跨行字段），以数据表呈现，假定首行为表头。行级底色标出增/删/改，修改行上方保留旧行、变化的单元格单独加底色；行号栏可直接评论，行号与 GitHub patch 一致。前后对照视图左右各成一张表。
 - 已合并或已关闭的 PR 不允许再写评论，接口返回 409，页面显示只读提示。
 - 提交 Review 成功后服务端立即失效该 PR 的 diff 缓存，页面无需整页强刷即可看到新评论；正文按 `path + headSha + baseSha` 复用，不因评论刷新重新拉取。
+
+## 按提交浏览与合并（2026-11-10）
+
+工作台顶栏多了一个提交下拉（`全部改动 · base…head` + 逐条提交），选中后进入**只读的提交视图**：文件列表和正文都换成这一次提交的改动，`side=base` 取该提交的父提交，评论只保留这条提交上的；地址栏带 `?commit=<sha>`，可复制转发。切回「全部改动」恢复 PR 全量改动。
+
+合并入口在右侧「意见」抽屉底部，只在 PR 处于 open 且未合并时出现：
+
+| 能力 | 接口 | 说明 |
+| --- | --- | --- |
+| 提交列表 | `GET /api/approvals/{n}/commits` | 最多 1000 条，超出置 `truncated` |
+| 单提交改动 | `GET /api/approvals/{n}/commits/{sha}` | 复用 `pulls/{n}/files` 的归一化逻辑；大提交最多 3000 个文件 |
+| 单提交正文 | `GET /api/approvals/{n}/commits/{sha}/file?path=&side=` | `head` 取该提交，`base` 取父提交；新增/删除文件返回空正文 |
+| 合并条件 | `GET /api/approvals/{n}/merge-options` | `canMerge`、`reason`（中文）、`methods`（仓库实际启用的方式）、`permissions` |
+| 合并 | `POST /api/approvals/{n}/merge` | body 必须带页面上的 head `sha`；head 已变化返回 409 |
+
+实现要点：
+
+- 合并鉴权用登录会话令牌（不是只读数据令牌），无写权限、草稿 PR、冲突、分支保护、分支落后都在 `canMerge` 前置判断里给出中文原因，按钮直接禁用。
+- 服务端再次校验 `sha === meta.headSha`，避免页面停留期间有新提交时误合并旧 head；成功后失效列表、详情与提交缓存。
+- GitHub 的 405/422 分别映射为 409/400，并附中文提示（冲突或缺审批 / 参数无效）。
+- 历史提交为只读：不能新增行级评论，抽屉里也不出现合并区，切回全部改动后恢复。
