@@ -250,6 +250,38 @@ test('合并拒绝：缺少有效 sha 与不支持的合并方式', async () => 
   } finally { done(); }
 });
 
+test('合并条件：存在冲突时不可合并，POST 也不会打到 GitHub', async () => {
+  const { state, call, done } = await mount();
+  try {
+    state.pr.mergeable = false;
+    state.pr.mergeable_state = 'dirty';
+    const options = await call('/api/approvals/1/merge-options');
+    assert.equal(options.body.canMerge, false);
+    assert.equal(options.body.reason, '存在合并冲突');
+    assert.equal(options.body.mergeableState, 'dirty');
+
+    const res = await call('/api/approvals/1/merge', {
+      method: 'POST',
+      body: JSON.stringify({ sha: HEAD, method: 'merge' }),
+    });
+    assert.equal(res.status, 409);
+    assert.match(res.body.message, /冲突/);
+    assert.deepEqual(state.merged, []);
+  } finally { done(); }
+});
+
+test('合并拒绝：请求体不是 JSON 对象', async () => {
+  const { state, call, done } = await mount();
+  try {
+    for (const raw of ['null', '[]', '"aaaaaaaa"', '123']) {
+      const res = await call('/api/approvals/1/merge', { method: 'POST', body: raw });
+      assert.equal(res.status, 400, `body=${raw}`);
+      assert.match(res.body.message, /JSON/);
+    }
+    assert.deepEqual(state.merged, []);
+  } finally { done(); }
+});
+
 test('已合并的 PR 不能再次合并', async () => {
   const { state, call, done } = await mount();
   try {

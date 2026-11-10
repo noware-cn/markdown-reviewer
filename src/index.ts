@@ -546,6 +546,9 @@ export default {
       } catch {
         return json({ status: "error", message: "请求体不是合法 JSON" }, 400);
       }
+      if (!body || typeof body !== "object" || Array.isArray(body)) {
+        return json({ status: "error", message: "请求体必须是 JSON 对象" }, 400);
+      }
       const sha = String(body.sha ?? "").trim();
       if (!/^[0-9a-f]{7,40}$/i.test(sha)) {
         return json({ status: "error", message: "缺少有效的 head SHA。" }, 400);

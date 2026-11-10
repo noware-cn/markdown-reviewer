@@ -484,6 +484,7 @@ body.wb-mode-on .layout { display: none; }
 .cb-badge.ok { border-color: var(--positive); color: var(--positive); }
 .cb-badge.warn { border-color: var(--warning); color: var(--warning); }
 .cb-meta { margin-top: 3px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cb-warn { margin-top: 4px; color: var(--warning); }
 .cb-actions { display: flex; align-items: center; gap: 10px; margin-top: 6px; }
 .cb-actions a { font-size: var(--fs-meta); }
 .cb-actions .btn {

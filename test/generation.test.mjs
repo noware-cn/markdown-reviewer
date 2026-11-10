@@ -22,6 +22,8 @@ function makeWorld() {
       3: { headSha: 'h3', baseSha: 'b3', files: [{ path: 'd.md', status: 'added' }] },
     },
     post: { status: 200, data: { ok: true, review: { id: 77, comments: 0 } } },
+    mergeOptions: null,       // 覆盖 /merge-options 的个别字段
+    commitTruncated: false,   // 提交明细的文件列表被截断
   };
   const meta = (n) => ({
     number: n, title: `PR ${n}`, state: 'open', merged: false,
@@ -52,7 +54,7 @@ function makeWorld() {
           path: f.path, previousPath: null, status: f.status, additions: 1, deletions: 0,
           patch: '@@ -1,1 +1,1 @@\n-旧\n+新', isMarkdown: true,
         })),
-        truncated: false,
+        truncated: Boolean(world.commitTruncated),
       }) };
     }
     const m = /^\/api\/approvals\/(\d+)\/(diff|file|comments|commits|merge-options)$/.exec(u.pathname);
@@ -69,11 +71,11 @@ function makeWorld() {
       }) };
     }
     if (m[2] === 'merge-options') {
-      return { status: 200, ok: true, json: async () => ({
+      return { status: 200, ok: true, json: async () => Object.assign({
         canMerge: true, reason: '', methods: ['merge', 'squash'], defaultMethod: 'merge',
         draft: false, mergeable: true, mergeableState: 'clean',
         headSha: world.prs[n].headSha, baseRef: 'main', headRef: `f${n}`, permissions: { push: true },
-      }) };
+      }, world.mergeOptions || {}) };
     }
     if (m[2] === 'diff') {
       return { status: 200, ok: true, json: async () => ({
@@ -163,7 +165,7 @@ function mountApp(world) {
   ctx.window.DiffModel = modelCtx.window.DiffModel;
 
   const ANCHOR = '  let bound = false;';
-  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml;\n${ANCHOR}`);
+  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml;\n${ANCHOR}`);
   vm.runInContext(exposed, ctx);
   return { ctx, els, store };
 }
@@ -361,6 +363,119 @@ test('提交视图：切回全部改动会恢复 PR 的文件列表', async () =
   assert.deepEqual(D.files.map((f) => f.path), ['a.md', 'b.md']);
   assert.equal(app.els.get('wbCommitBar').hidden, true);
   assert.equal(app.els.get('wbDoc').classList.contains('readonly'), false);
+});
+
+test('提交视图：慢的提交明细返回后不覆盖后来的「全部改动」', async () => {
+  const world = makeWorld();
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const D = app.ctx.window.__D;
+
+  world.gate = (c) => c.url.includes('/commits/h1');
+  const slow = app.ctx.window.__selectCommit('h1');
+  await tick();
+  assert.equal(world.gated().length, 1, '明细请求应仍在飞行中');
+
+  app.ctx.window.__commitAll();
+  world.gated().forEach((c) => c.release());
+  await slow;
+
+  assert.equal(D.rev.kind, 'all', '过期响应不能把视图切回提交');
+  assert.deepEqual(D.files.map((f) => f.path), ['a.md', 'b.md']);
+});
+
+test('正文加载：过期视图的响应不写进当前视图的缓存', async () => {
+  const world = makeWorld();
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const D = app.ctx.window.__D;
+
+  delete D.texts[D.revKey]['b.md'];
+  world.gate = (c) => c.url.includes('/file?path=b.md');
+  const slow = app.ctx.window.__selectFile('b.md');
+  await tick();
+  assert.equal(world.gated().length, 1);
+
+  const commit = app.ctx.window.__selectCommit('h1');
+  await tick();
+  await releaseGated(world, (c) => c.url.includes('/commits/h1/file?'));
+  await commit;
+  assert.equal(D.rev.kind, 'commit');
+
+  await releaseGated(world, (c) => c.url.includes('/file?path=b.md'));
+  await slow;
+  assert.equal(D.texts[D.revKey]['b.md'], undefined, '旧视图的正文不能落到新视图的缓存里');
+});
+
+test('前进/后退到提交地址：恢复路由里的阅读方式并保留锚点', async () => {
+  const world = makeWorld();
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const D = app.ctx.window.__D;
+  D.mode = 'reading';
+
+  const routed = app.ctx.window.DiffView.applyRoute({
+    kind: 'pr', n: 1, commit: 'h1', mode: 'split', line: 12, endLine: null,
+  });
+  await tick();
+  await releaseGated(world, (c) => c.url.includes('/commits/h1/file?'));
+  await routed;
+
+  assert.equal(D.rev.kind, 'commit');
+  assert.equal(D.mode, 'split', '换视图时要落回路由里的阅读方式');
+  assert.deepEqual({ ...D.pendingAnchor }, { line: 12, endLine: null }, '换视图不能丢掉路由里的锚点');
+});
+
+test('合并区：存在冲突时按钮禁用并说明原因', async () => {
+  const world = makeWorld();
+  world.mergeOptions = { canMerge: true, reason: '', mergeable: false, mergeableState: 'dirty', methods: [] };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+
+  const drawer = app.els.get('wbDrawerBody').innerHTML;
+  assert.ok(drawer.includes('存在合并冲突'), '禁用合并按钮必须说明原因');
+  assert.ok(/id="wbMerge"[^>]*disabled/.test(drawer), '有冲突时不给合并按钮');
+});
+
+test('默认阅读视图不等提交列表：正文与列表并行加载', async () => {
+  const world = makeWorld();
+  const app = mountApp(world);
+  const isList = (c) => /^\/api\/approvals\/1\/commits$/.test(c.url);
+  world.gate = (c) => c.url.includes('/diff') || isList(c);
+
+  const mounted = app.ctx.window.DiffView.mount(1);
+  await tick();
+  world.gated().find((c) => c.url.includes('/1/diff')).release();
+  await tick();
+
+  assert.ok(world.gated().some(isList), '提交列表仍未返回');
+  assert.ok(world.calls.some((c) => c.url.includes('/file?')), '正文请求不该等提交列表');
+  await releaseGated(world, (c) => c.url.includes('/file?'));
+  await tick();
+  await tick();
+  assert.equal(app.ctx.window.__D.prefetchDone, 2);
+
+  await releaseGated(world, isList);
+  await mounted;
+});
+
+test('提交条：文件列表被截断时标注数量并指向 GitHub', async () => {
+  const world = makeWorld();
+  world.commitTruncated = true;
+  const app = mountApp(world);
+  const p = app.ctx.window.DiffView.mount(1, { commit: 'h1' });
+  await tick();
+  world.gated().find((c) => c.url.includes('/1/diff')).release();
+  await tick();
+  await releaseGated(world, (c) => c.url.includes('/commits/h1/file?'));
+  await releaseGated(world, (c) => c.url.includes('/file?'));
+  await p;
+
+  const bar = app.els.get('wbCommitBar').innerHTML;
+  assert.ok(bar.includes('1+ 个文件'), '截断时数量要带 +');
+  assert.ok(bar.includes('只列出前 1 个文件'), '截断时要说清只列了部分');
+  assert.ok(bar.includes('在 GitHub 查看'));
+  assert.ok(app.els.get('wbStats').textContent.includes('1+ 个文件'));
 });
 
 test('严格选区定位：多行块取整块范围，单行/代码行仍精确', () => {

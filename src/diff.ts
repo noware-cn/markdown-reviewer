@@ -417,9 +417,11 @@ export const getMergeOptions = async (
   };
   const methods = MERGE_METHODS.filter((method) => allowed[method]);
   const draft = Boolean(pull.draft);
+  const conflicted = pull.mergeable === false || pull.mergeable_state === "dirty";
   const canMerge = pull.state === "open"
     && !pull.merged_at
     && !draft
+    && !conflicted
     && Boolean(permissions && (permissions.push || permissions.maintain || permissions.admin));
 
   let reason: string | null = null;

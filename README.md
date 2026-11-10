@@ -123,6 +123,8 @@ npm run build        # tsc --noEmit
 npx wrangler deploy --dry-run --outdir dist
 ```
 
+改动 `public/` 下的 JS/CSS 后，必须同步抬高 `public/index.html` 对应的 `?v=`：带版本号的静态资源按 `max-age=31536000, immutable` 缓存，版本号不变的话老用户会拿到新 HTML 配旧脚本（`/diff.js`、`/route.js`、`/styles.css` 都要各自抬）。
+
 ## 生产配置
 
 Worker Secret（用 `npx wrangler secret put <NAME>` 写入，不进仓库）：
@@ -218,3 +220,5 @@ npx wrangler rollback --name approval-visualization-worker
 - 服务端再次校验 `sha === meta.headSha`，避免页面停留期间有新提交时误合并旧 head；成功后失效列表、详情与提交缓存。
 - GitHub 的 405/422 分别映射为 409/400，并附中文提示（冲突或缺审批 / 参数无效）。
 - 历史提交为只读：不能新增行级评论，抽屉里也不出现合并区，切回全部改动后恢复。
+- 单次提交超过 3000 个文件时明细置 `truncated`：提交条的文件数带 `+` 并提示去 GitHub 看完整改动，不把部分列表当全量。
+- 提交列表与正文并行拉取：`/commits` 慢只影响提交下拉，默认阅读视图不等它；只有打开提交视图时才必须等列表。
