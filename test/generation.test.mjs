@@ -178,7 +178,7 @@ function mountApp(world) {
   ctx.window.DiffModel = modelCtx.window.DiffModel;
 
   const ANCHOR = '  let bound = false;';
-  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__wrapAdded = wrapAddedText; window.__docTarget = docLinkTarget; window.__docLink = handleDocLink; window.__resolve = resolveBlockUrls; window.__reply = sendReply;\n${ANCHOR}`);
+  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__wrapAdded = wrapAddedText; window.__docTarget = docLinkTarget; window.__docLink = handleDocLink; window.__resolve = resolveBlockUrls; window.__reply = sendReply; window.__railHTML = railHTML;\n${ANCHOR}`);
   vm.runInContext(exposed, ctx);
   return { ctx, els, store };
 }
@@ -967,4 +967,24 @@ test('未发送的草稿也在正文里标出来：页边虚线 + 气泡条目',
   assert.ok(html.includes('1 条草稿未发送'), '气泡头部要写草稿数');
   assert.ok(html.includes('这里的口径要说明'), '气泡里要能读到草稿内容');
   assert.ok(html.includes('has-comments'), '已发出的评论标记不受影响');
+});
+
+
+test('刻度按真实像素定位：相邻同类合并，颜色只区分新增/修改/删除', async () => {
+  const world = makeWorld();
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const railHTML = app.ctx.window.__railHTML;
+
+  const html = railHTML([
+    { kind: 'mod', line: 3, top: 120, height: 40 },
+    { kind: 'mod', line: 6, top: 164, height: 20 },   // 与上一块间距 4px，合并
+    { kind: 'add', line: 9, top: 300, height: 30 },
+    { kind: 'del', line: 12, top: 360, height: 10 },
+  ]);
+  assert.equal((html.match(/class="drail-t/g) || []).length, 3, '相邻同类合并成一条');
+  assert.ok(html.includes('style="top:120.0px;height:64.0px"'), '合并后覆盖两块的完整高度');
+  assert.ok(html.includes('style="top:300.0px;height:30.0px"'), '未合并的块保持自己的位置');
+  assert.ok(html.includes('data-drail="9"'), '保留跳转行号');
+  assert.ok(html.includes('· 新增') && html.includes('· 删除') && html.includes('· 修改'), '三种状态都有文案');
 });

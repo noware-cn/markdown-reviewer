@@ -477,6 +477,8 @@
     const total = (D.comments || []).length;
     btn.textContent = total ? `意见 ${total}` : "意见";
     btn.hidden = false;
+    // 面板开合会改变正文宽度 → 块高度随之变化，刻度要重量
+    requestAnimationFrame(syncRail);
   }
 
   function renderFiles() {
@@ -1099,23 +1101,54 @@
    */
   function changeRail(blocks, file) {
     if (!D.marks || !blocks || !blocks.length || file.status === "added") return "";
-    const total = blocks[blocks.length - 1].endLine || blocks[blocks.length - 1].startLine || 0;
-    if (!total) return "";
-    const ticks = blocks
-      .filter((b) => b.startLine && b.changeState && b.changeState !== "same")
-      .map((b) => {
-        const kind = b.changeState === "removed" ? "del" : b.changeState === "added" ? "add" : "mod";
-        const end = b.endLine || b.startLine;
-        const top = ((b.startLine - 1) / total) * 100;
-        const h = Math.max(((end - b.startLine + 1) / total) * 100, 0.9);
-        const label = kind === "add" ? "新增" : kind === "del" ? "删除" : "修改";
-        return `<button type="button" class="drail-t ${kind}" data-drail="${b.startLine}"
-          style="top:${top.toFixed(2)}%;height:${h.toFixed(2)}%"
-          title="第 ${b.startLine} 行 · ${label}" aria-label="跳到第 ${b.startLine} 行（${label}）"></button>`;
-      })
-      .join("");
-    if (!ticks) return "";
-    return `<div class="drail" aria-label="本次变更的位置">${ticks}</div>`;
+    // 刻度位置等正文渲染完再量（见 syncRail）：行号比例与真实高度没有对应关系
+    return `<div class="drail" aria-label="本次变更的位置"></div>`;
+  }
+
+  /**
+   * 用渲染后的真实盒子摆刻度，保证细线和右侧高亮块上下对齐。
+   * 行号只说明「第几行」，说明不了「第几个像素」：标题、表格、代码块的行高
+   * 差别很大，按行号比例投放必然错位。
+   */
+  function syncRail() {
+    const content = document.getElementById("wbContent");
+    if (!content) return;
+    const rail = content.querySelector(".drail");
+    if (!rail) return;
+    const base = content.getBoundingClientRect();
+    const items = [...content.querySelectorAll(
+      ".md-block.is-added, .md-block.is-modified-new, .md-block.is-removed, .del-block",
+    )].map((el) => {
+      const cls = el.classList;
+      const kind = cls.contains("is-added") ? "add"
+        : (cls.contains("is-removed") || cls.contains("del-block")) ? "del" : "mod";
+      const rect = el.getBoundingClientRect();
+      const line = Number(el.dataset.line || el.dataset.oldLine || el.dataset.baseLine) || 0;
+      return { kind, line, top: rect.top - base.top, height: rect.height };
+    }).filter((it) => it.height > 0).sort((x, y) => x.top - y.top);
+    if (!items.length) { rail.innerHTML = ""; return; }
+
+    rail.innerHTML = railHTML(items);
+  }
+
+  /** 把「块的位置」变成刻度：相邻同类先合并，再用像素定位。 */
+  function railHTML(items) {
+    const merged = [];
+    for (const it of items) {
+      const prev = merged[merged.length - 1];
+      if (prev && prev.kind === it.kind && it.top - (prev.top + prev.height) <= 6) {
+        prev.height = Math.max(prev.height, it.top + it.height - prev.top);
+        if (!prev.line) prev.line = it.line;
+        continue;
+      }
+      merged.push({ ...it });
+    }
+    const label = { add: "新增", del: "删除", mod: "修改" };
+    return merged.map((it) => `<button type="button" class="drail-t ${it.kind}"`
+      + `${it.line ? ` data-drail="${it.line}"` : ""}`
+      + ` style="top:${it.top.toFixed(1)}px;height:${Math.max(it.height, 3).toFixed(1)}px"`
+      + ` title="${it.line ? `第 ${it.line} 行 · ` : ""}${label[it.kind]}"`
+      + ` aria-label="${it.line ? `跳到第 ${it.line} 行（${label[it.kind]}）` : label[it.kind]}"></button>`).join("");
   }
 
   function listBlockWithInsertions(block, changes, file) {
@@ -2207,6 +2240,7 @@
     else content.innerHTML = readingHTML(file);
 
     decorateTables(content);
+    requestAnimationFrame(syncRail);
 
     document.getElementById("wbDrawerBody").innerHTML = drawerHTML();
     syncDrawerHandle();
@@ -2526,6 +2560,9 @@
     const clearTreeHighlight = () => {
       document.querySelectorAll("#wbDrawerBody .titem.chot").forEach((el) => el.classList.remove("chot"));
     };
+    /* 图片加载、窗口缩放都会改变块高度：量完再摆一次刻度 */
+    doc.addEventListener("load", (e) => { if (e.target && e.target.tagName === "IMG") syncRail(); }, true);
+    if (window.addEventListener) window.addEventListener("resize", () => requestAnimationFrame(syncRail));
     doc.addEventListener("mouseover", (e) => {
       clearTreeHighlight();
       const block = e.target.closest(".md-block.has-comments");
