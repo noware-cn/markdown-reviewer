@@ -178,7 +178,7 @@ function mountApp(world) {
   ctx.window.DiffModel = modelCtx.window.DiffModel;
 
   const ANCHOR = '  let bound = false;';
-  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__wrapAdded = wrapAddedText; window.__docTarget = docLinkTarget; window.__docLink = handleDocLink; window.__reply = sendReply;\n${ANCHOR}`);
+  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__wrapAdded = wrapAddedText; window.__docTarget = docLinkTarget; window.__docLink = handleDocLink; window.__resolve = resolveBlockUrls; window.__reply = sendReply;\n${ANCHOR}`);
   vm.runInContext(exposed, ctx);
   return { ctx, els, store };
 }
@@ -833,9 +833,9 @@ test('内链还原：/doc/ 路径与锚点解码回仓库路径，其他链接�
   const app = mountApp(makeWorld());
   const target = app.ctx.window.__docTarget;
   const j = (v) => JSON.stringify(v);
-  assert.equal(j(target('/doc/a%20b/c%23d.md?ref=abc#L20')), j({ path: 'a b/c#d.md', anchor: 'L20' }));
-  assert.equal(j(target('/doc/x.md')), j({ path: 'x.md', anchor: '' }));
-  assert.equal(j(target('/doc/x.md?ref=h1')), j({ path: 'x.md', anchor: '' }));
+  assert.equal(j(target('/doc/a%20b/c%23d.md?ref=abc#L20')), j({ path: 'a b/c#d.md', anchor: 'L20', ref: 'abc' }));
+  assert.equal(j(target('/doc/x.md')), j({ path: 'x.md', anchor: '', ref: '' }));
+  assert.equal(j(target('/doc/x.md?ref=h1')), j({ path: 'x.md', anchor: '', ref: 'h1' }));
   assert.equal(target('/pr/1'), null);
   assert.equal(target('https://github.com/a/b'), null);
 });
@@ -868,4 +868,19 @@ test('带修饰键的内链点击交给浏览器：不拦截、不阻止默认�
   const plain = handler({ preventDefault: () => { prevented = true; } }, link);
   assert.equal(prevented, true, '普通点击仍就地处理');
   assert.equal(plain, true);
+});
+
+
+test('相对资源改写保留片段：PDF 页码、图片锚点都不丢', () => {
+  const world = makeWorld();
+  const app = mountApp(world);
+  const resolve = app.ctx.window.__resolve;
+  const D = app.ctx.window.__D;
+  D.meta = { url: 'https://github.com/x/y/pull/1', headSha: 'head1', baseSha: 'base1', state: 'open' };
+  const file = { path: 'docs/a.md', status: 'modified' };
+  const html = '<a href="spec.pdf#page=3">规格</a><a href="other.md#L20">链接</a><img src="p.png">';
+  const out = resolve(html, file, 'head1');
+  assert.ok(out.includes('raw.githubusercontent.com/x/y/head1/docs/spec.pdf#page=3'), 'PDF 片段保留');
+  assert.ok(out.includes('href="/doc/docs/other.md?ref=head1#L20"'), '文档链接带锚点');
+  assert.ok(out.includes('head1/docs/p.png'), '图片走 raw');
 });

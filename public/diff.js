@@ -307,11 +307,11 @@
 
   function commentBubbleHTML(threads, b) {
     const shown = threads.slice(0, 3).map((t) => {
-      const first = esc((t.root.body || "").split("\n").filter(Boolean)[0] || "").slice(0, 90);
+      const first = esc(((t.root.body || "").split("\n").filter(Boolean)[0] || "").slice(0, 90));
       const replies = t.replies.length ? `<div class="trep">${t.replies.length} 条回复</div>` : "";
       const reply = !canReply() ? ""
-        : `<div class="trow"><textarea class="trta" rows="2" data-reply-to="${t.root.id}" placeholder="回复 ${esc(t.root.author)}…"></textarea>`
-          + `<button type="button" class="btn" data-act="reply" data-reply-to="${t.root.id}">回复</button></div>`;
+        : `<div class="trow"><textarea class="trta" rows="2" data-reply-to="${t.root.id}" data-draft-key="doc:${t.root.id}" placeholder="回复 ${esc(t.root.author)}…"></textarea>`
+          + `<button type="button" class="btn" data-act="reply" data-reply-to="${t.root.id}" data-draft-key="doc:${t.root.id}">回复</button></div>`;
       return `<div class="thr"><b>${esc(t.root.author)}</b><span class="tln">L${t.line}</span>`
         + `<div class="tmsg">${first}</div>${replies}${reply}</div>`;
     }).join("");
@@ -832,7 +832,8 @@
         const target = String(hit.path || "").split("/").map(encodeURIComponent).join("/");
         return `href="/doc/${target}?ref=${encodeURIComponent(ref || refOf())}${hash}"`;
       }
-      return `href="${esc(rawUrlOf(hit.path, ref))}"`;
+      /* 保留原始片段：PDF 的 #page=3 之类靠它定位，编码回写会失效 */
+      return `href="${esc(rawUrlOf(hit.path, ref))}${hit.anchor ? `#${esc(hit.anchor)}` : ""}"`;
     });
     return out
       .replace(/<a\b[^>]*href="\/doc\/[^"]*"[^>]*>/g, (tag) => tag.replace(/\s+target="_blank"/, ""))
@@ -1387,15 +1388,16 @@
   }
 
   /** 评论树的一条线程：根评论 + 缩进的回复，整块可点，点了滚到正文对应行。 */
-  function treeItemHTML(t) {
-    const one = (c, kind) => `<div class="titem ${kind}"${t.line != null ? ` data-jump-to="${t.line}"` : ""}>`
+  function treeItemHTML(t, jumpable) {
+    const canJump = jumpable !== false && t.line != null;
+    const one = (c, kind) => `<div class="titem ${kind}"${canJump ? ` data-jump-to="${t.line}"` : ""}>`
       + `<div class="tmeta"><b>${esc(c.author)}</b><span class="tln">L${t.line ?? (t.staleLine != null ? `${t.staleLine}（位置已变）` : "?")}</span></div>`
       + `<div class="ttext">${esc((c.body || "").replace(/\n+/g, " "))}</div>`
       + (c.url ? `<a class="tlink" href="${esc(c.url)}" target="_blank" rel="noopener">GitHub ↗</a>` : "")
       + `</div>`;
     const reply = canReply() && t.root.id != null
-      ? `<div class="trow"><textarea class="trta" rows="1" data-reply-to="${t.root.id}" placeholder="回复 ${esc(t.root.author)}…"></textarea>`
-        + `<button type="button" class="btn" data-act="reply-tree" data-reply-to="${t.root.id}">回复</button></div>`
+      ? `<div class="trow"><textarea class="trta" rows="1" data-reply-to="${t.root.id}" data-draft-key="tree:${t.root.id}" placeholder="回复 ${esc(t.root.author)}…"></textarea>`
+        + `<button type="button" class="btn" data-act="reply-tree" data-reply-to="${t.root.id}" data-draft-key="tree:${t.root.id}">回复</button></div>`
       : "";
     return `<div class="tthread">${one(t.root, "root")}${t.replies.map((c) => one(c, "reply")).join("")}${reply}</div>`;
   }
@@ -1443,22 +1445,21 @@
         /* 重绘会重建正文里的回复框：先存下未发送的内容与焦点位置，发出去的那条清空 */
         const box = btn ? btn.parentElement.querySelector(".trta") : null;
         if (box) box.value = "";
-        /* 同一线程在气泡和评论树里各有一个回复框：只在发起回复的那个容器里还原焦点 */
+        /* 气泡与评论树对同一线程各有一个回复框：草稿按「位置 + 线程」分别存取，互不覆盖 */
+        const keyOf = (el) => (el && el.dataset ? (el.dataset.draftKey || el.dataset.replyTo) : null);
         const active = typeof document.activeElement === "object" ? document.activeElement : null;
-        const hostEl = (active && active.closest && active.closest("#wbDoc, #wbDrawerBody"))
-          || (btn && btn.closest && btn.closest("#wbDoc, #wbDrawerBody"));
-        const scope = hostEl ? `#${hostEl.id}` : "";
-        const focusKey = active && active.dataset ? active.dataset.replyTo : null;
+        const focusKey = keyOf(active) || keyOf(btn);
         const kept = new Map([...document.querySelectorAll("#wbDoc .trta, #wbDrawerBody .trta")]
           .filter((el) => el.value && el.value.trim())
-          .map((el) => [el.dataset.replyTo, el.value]));
+          .map((el) => [keyOf(el), el.value]));
         render();
         document.querySelectorAll("#wbDoc .trta, #wbDrawerBody .trta").forEach((el) => {
-          const v = kept.get(el.dataset.replyTo);
+          const v = kept.get(keyOf(el));
           if (v) el.value = v;
         });
         if (focusKey) {
-          const back = [...document.querySelectorAll(`${scope} .trta`)].find((el) => el.dataset.replyTo === focusKey);
+          const back = [...document.querySelectorAll("#wbDoc .trta, #wbDrawerBody .trta")]
+            .find((el) => keyOf(el) === focusKey);
           if (back && typeof back.focus === "function") {
             back.focus();
             if (typeof back.setSelectionRange === "function") {
@@ -1480,10 +1481,12 @@
     // existing comments for current file
     const file = curFile();
     const threads = file ? commentThreads(file) : [];
+    /* 已删除文件渲染的是 base 正文，行号锚点不在当前文档里，评论条目不做跳转 */
+    const jumpable = Boolean(file && file.status !== "removed");
     if (threads.length) {
       const replies = threads.reduce((n, t) => n + t.replies.length, 0);
       parts.push(`<div class="ctree-head">${isCommitView() ? "本提交的评论" : "评论树"} · ${threads.length} 线程${replies ? ` / ${replies} 回复` : ""}</div>`);
-      parts.push(`<div class="ctree">${threads.map(treeItemHTML).join("")}</div>`);
+      parts.push(`<div class="ctree">${threads.map((t) => treeItemHTML(t, jumpable)).join("")}</div>`);
     } else if (file && D.commentsByPath) {
       parts.push(`<div class="ctree-head">评论树 · 此文件暂无评论</div>`);
     }
@@ -1769,7 +1772,7 @@
     const opts = options || {};
     const docEl = document.getElementById("wbDoc");
     if (!D.ref) {
-      D.ref = { stack: [], path: "", anchor: "", text: "", loading: false, error: "", candidates: [], token: 0 };
+      D.ref = { stack: [], path: "", anchor: "", ref: "", text: "", loading: false, error: "", candidates: [], token: 0 };
     } else if (!opts.fromBack && D.ref.path && D.ref.path !== path) {
       D.ref.stack.push({ path: D.ref.path, anchor: D.ref.anchor, scroll: docEl.scrollTop });
     }
@@ -1783,7 +1786,9 @@
     D.active = null;
     D.navIdx = -1;
 
-    const cached = refTextCache.get(`${path}@${D.meta?.headSha}`);
+    const wantedRef = opts.ref || D.meta?.headSha || "";
+    D.ref.ref = wantedRef;
+    const cached = refTextCache.get(`${path}@${wantedRef}`);
     if (cached !== undefined) {
       D.ref.text = cached;
       D.ref.loading = false;
@@ -1796,7 +1801,7 @@
     D.ref.loading = true;
     render();
     const myGen = D.generation;
-    const ref = D.meta?.headSha || "";
+    const ref = wantedRef;
     const current = () => D.generation === myGen && D.ref && D.ref.token === token;
     try {
       const response = await fetchJSON(
@@ -1810,7 +1815,7 @@
       } else {
         D.ref.text = payload.text || "";
         D.ref.path = payload.path || path;
-        refTextCache.set(`${D.ref.path}@${D.meta?.headSha}`, D.ref.text);
+        refTextCache.set(`${D.ref.path}@${D.ref.ref || ""}`, D.ref.text);
         if (payload.requested && payload.requested !== payload.path) {
           toast(`已按后缀匹配到 ${payload.path.split("/").slice(-2).join("/")}`);
         }
@@ -1878,8 +1883,8 @@
       return bar + `<div class="error-box">${esc(ref.error)}<br><span class="refdoc-hint">${esc(ref.path)}</span></div>` + cands;
     }
     const body = isCsv(ref.path) ? refCsvHTML(ref.text) : window.DiffModel.renderMarkdown(ref.text, { demote: true });
-    /* 引用文档的相对链接也要按它自己的路径解析，否则新页签打开会拼成工作台 URL */
-    const linked = resolveBlockUrls(body, { path: ref.path }, refOf());
+    /* 相对链接按「文档自己所在路径 + 正文实际来自的提交」解析：两者必须同源，否则图片会去别的版本取 */
+    const linked = resolveBlockUrls(body, { path: ref.path }, ref.ref || D.meta?.headSha || refOf());
     return bar + `<article class="md-block refdoc">${linked}</article>`;
   }
 
@@ -1908,9 +1913,12 @@
     const hit = /^\/doc\/([^?#]*)(?:\?[^#]*)?(?:#(.*))?$/.exec(String(href || ""));
     if (!hit) return null;
     const decode = (seg) => { try { return decodeURIComponent(seg); } catch { return seg; } };
+    const query = /\?([^#]*)/.exec(String(href || ""));
+    const refHit = query ? /(?:^|&)ref=([^&]*)/.exec(query[1]) : null;
     return {
       path: hit[1].split("/").map(decode).join("/"),
       anchor: hit[2] ? decode(hit[2]) : "",
+      ref: refHit && refHit[1] ? decode(refHit[1]) : "",
     };
   }
 
@@ -1924,6 +1932,11 @@
     const direct = docLinkTarget(link.getAttribute("href"));
     if (direct) {
       event.preventDefault();
+      /* 链接指向别的提交（如「原文」块里的 base 链接）时，按那个提交打开引用视图 */
+      if (direct.ref && direct.ref !== refOf()) {
+        openRefDoc(direct.path, direct.anchor, { ref: direct.ref });
+        return true;
+      }
       if (D.files.some((f) => f.path === direct.path)) {
         D.ref = null;
         Promise.resolve(selectFile(direct.path)).then(() => {
