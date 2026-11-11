@@ -21,6 +21,8 @@ export interface ReviewComment {
   createdAt: string;
   url: string;
   inReplyTo: number | null;
+  commitId: string | null;
+  originalCommitId: string | null;
 }
 
 export interface PrMeta {
@@ -42,6 +44,48 @@ export interface PrMeta {
   url: string;
 }
 
+/** 提交列表项：GitHub pulls/{n}/commits 不返回文件与 stats。 */
+export interface CommitSummary {
+  sha: string;
+  shortSha: string;
+  headline: string;
+  message: string;
+  author: string;
+  authorName: string;
+  date: string;
+  parents: string[];
+  isMerge: boolean;
+  url: string;
+}
+
+export interface CommitDetail extends CommitSummary {
+  stats: { additions: number; deletions: number; total: number };
+  files: DiffFile[];
+  truncated: boolean;
+}
+
+export type MergeMethod = "merge" | "squash" | "rebase";
+
+export interface MergeOptions {
+  canMerge: boolean;
+  reason: string | null;
+  methods: MergeMethod[];
+  defaultMethod: MergeMethod | null;
+  draft: boolean;
+  mergeable: boolean | null;
+  mergeableState: string | null;
+  headSha: string;
+  baseRef: string;
+  headRef: string;
+  permissions: { push: boolean; maintain: boolean; admin: boolean } | null;
+}
+
+export interface MergeResult {
+  merged: boolean;
+  sha: string | null;
+  message: string;
+}
+
 interface RawFile {
   filename: string;
   previous_filename?: string;
@@ -61,6 +105,8 @@ interface RawComment {
   created_at: string;
   html_url: string;
   in_reply_to_id?: number | null;
+  commit_id?: string | null;
+  original_commit_id?: string | null;
 }
 
 interface RawPull {
@@ -77,6 +123,32 @@ interface RawPull {
   commits: number;
   base: { sha: string; ref: string };
   head: { sha: string; ref: string };
+  draft?: boolean;
+  mergeable?: boolean | null;
+  mergeable_state?: string | null;
+}
+
+interface RawRepo {
+  allow_merge_commit?: boolean;
+  allow_squash_merge?: boolean;
+  allow_rebase_merge?: boolean;
+  permissions?: { admin?: boolean; maintain?: boolean; push?: boolean; triage?: boolean; pull?: boolean };
+}
+
+interface RawCommit {
+  sha: string;
+  html_url: string;
+  commit: {
+    message: string;
+    author: { name?: string; date?: string } | null;
+  };
+  author: { login: string } | null;
+  parents: Array<{ sha: string }>;
+}
+
+interface RawCommitDetail extends RawCommit {
+  stats?: { additions: number; deletions: number; total: number };
+  files?: RawFile[];
 }
 
 const repoPath = (env: Env): string =>
@@ -144,6 +216,19 @@ export const getPrMeta = async (env: Env, token: string, number: number): Promis
 
 const isMarkdown = (path: string): boolean => /\.(md|markdown|mdx)$/i.test(path);
 
+/** pulls/{n}/files 与 commits/{sha} 的 files 结构一致，统一走同一套归一化。 */
+const toDiffFile = (file: RawFile): DiffFile => ({
+  path: file.filename,
+  previousPath: file.previous_filename ?? null,
+  status: (["added", "modified", "removed", "renamed"].includes(file.status)
+    ? file.status
+    : "modified") as DiffFile["status"],
+  additions: file.additions,
+  deletions: file.deletions,
+  patch: file.patch ?? null,
+  isMarkdown: isMarkdown(file.filename),
+});
+
 export const getPrFiles = async (env: Env, token: string, number: number): Promise<DiffFile[]> => {
   const out: DiffFile[] = [];
   /** 翻页拉全，确保大 PR 数据完整；上限 30 页（3000 个文件）仅为防失控死循环。 */
@@ -153,19 +238,7 @@ export const getPrFiles = async (env: Env, token: string, number: number): Promi
       token,
       `${repoPath(env)}/pulls/${number}/files?per_page=100&page=${page}`,
     );
-    for (const file of batch) {
-      out.push({
-        path: file.filename,
-        previousPath: file.previous_filename ?? null,
-        status: (["added", "modified", "removed", "renamed"].includes(file.status)
-          ? file.status
-          : "modified") as DiffFile["status"],
-        additions: file.additions,
-        deletions: file.deletions,
-        patch: file.patch ?? null,
-        isMarkdown: isMarkdown(file.filename),
-      });
-    }
+    out.push(...batch.map(toDiffFile));
     if (batch.length < 100) break;
     if (page === 30) throw new GitHubError(502, "PR 文件超过 3000 个，未能完整读取。");
   }
@@ -243,12 +316,169 @@ export const getReviewComments = async (
         createdAt: comment.created_at,
         url: comment.html_url,
         inReplyTo: comment.in_reply_to_id ?? null,
+        commitId: comment.commit_id ?? null,
+        originalCommitId: comment.original_commit_id ?? null,
       });
     }
     if (batch.length < 100) break;
     if (page === 20) throw new GitHubError(502, "行级评论超过 2000 条，未能完整读取。");
   }
   return out;
+};
+
+const toCommitSummary = (raw: RawCommit): CommitSummary => {
+  const message = raw.commit.message ?? "";
+  const headline = message.split("\n")[0]?.trim() || "(无提交说明)";
+  return {
+    sha: raw.sha,
+    shortSha: raw.sha.slice(0, 7),
+    headline,
+    message,
+    author: raw.author?.login ?? raw.commit.author?.name ?? "未知",
+    authorName: raw.commit.author?.name ?? raw.author?.login ?? "未知",
+    date: raw.commit.author?.date ?? "",
+    parents: (raw.parents ?? []).map((parent) => parent.sha),
+    isMerge: (raw.parents ?? []).length > 1,
+    url: raw.html_url,
+  };
+};
+
+/** PR 的提交列表；最多 1000 条，足够覆盖文档类 PR，超出时标 truncated。 */
+export const getPrCommits = async (
+  env: Env,
+  token: string,
+  number: number,
+): Promise<{ items: CommitSummary[]; truncated: boolean }> => {
+  const out: CommitSummary[] = [];
+  for (let page = 1; page <= 10; page += 1) {
+    const batch = await call<RawCommit[]>(
+      env,
+      token,
+      `${repoPath(env)}/pulls/${number}/commits?per_page=100&page=${page}`,
+    );
+    out.push(...batch.map(toCommitSummary));
+    if (batch.length < 100) return { items: out, truncated: false };
+  }
+  return { items: out, truncated: true };
+};
+
+/** 单次提交的完整改动；GitHub 对大提交的 files 会分页，最多 3000 个文件。 */
+export const getCommitDetail = async (
+  env: Env,
+  token: string,
+  sha: string,
+): Promise<CommitDetail> => {
+  const files: DiffFile[] = [];
+  let first: RawCommitDetail | null = null;
+  let truncated = false;
+  for (let page = 1; page <= 30; page += 1) {
+    const batch = await call<RawCommitDetail>(
+      env,
+      token,
+      `${repoPath(env)}/commits/${sha}?per_page=100&page=${page}`,
+    );
+    if (!first) first = batch;
+    if (Array.isArray(batch.files)) files.push(...batch.files.map(toDiffFile));
+    if (!Array.isArray(batch.files) || batch.files.length < 100) break;
+    if (page === 30) truncated = true;
+  }
+  if (!first) throw new GitHubError(502, `读取提交 ${sha.slice(0, 7)} 失败。`);
+  return {
+    ...toCommitSummary(first),
+    stats: first.stats ?? { additions: 0, deletions: 0, total: 0 },
+    files,
+    truncated,
+  };
+};
+
+const MERGE_METHODS: MergeMethod[] = ["merge", "squash", "rebase"];
+
+/** 合并前置条件：权限、草稿、冲突、分支保护状态与仓库允许的合并方式。 */
+export const getMergeOptions = async (
+  env: Env,
+  token: string,
+  number: number,
+): Promise<MergeOptions> => {
+  const [pull, repo] = await Promise.all([
+    call<RawPull>(env, token, `${repoPath(env)}/pulls/${number}`),
+    call<RawRepo>(env, token, repoPath(env)),
+  ]);
+  const permissions = repo.permissions
+    ? {
+      push: Boolean(repo.permissions.push),
+      maintain: Boolean(repo.permissions.maintain),
+      admin: Boolean(repo.permissions.admin),
+    }
+    : null;
+  const allowed = {
+    merge: repo.allow_merge_commit !== false,
+    squash: repo.allow_squash_merge !== false,
+    rebase: repo.allow_rebase_merge !== false,
+  };
+  const methods = MERGE_METHODS.filter((method) => allowed[method]);
+  const draft = Boolean(pull.draft);
+  const conflicted = pull.mergeable === false || pull.mergeable_state === "dirty";
+  const canMerge = pull.state === "open"
+    && !pull.merged_at
+    && !draft
+    && !conflicted
+    && Boolean(permissions && (permissions.push || permissions.maintain || permissions.admin));
+
+  let reason: string | null = null;
+  if (pull.merged_at) reason = "PR 已合并";
+  else if (pull.state !== "open") reason = "PR 已关闭";
+  else if (draft) reason = "草稿 PR 不能合并";
+  else if (!permissions || !(permissions.push || permissions.maintain || permissions.admin)) {
+    reason = "需要仓库写权限";
+  } else if (pull.mergeable === false || pull.mergeable_state === "dirty") {
+    reason = "存在合并冲突";
+  } else if (pull.mergeable_state === "blocked") {
+    reason = "缺少必需审批或状态检查";
+  } else if (pull.mergeable_state === "behind") {
+    reason = "分支落后于 base，需要先更新分支";
+  } else if (pull.mergeable_state === "unstable") {
+    reason = "必需状态检查未通过";
+  }
+
+  return {
+    canMerge,
+    reason,
+    methods,
+    defaultMethod: methods[0] ?? null,
+    draft,
+    mergeable: pull.mergeable ?? null,
+    mergeableState: pull.mergeable_state ?? null,
+    headSha: pull.head.sha,
+    baseRef: pull.base.ref,
+    headRef: pull.head.ref,
+    permissions,
+  };
+};
+
+/** 真正执行合并；sha 由调用方锁定，head 变化时 GitHub 会拒绝。 */
+export const mergePull = async (
+  env: Env,
+  token: string,
+  number: number,
+  input: { sha: string; method: MergeMethod; commitTitle?: string; commitMessage?: string },
+): Promise<MergeResult> => {
+  const payload: Record<string, string> = {
+    sha: input.sha,
+    merge_method: input.method,
+  };
+  if (input.commitTitle) payload.commit_title = input.commitTitle;
+  if (input.commitMessage) payload.commit_message = input.commitMessage;
+  const result = await call<{ merged: boolean; sha: string | null; message: string }>(
+    env,
+    token,
+    `${repoPath(env)}/pulls/${number}/merge`,
+    {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    },
+  );
+  return { merged: Boolean(result.merged), sha: result.sha ?? null, message: result.message ?? "" };
 };
 
 export interface ReviewDraft {

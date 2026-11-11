@@ -3,9 +3,16 @@
   const D = {
     n: null,
     meta: null,
+    all: { files: [], comments: [] }, // PR 全量快照，回到「全部改动」时恢复
+    rev: { kind: "all" },             // all | commit
+    revKey: "",                       // 正文/模型/滚动缓存的分区键
+    revSeq: 0,                        // 视图代次令牌：每次切换提交/全部改动 +1，丢弃过期响应
     files: [],
     comments: [],
-    texts: {},       // path -> {base, head, headLoaded, baseLoaded, headTruncated, baseTruncated}
+    texts: {},       // revKey -> path -> {base, head, headLoaded, baseLoaded, headTruncated, baseTruncated}
+    commits: { items: [], truncated: false, loaded: false, loading: false, error: "" },
+    commitDetails: new Map(),         // sha -> 提交详情
+    merge: { options: null, loading: false, error: "", done: false, method: "" },
     file: null,
     mode: "reading", // reading | unified | split
     marks: true,
@@ -82,7 +89,20 @@
   };
 
   const curFile = () => D.files.find((f) => f.path === D.file) || null;
-  const textOf = (path, side) => (D.texts[path] ? D.texts[path][side] || "" : "");
+  const isCommitView = () => D.rev.kind === "commit";
+  const commitDetail = () => (isCommitView() ? D.commitDetails.get(D.rev.sha) || null : null);
+  const textsOf = (path) => {
+    if (!D.texts[D.revKey]) D.texts[D.revKey] = {};
+    return D.texts[D.revKey][path];
+  };
+  const setTexts = (path, value) => {
+    if (!D.texts[D.revKey]) D.texts[D.revKey] = {};
+    D.texts[D.revKey][path] = value;
+  };
+  const textOf = (path, side) => {
+    const state = textsOf(path);
+    return state ? state[side] || "" : "";
+  };
 
   /* ---------- fetch with timeout ---------- */
   const FETCH_TIMEOUT = 15000;
@@ -175,6 +195,7 @@
 
   const routeState = (extra) => Object.assign({
     kind: "pr", n: D.n, file: D.file || null, mode: D.mode,
+    commit: isCommitView() ? D.rev.sha : null,
     line: null, endLine: null, heading: null,
   }, extra || {});
 
@@ -198,7 +219,8 @@
     if (!D.n) { document.title = "审批可视化"; return; }
     if (D.ref) { document.title = `${D.ref.path.split("/").pop()} · #${D.n}`; return; }
     const name = D.file ? D.file.split("/").pop() : "PR";
-    document.title = `#${D.n} · ${name} — 审批可视化`;
+    const commit = isCommitView() ? `${D.rev.sha.slice(0, 7)} · ` : "";
+    document.title = `#${D.n} · ${commit}${name} — 审批可视化`;
   };
 
   /** 顶栏可见的行号：滚动停下时把位置写回 URL */
@@ -612,7 +634,7 @@
     if (!box) return;
     if (D.ref) { renderRefChapters(); return; }
     const file = curFile();
-    const textState = file && D.texts[file.path];
+    const textState = file && textsOf(file.path);
     if (!textState || !textState.headLoaded) { box.innerHTML = `<div class="dempty">加载正文后显示章节…</div>`; return; }
     if (isCsv(file.path)) {
       const csv = csvModelFor(file);
@@ -656,7 +678,7 @@
     const head = textOf(file.path, "head");
     const base = textOf(file.path, "base");
     const patch = file.patch || "";
-    const key = kind + "|" + file.path + "|" + (D.meta?.headSha || "");
+    const key = kind + "|" + D.revKey + "|" + file.path;
     const hit = modelCache.get(key);
     if (hit && hit.head === head && hit.base === base && hit.patch === patch) return hit.value;
     const value = build(head, base, patch);
@@ -672,7 +694,7 @@
 
   /* ---------- 阅读改动渲染 ---------- */
   function readingHTML(file) {
-    const textState = D.texts[file.path];
+    const textState = textsOf(file.path);
     const errMsg = (textState && textState.error) || D.err;
     if (!textState || !textState.headLoaded) {
       if (errMsg) return `<div class="error-box">${esc(errMsg)} <button type="button" class="retry" data-retry="1">重试</button></div>`;
@@ -973,7 +995,7 @@
   }
 
   function csvReadingHTML(file) {
-    const textState = D.texts[file.path];
+    const textState = textsOf(file.path);
     if (file.status === "removed") {
       if (textState.baseTruncated) {
         return `<div class="error-box">删除文件超过读取上限（400 KB），Base 内容不完整，请用 GitHub 查看完整版本。</div>`;
@@ -1005,7 +1027,7 @@
   }
 
   function csvSideBySideHTML(file) {
-    const textState = D.texts[file.path];
+    const textState = textsOf(file.path);
     const errMsg = (textState && textState.error) || D.err;
     if (!textState || !textState.headLoaded || !textState.baseLoaded) {
       if (errMsg) return `<div class="error-box">${esc(errMsg)} <button type="button" class="retry" data-retry="1">重试</button></div>`;
@@ -1034,7 +1056,7 @@
 
   function sideBySideHTML(file) {
     if (isCsv(file.path)) return csvSideBySideHTML(file);
-    const textState = D.texts[file.path];
+    const textState = textsOf(file.path);
     const errMsg = (textState && textState.error) || D.err;
     if (!textState || !textState.headLoaded || !textState.baseLoaded) {
       if (errMsg) return `<div class="error-box">${esc(errMsg)} <button type="button" class="retry" data-retry="1">重试</button></div>`;
@@ -1108,6 +1130,48 @@
   }
 
   /* ---------- 抽屉内容 ---------- */
+  function mergeBoxHTML() {
+    if (!D.meta || D.meta.state !== "open" || D.meta.merged) return "";
+    if (D.merge.done) {
+      return `<div class="mergebox"><div class="mergehead">合并</div>`
+        + `<div class="mergeok">已提交合并，正在重新读取 PR 状态。</div></div>`;
+    }
+    const options = D.merge.options;
+    if (!options && D.merge.loading) {
+      return `<div class="mergebox"><div class="mergehead">合并</div><div class="dhint">正在检查合并条件…</div></div>`;
+    }
+    if (D.merge.error) {
+      return `<div class="mergebox"><div class="mergehead">合并</div>`
+        + `<div class="mergewarn">${esc(D.merge.error)}</div>`
+        + `<button class="btn ghost" type="button" data-act="merge-refresh">重新检查</button></div>`;
+    }
+    if (!options) return "";
+    const labels = { merge: "创建合并提交", squash: "压缩为单个提交", rebase: "变基后合并" };
+    const methods = options.methods || [];
+    const method = methods.includes(D.merge.method) ? D.merge.method : (options.defaultMethod || methods[0] || "");
+    const dirty = options.mergeable === false || options.mergeableState === "dirty";
+    const disabled = !options.canMerge || dirty || !methods.length;
+    const warning = !options.canMerge || dirty
+      ? (options.reason || (dirty ? "存在合并冲突" : "当前不满足合并条件。"))
+      : (["blocked", "behind", "unstable", "unknown"].includes(options.mergeableState || "")
+        ? options.reason || `合并状态：${options.mergeableState}`
+        : "");
+    const squashHint = method === "squash"
+      ? `<div class="dhint">squash 会把本 PR 的逐提交历史压缩成一个提交，事后再看“提交浏览”只能看到合并后的单个提交。</div>`
+      : "";
+    return `<div class="mergebox">`
+      + `<div class="mergehead">合并</div>`
+      + `<label class="mergelab">合并方式`
+      + `<select id="wbMergeMethod"${methods.length ? "" : " disabled"}>`
+      + methods.map((item) => `<option value="${esc(item)}"${item === method ? " selected" : ""}>${esc(labels[item] || item)}</option>`).join("")
+      + `</select></label>`
+      + `<button class="dmerge" id="wbMerge" type="button" data-act="merge"${disabled ? " disabled" : ""}>合并 PR</button>`
+      + `<div class="dhint">${esc(options.baseRef)} ← ${esc(options.headRef)} · head ${esc(options.headSha.slice(0, 7))}</div>`
+      + (warning ? `<div class="mergewarn">${esc(warning)}</div>` : "")
+      + squashHint
+      + `</div>`;
+  }
+
   function drawerHTML() {
     const parts = [];
     // existing comments for current file
@@ -1115,9 +1179,13 @@
     if (file && D.commentsByPath) {
       const list = D.commentsByPath.get(file.path) || [];
       if (list.length) {
-        parts.push(`<div style="font-size:var(--fs-meta);color:var(--muted);margin:4px 0;">历史评论（${list.length}）</div>`);
+        parts.push(`<div style="font-size:var(--fs-meta);color:var(--muted);margin:4px 0;">${isCommitView() ? "本提交的评论" : "历史评论"}（${list.length}）</div>`);
         parts.push(list.map((c) => `<div class="commentnote"><b>${esc(c.author)} · L${c.line || c.originalLine}</b><br>${esc(c.body.replace(/\n+/g, " "))}${c.url ? ` <a href="${esc(c.url)}" target="_blank" rel="noopener">→</a>` : ""}</div>`).join(""));
       }
+    }
+    if (isCommitView()) {
+      parts.push(`<div class="dhint readonly-hint">历史提交为只读视图；切回「全部改动」后可继续评论、审批与合并。</div>`);
+      return parts.join("");
     }
     // active composer
     if (D.active) {
@@ -1152,7 +1220,7 @@
         ? !draftsOutdated()
         : D.drafts.length > 0 && !draftsOutdated();
       const btnText = D.event === "APPROVE"
-        ? (D.drafts.length ? `批准并附 ${D.drafts.length} 条意见` : "批准合并")
+        ? (D.drafts.length ? `批准并附 ${D.drafts.length} 条意见` : "提交批准")
         : `提交 ${D.drafts.length} 条意见到 GitHub`;
       parts.push(`<button class="dsubmit" id="wbSubmit" type="button" ${canSubmit ? "" : "disabled"}>${btnText}</button>`);
       const hint = draftsOutdated() ? "PR 已有新提交：旧草稿行号可能失效，请删除后重新定位。"
@@ -1162,6 +1230,7 @@
     } else {
       parts.push(`<div class="dhint">PR 已合并，GitHub 不允许再新增评论，此页只读。</div>`);
     }
+    parts.push(mergeBoxHTML());
     return parts.join("");
   }
 
@@ -1573,6 +1642,71 @@
     const key = `${D.active.path}:${D.active.start}:${D.active.end}`;
     if (ta.dataset.key === key) D.active.body = ta.value;
   }
+  function commitBarHTML() {
+    if (!isCommitView()) return "";
+    const detail = commitDetail();
+    if (!detail) return `<div class="cb-empty">正在读取提交…</div>`;
+    const parent = detail.parents[0] ? detail.parents[0].slice(0, 7) : "无";
+    const headTag = detail.sha === D.meta.headSha
+      ? `<span class="cb-badge ok">当前 head</span>`
+      : `<span class="cb-badge warn">非最新 head</span>`;
+    const mergeTag = detail.isMerge ? `<span class="cb-badge">合并提交</span>` : "";
+    return `<div class="cb-main"><span class="cb-tag">历史提交</span>`
+      + `<b class="cb-sha">${esc(detail.shortSha)}</b>`
+      + `<span class="cb-headline">${esc(detail.headline)}</span>${headTag}${mergeTag}</div>`
+      + `<div class="cb-meta">${esc(detail.authorName || detail.author)} · ${esc(fmt(detail.date))}`
+      + ` · 父提交 ${esc(parent)} · ${detail.files.length}${detail.truncated ? "+" : ""} 个文件`
+      + ` · +${detail.stats.additions}/−${detail.stats.deletions}</div>`
+      + (detail.truncated
+        ? `<div class="cb-warn">该提交改动过多，这里只列出前 ${detail.files.length} 个文件；完整改动请在 GitHub 查看。</div>`
+        : "")
+      + `<div class="cb-actions"><a href="${esc(detail.url)}" target="_blank" rel="noopener">在 GitHub 查看提交 ↗</a>`
+      + `<button type="button" class="btn ghost" data-commit-all="1">回到全部改动</button></div>`;
+  }
+
+  function syncCommitPicker() {
+    const wrap = document.getElementById("wbCommitPick");
+    const sel = document.getElementById("wbCommitSelect");
+    if (!wrap || !sel || !D.meta) return;
+    const items = D.commits.items;
+    const failed = Boolean(D.commits.error) && !items.length;
+    const show = items.length > 0 || isCommitView() || D.commits.loading || failed;
+    wrap.hidden = !show;
+    if (!show) return;
+    if (failed) {
+      if (sel.dataset.sig !== "error") {
+        sel.innerHTML = `<option>提交列表读取失败</option>`;
+        sel.dataset.sig = "error";
+        sel.disabled = true;
+      }
+      return;
+    }
+    if (D.commits.loading && !items.length) {
+      if (sel.dataset.sig !== "loading") {
+        sel.innerHTML = `<option>正在加载提交…</option>`;
+        sel.dataset.sig = "loading";
+        sel.disabled = true;
+      }
+      return;
+    }
+    const current = isCommitView() ? D.rev.sha : "";
+    const opts = [`<option value="">全部改动 · ${esc(D.meta.baseSha.slice(0, 7))}…${esc(D.meta.headSha.slice(0, 7))}</option>`];
+    for (const commit of items) {
+      opts.push(`<option value="${esc(commit.sha)}">${esc(commit.shortSha)} · ${esc(commit.headline)}`
+        + `${commit.sha === D.meta.headSha ? "（head）" : ""}</option>`);
+    }
+    if (isCommitView() && !items.some((commit) => commit.sha === current)) {
+      opts.push(`<option value="${esc(current)}">${esc(current.slice(0, 7))}（不在提交列表）</option>`);
+    }
+    const html = opts.join("");
+    if (sel.dataset.sig !== html) {
+      sel.innerHTML = html;
+      sel.dataset.sig = html;
+    }
+    sel.disabled = false;
+    sel.value = current;
+  }
+
   function render() {
     const meta = D.meta;
     if (!meta) return;
@@ -1585,10 +1719,17 @@
     const titleEl = document.getElementById("wbPrTitle");
     titleEl.textContent = meta.title;
     titleEl.title = meta.title;
+    const detail = commitDetail();
     const bits = [`#${meta.number}`];
-    if (meta.user) bits.push(meta.user);
-    if (meta.updatedAt) bits.push(`更新 ${shortTime(meta.updatedAt)}`);
-    bits.push(`${meta.changedFiles} 个文件`, `+${meta.additions}/−${meta.deletions}`, `head ${meta.headSha.slice(0, 7)}`);
+    if (detail) {
+      bits.push(detail.shortSha, detail.authorName || detail.author);
+      bits.push(`${detail.files.length}${detail.truncated ? "+" : ""} 个文件`, `+${detail.stats.additions}/−${detail.stats.deletions}`);
+      if (detail.sha !== meta.headSha) bits.push("非最新 head");
+    } else {
+      if (meta.user) bits.push(meta.user);
+      if (meta.updatedAt) bits.push(`更新 ${shortTime(meta.updatedAt)}`);
+      bits.push(`${meta.changedFiles} 个文件`, `+${meta.additions}/−${meta.deletions}`, `head ${meta.headSha.slice(0, 7)}`);
+    }
     if (D.stale) bits.push("缓存数据");
     document.getElementById("wbStats").textContent = bits.join(" · ");
     document.querySelectorAll(".wb-mode").forEach((b) => {
@@ -1599,8 +1740,15 @@
     document.getElementById("wbMarks").checked = D.marks;
     document.getElementById("wbDraftCount").textContent = String(D.drafts.length);
     const seen = D.files.filter((f) => reviewInfo(f.path).reviewed).length;
-    document.getElementById("wbProgress").textContent =
-      D.files.length ? `已审 ${seen}/${D.files.length}` : "";
+    document.getElementById("wbProgress").textContent = isCommitView()
+      ? (D.files.length ? `本提交 ${D.files.length} 个文件` : "")
+      : (D.files.length ? `已审 ${seen}/${D.files.length}` : "");
+    syncCommitPicker();
+    const commitBar = document.getElementById("wbCommitBar");
+    if (commitBar) {
+      commitBar.hidden = !isCommitView();
+      commitBar.innerHTML = isCommitView() ? commitBarHTML() : "";
+    }
 
     /* 原始 PR 链接：顶栏露出一份，可点开也可复制 */
     const origUrl = D.meta.url || "";
@@ -1620,12 +1768,15 @@
 
     const doc = document.getElementById("wbDoc");
     doc.classList.toggle("marks-off", !D.marks);
+    doc.classList.toggle("readonly", isCommitView());
     doc.dataset.mode = D.mode;
     const file = curFile();
     doc.dataset.kind = D.ref ? "ref" : file && isCsv(file.path) ? "csv" : "";
     const content = document.getElementById("wbContent");
     if (D.ref) content.innerHTML = refDocHTML();
-    else if (!file) { content.innerHTML = `<div class="dempty">该 PR 没有变更文件。</div>`; }
+    else if (!file) {
+      content.innerHTML = `<div class="dempty">${isCommitView() ? "该提交没有文件改动。" : "该 PR 没有变更文件。"}</div>`;
+    }
     else if (D.mode === "unified") content.innerHTML = unifiedHTML(file);
     else if (D.mode === "split") content.innerHTML = splitHTML(file);
     else if (D.mode === "sidebyside") content.innerHTML = sideBySideHTML(file);
@@ -1635,7 +1786,7 @@
 
     document.getElementById("wbDrawerBody").innerHTML = drawerHTML();
     // 恢复当前视图的滚动位置，记录本次 key
-    const key = D.ref ? `ref:${D.ref.path}` : `${D.file}:${D.mode}`;
+    const key = D.ref ? `ref:${D.ref.path}` : `${D.revKey}:${D.file}:${D.mode}`;
     D.lastViewKey = key;
     const saved = D.scrollPos[key];
     const docEl = document.getElementById("wbDoc");
@@ -1767,6 +1918,8 @@
     const body = document.body;
 
     doc.addEventListener("click", (e) => {
+      const allBtn = e.target.closest("[data-commit-all]");
+      if (allBtn) { selectAll(); return; }
       const drail = e.target.closest("[data-drail]");
       if (drail) {
         const line = Number(drail.dataset.drail) || 0;
@@ -1791,6 +1944,7 @@
       }
       const anchor = e.target.closest(".line-anchor, [data-plus]");
       if (anchor) {
+        if (isCommitView()) { toast("历史提交为只读视图，不能新增行级评论"); return; }
         const line = Number(anchor.dataset.line);
         D.active = { path: D.file, start: line, end: line, quote: "" };
         render();
@@ -1910,6 +2064,8 @@
     drawer.addEventListener("click", (e) => {
       const act = e.target.closest("[data-act]");
       if (act) {
+        if (act.dataset.act === "merge") { mergePr(); return; }
+        if (act.dataset.act === "merge-refresh") { loadMergeOptions(); return; }
         const ta = document.getElementById("wbcText");
         const text = ta ? ta.value.trim() : "";
         if (act.dataset.act === "cancel") { D.active = null; render(); return; }
@@ -1932,11 +2088,18 @@
       const submit = e.target.closest("#wbSubmit");
       if (submit) submitDrafts();
     });
+    drawer.addEventListener("change", (e) => {
+      if (e.target.id !== "wbMergeMethod") return;
+      D.merge.method = e.target.value;
+      writePref("wb.merge.method", D.merge.method);
+      render();
+    });
 
     // selection chip
     document.addEventListener("mouseup", (e) => {
       const wb = document.getElementById("workbench");
       if (wb.hidden) return;
+      if (isCommitView()) { document.getElementById("dselchip").hidden = true; return; }
       if (e.target.closest("#dselchip") || e.target.closest(".composer") || !e.target.closest("#wbDoc")) return;
       const sel = window.getSelection();
       const text = sel ? sel.toString().trim() : "";
@@ -2031,10 +2194,281 @@
     }
   }
 
+  /* ---------- 提交浏览 ---------- */
+  function rebuildComments() {
+    const all = D.all.comments || [];
+    D.comments = isCommitView()
+      ? all.filter((comment) => comment.originalCommitId === D.rev.sha || comment.commitId === D.rev.sha)
+      : all.slice();
+    D.commentsByPath = new Map();
+    for (const comment of D.comments) {
+      if (!D.commentsByPath.has(comment.path)) D.commentsByPath.set(comment.path, []);
+      D.commentsByPath.get(comment.path).push(comment);
+    }
+  }
+
+  async function ensureCommits(force = false) {
+    const myGen = D.generation;
+    if (D.commits.loaded && !force) return D.commits.items;
+    if (D.commits.promise && !force) return D.commits.promise;
+    D.commits.loading = true;
+    const request = (async () => {
+      try {
+        const res = await fetchJSON(`/api/approvals/${D.n}/commits${force ? "?refresh=1" : ""}`);
+        const data = await res.json().catch(() => ({}));
+        if (D.generation !== myGen) return D.commits.items;
+        if (!res.ok) throw new Error(data.message || `读取提交列表失败（${res.status}）`);
+        D.commits.items = Array.isArray(data.items) ? data.items : [];
+        D.commits.truncated = !!data.truncated;
+        D.commits.loaded = true;
+        D.commits.error = "";
+        return D.commits.items;
+      } catch (err) {
+        if (D.generation !== myGen) return D.commits.items;
+        D.commits.items = [];
+        D.commits.error = String(err);
+        return D.commits.items;
+      } finally {
+        if (D.generation === myGen) {
+          D.commits.loading = false;
+          D.commits.promise = null;
+          /* 只刷新提交下拉：整页 render 会重建抽屉，把正在写的评论框焦点和光标弄丢 */
+          if (D.rev.kind === "all") syncCommitPicker();
+        }
+      }
+    })();
+    D.commits.promise = request;
+    return request;
+  }
+
+  async function ensureCommitDetail(sha, force = false) {
+    const hit = D.commitDetails.get(sha);
+    if (hit && !force) return hit;
+    const res = await fetchJSON(`/api/approvals/${D.n}/commits/${encodeURIComponent(sha)}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.message || `读取提交失败（${res.status}）`);
+    D.commitDetails.set(data.sha, data);
+    return data;
+  }
+
+  function applyCommitView(detail, opts = {}) {
+    D.rev = { kind: "commit", sha: detail.sha, parentSha: detail.parents[0] || null };
+    D.revKey = `commit@${detail.sha}`;
+    D.files = detail.files || [];
+    rebuildComments();
+    const candidates = [opts.file, D.pendingFile, D.file].filter(Boolean);
+    D.file = candidates.find((path) => D.files.some((file) => file.path === path))
+      || D.files[0]?.path
+      || null;
+    D.pendingFile = null;
+    D.active = null;
+    if (!opts.initial) D.pendingAnchor = null;
+    D.urlLine = null;
+    D.navIdx = -1;
+    if (!opts.fromRoute) syncUrl("push");
+    render();
+    prefetchFiles(D.files, true);
+  }
+
+  async function selectCommit(sha, opts = {}) {
+    const myGen = D.generation;
+    /* 视图代次：再选一次提交或切回「全部改动」都会 +1，慢响应不能覆盖后来的选择 */
+    const myRev = (D.revSeq += 1);
+    const items = await ensureCommits(!!opts.force);
+    if (D.generation !== myGen || D.revSeq !== myRev) return false;
+    const wanted = String(sha || "").toLowerCase();
+    const hit = items.find((commit) => commit.sha.toLowerCase() === wanted)
+      || items.find((commit) => commit.sha.toLowerCase().startsWith(wanted));
+    if (!hit) {
+      toast("该提交不在当前 PR 中");
+      if (opts.initial) selectAll({ fromRoute: true, initial: true });
+      return false;
+    }
+    spin(1);
+    try {
+      const detail = await ensureCommitDetail(hit.sha);
+      if (D.generation !== myGen || D.revSeq !== myRev) return false;
+      applyCommitView(detail, { fromRoute: !!opts.fromRoute, file: opts.file, initial: !!opts.initial });
+      return true;
+    } catch (err) {
+      if (D.generation !== myGen || D.revSeq !== myRev) return false;
+      toast(`读取提交失败：${String(err)}`);
+      if (opts.initial) selectAll({ fromRoute: true, initial: true });
+      return false;
+    } finally {
+      if (D.generation === myGen) spin(-1);
+    }
+  }
+
+  function selectAll(opts = {}) {
+    D.revSeq += 1;
+    D.rev = { kind: "all" };
+    D.revKey = `all@${D.meta.headSha}`;
+    D.files = D.all.files || [];
+    rebuildComments();
+    const candidates = [opts.file, D.pendingFile, D.file].filter(Boolean);
+    D.file = candidates.find((path) => D.files.some((file) => file.path === path))
+      || D.files[0]?.path
+      || null;
+    D.pendingFile = null;
+    D.active = null;
+    if (!opts.initial) D.pendingAnchor = null;
+    D.urlLine = null;
+    D.navIdx = -1;
+    if (!opts.fromRoute) syncUrl("push");
+    render();
+    prefetchFiles(D.files, false);
+  }
+
+  /* ---------- 合并 ---------- */
+  async function loadMergeOptions(force = false) {
+    if (!D.meta || D.meta.state !== "open" || D.meta.merged) {
+      D.merge.options = null;
+      D.merge.loading = false;
+      return;
+    }
+    const myGen = D.generation;
+    D.merge.loading = true;
+    D.merge.error = "";
+    try {
+      const res = await fetchJSON(`/api/approvals/${D.n}/merge-options${force ? "?refresh=1" : ""}`);
+      const data = await res.json().catch(() => ({}));
+      if (D.generation !== myGen) return;
+      if (!res.ok) throw new Error(data.message || `读取合并条件失败（${res.status}）`);
+      D.merge.options = data;
+      if (!D.merge.method || !(data.methods || []).includes(D.merge.method)) {
+        const saved = readPref("wb.merge.method", "");
+        D.merge.method = (data.methods || []).includes(saved) ? saved : (data.defaultMethod || "");
+      }
+    } catch (err) {
+      if (D.generation !== myGen) return;
+      D.merge.error = String(err);
+    } finally {
+      if (D.generation === myGen) {
+        D.merge.loading = false;
+        /* 正在写评论时不整页重绘：合并区等下一次自然 render 再更新，避免抢走输入焦点 */
+        if (D.rev.kind === "all" && !D.active) render();
+      }
+    }
+  }
+
+  async function mergePr() {
+    if (!D.meta || isCommitView()) return;
+    const select = document.getElementById("wbMergeMethod");
+    const method = select ? select.value : D.merge.method;
+    const options = D.merge.options;
+    if (!options || !options.canMerge) {
+      toast(options?.reason || "当前不满足合并条件");
+      return;
+    }
+    if (!method) { toast("请选择合并方式"); return; }
+    const labels = { merge: "创建合并提交", squash: "压缩为单个提交", rebase: "变基后合并" };
+    if (!confirm(`确认合并 PR #${D.n}？\n\n方式：${labels[method] || method}\nhead：${D.meta.headSha.slice(0, 7)}\n\n合并会立即写入 GitHub，完成后此页转为只读。`)) return;
+    const button = document.getElementById("wbMerge");
+    if (button) { button.disabled = true; button.textContent = "合并中…"; }
+    const myGen = D.generation;
+    try {
+      const res = await fetchJSON(`/api/approvals/${D.n}/merge`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ sha: D.meta.headSha, method }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (D.generation !== myGen) return;
+      if (!res.ok) {
+        D.merge.error = data.message || `合并失败（${res.status}）`;
+        toast(`合并失败：${D.merge.error}`);
+        render();
+        return;
+      }
+      D.merge.done = true;
+      toast(data.queued ? "已加入合并队列" : "已合并");
+      await load(D.n, true, true);
+    } catch (err) {
+      if (D.generation !== myGen) return;
+      D.merge.error = `合并未确认成功：${String(err)}`;
+      toast(D.merge.error);
+      render();
+    }
+  }
+
   /* ---------- 文件加载 ---------- */
+  async function prefetchFiles(files, commit) {
+    if (!files.length) { D.prefetchTotal = 0; D.prefetchDone = 0; return; }
+    const myGen = D.generation;
+    const snap = {
+      pr: D.n,
+      revKey: D.revKey,
+      commit,
+      headRef: commit ? D.rev.sha : D.meta.headSha,
+      baseRef: commit ? D.rev.parentSha : D.meta.baseSha,
+      files: files.map((file) => ({ path: file.path, status: file.status })),
+    };
+    D.prefetchTotal = snap.files.length;
+    D.prefetchDone = 0;
+    let idx = 0;
+    const run = async () => {
+      while (idx < snap.files.length) {
+        const item = snap.files[idx];
+        idx += 1;
+        if (D.generation !== myGen || D.revKey !== snap.revKey) return;
+        const have = textsOf(item.path);
+        if (have && have.headLoaded && have.baseLoaded
+          && have.headSha === snap.headRef && have.baseSha === snap.baseRef) {
+          D.prefetchDone += 1;
+          if (item.path === D.file) render();
+          continue;
+        }
+        try {
+          const headUrl = snap.commit
+            ? `/api/approvals/${snap.pr}/commits/${snap.headRef}/file?path=${encodeURIComponent(item.path)}&side=head`
+            : `/api/approvals/${snap.pr}/file?path=${encodeURIComponent(item.path)}&ref=${encodeURIComponent(snap.headRef)}`;
+          const headRes = await fetchJSON(headUrl);
+          if (D.generation !== myGen || D.revKey !== snap.revKey) return;
+          const headPayload = await headRes.json().catch(() => ({}));
+          if (!headRes.ok) throw new Error(headPayload.message || `读取正文失败（${headRes.status}）`);
+          let basePayload = { text: "", truncated: false };
+          const needBase = item.status !== "added" && (!snap.commit || snap.baseRef);
+          if (needBase) {
+            const baseUrl = snap.commit
+              ? `/api/approvals/${snap.pr}/commits/${snap.headRef}/file?path=${encodeURIComponent(item.path)}&side=base`
+              : `/api/approvals/${snap.pr}/file?path=${encodeURIComponent(item.path)}&ref=${encodeURIComponent(snap.baseRef)}`;
+            const baseRes = await fetchJSON(baseUrl);
+            if (D.generation !== myGen || D.revKey !== snap.revKey) return;
+            if (!baseRes.ok) throw new Error(`读取改前正文失败（${baseRes.status}）`);
+            basePayload = await baseRes.json().catch(() => ({}));
+          }
+          if (D.generation !== myGen || D.revKey !== snap.revKey) return;
+          setTexts(item.path, {
+            base: basePayload.text || "", head: headPayload.text || "",
+            headLoaded: true, baseLoaded: true,
+            headSha: snap.headRef, baseSha: snap.baseRef,
+            headTruncated: !!headPayload.truncated, baseTruncated: !!basePayload.truncated,
+            error: "",
+          });
+        } catch (err) {
+          if (D.generation !== myGen || D.revKey !== snap.revKey) return;
+          if (!textsOf(item.path)?.headLoaded) {
+            setTexts(item.path, {
+              base: "", head: "", headLoaded: false, baseLoaded: false,
+              headTruncated: false, baseTruncated: false, error: String(err),
+            });
+          }
+        }
+        D.prefetchDone += 1;
+        if (item.path === D.file) render();
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(4, snap.files.length) }, run));
+  }
+
   async function selectFile(path, force, fromRoute) {
     const myGen = D.generation;
+    const myRevKey = D.revKey;
     const myPr = D.n;
+    const commit = isCommitView();
+    const headRef = commit ? D.rev.sha : D.meta.headSha;
+    const baseRef = commit ? D.rev.parentSha : D.meta.baseSha;
     D.file = path;
     D.active = null;
     D.navIdx = -1;
@@ -2044,36 +2478,49 @@
     renderChapters();
     const activeRow = document.getElementById("wbFiles")?.querySelector(".trow.is-active, .fitem.is-active");
     if (activeRow && activeRow.scrollIntoView) activeRow.scrollIntoView({ block: "nearest" });
-    const meta = D.meta;
     const file = D.files.find((item) => item.path === path);
     if (!file) return;
     D.pendingAnchor = null;
     D.urlLine = null;
     if (!fromRoute) syncUrl("push");
-    if (!force && D.texts[path] && D.texts[path].headLoaded && D.texts[path].baseLoaded
-      && D.texts[path].headSha === meta.headSha && D.texts[path].baseSha === meta.baseSha) { render(); return; }
+    const cached = textsOf(path);
+    if (!force && cached && cached.headLoaded && cached.baseLoaded
+      && cached.headSha === headRef && cached.baseSha === baseRef) { render(); return; }
     spin(1);
     try {
-      const headR = await fetchJSON(`/api/approvals/${myPr}/file?path=${encodeURIComponent(path)}&ref=${encodeURIComponent(meta.headSha)}${force ? "&refreshText=1" : ""}`);
-      const headP = await headR.json().catch(() => ({}));
-      if (!headR.ok) throw new Error(`加载正文失败（${headR.status}）：${headP.message || ""}`);
-      let baseP = { text: "", truncated: false };
-      if (file.status !== "added") {
-        const baseR = await fetchJSON(`/api/approvals/${myPr}/file?path=${encodeURIComponent(path)}&ref=${encodeURIComponent(meta.baseSha)}${force ? "&refreshText=1" : ""}`);
-        if (!baseR.ok) throw new Error(`读取改前正文失败（${baseR.status}）`);
-        baseP = await baseR.json().catch(() => ({}));
+      const headUrl = commit
+        ? `/api/approvals/${myPr}/commits/${headRef}/file?path=${encodeURIComponent(path)}&side=head${force ? "&refreshText=1" : ""}`
+        : `/api/approvals/${myPr}/file?path=${encodeURIComponent(path)}&ref=${encodeURIComponent(headRef)}${force ? "&refreshText=1" : ""}`;
+      const headRes = await fetchJSON(headUrl);
+      const headPayload = await headRes.json().catch(() => ({}));
+      if (!headRes.ok) throw new Error(`加载正文失败（${headRes.status}）：${headPayload.message || ""}`);
+      /* 视图已经换掉：不必再取 base 正文，也不要写进新视图的缓存 */
+      if (D.generation !== myGen || D.revKey !== myRevKey) return;
+      let basePayload = { text: "", truncated: false };
+      const needBase = file.status !== "added" && (!commit || baseRef);
+      if (needBase) {
+        const baseUrl = commit
+          ? `/api/approvals/${myPr}/commits/${headRef}/file?path=${encodeURIComponent(path)}&side=base${force ? "&refreshText=1" : ""}`
+          : `/api/approvals/${myPr}/file?path=${encodeURIComponent(path)}&ref=${encodeURIComponent(baseRef)}${force ? "&refreshText=1" : ""}`;
+        const baseRes = await fetchJSON(baseUrl);
+        if (!baseRes.ok) throw new Error(`读取改前正文失败（${baseRes.status}）`);
+        basePayload = await baseRes.json().catch(() => ({}));
       }
-      if (D.generation !== myGen) return;
-      D.texts[path] = {
-        base: baseP.text || "", head: headP.text || "",
+      if (D.generation !== myGen || D.revKey !== myRevKey) return;
+      setTexts(path, {
+        base: basePayload.text || "", head: headPayload.text || "",
         headLoaded: true, baseLoaded: true,
-        headSha: meta.headSha, baseSha: meta.baseSha,
-        headTruncated: !!headP.truncated, baseTruncated: !!baseP.truncated,
-      };
+        headSha: headRef, baseSha: baseRef,
+        headTruncated: !!headPayload.truncated, baseTruncated: !!basePayload.truncated,
+        error: "",
+      });
     } catch (err) {
-      if (D.generation !== myGen) return;
+      if (D.generation !== myGen || D.revKey !== myRevKey) return;
       D.err = err.name === "AbortError" ? "正文加载超时，请重试" : String(err);
-      D.texts[path] = { base: "", head: "", headLoaded: false, baseLoaded: false, headTruncated: false, baseTruncated: false };
+      setTexts(path, {
+        base: "", head: "", headLoaded: false, baseLoaded: false,
+        headTruncated: false, baseTruncated: false, error: D.err,
+      });
     } finally { if (D.generation === myGen) spin(-1); }
     if (D.generation === myGen) render();
   }
@@ -2148,7 +2595,9 @@
   }
 
   /* ---------- 加载 PR ---------- */
-  async function load(number, keepDrafts, force) {
+  async function load(number, keepDrafts, force, opts = {}) {
+    const oldN = D.n;
+    const samePr = oldN === number;
     D.n = number;
     D.generation += 1;
     const myGen = D.generation;
@@ -2164,18 +2613,29 @@
       if (!res.ok) { document.getElementById("wbContent").innerHTML = `<div class="error-box">读取变更失败：${esc(data.message || res.status)}</div>`; return; }
       const oldSha = D.meta ? D.meta.headSha : null;
       const oldBaseSha = D.meta ? D.meta.baseSha : null;
+      const headChanged = Boolean(oldSha && (oldSha !== data.meta.headSha || oldBaseSha !== data.meta.baseSha));
       D.meta = data.meta;
-      D.files = data.files || [];
-      D.comments = data.comments || [];
+      D.all = { files: data.files || [], comments: data.comments || [] };
       D.stale = !!data.stale;
       D.fetchedAt = new Date();
-      D.commentsByPath = new Map();
-      for (const c of D.comments) {
-        if (!D.commentsByPath.has(c.path)) D.commentsByPath.set(c.path, []);
-        D.commentsByPath.get(c.path).push(c);
+      if (!samePr || headChanged) {
+        D.commits = { items: [], truncated: false, loaded: false, loading: false, error: "" };
+        D.commitDetails = new Map();
       }
+      D.merge = {
+        options: null,
+        loading: false,
+        error: "",
+        /* 合并已在这次会话里提交过：重新读取失败时不要退回「可合并」按钮 */
+        done: samePr ? D.merge.done : false,
+        method: readPref("wb.merge.method", "") || "",
+      };
       if (!keepDrafts) { D.drafts = []; loadDrafts(); }
-      if (oldSha && (oldSha !== D.meta.headSha || oldBaseSha !== D.meta.baseSha)) { D.texts = {}; modelCache.clear(); }
+      if (headChanged) { D.texts = {}; modelCache.clear(); }
+      D.rev = { kind: "all" };
+      D.revKey = `all@${D.meta.headSha}`;
+      D.files = D.all.files;
+      rebuildComments();
       const wanted = D.pendingFile && D.files.some((f) => f.path === D.pendingFile) ? D.pendingFile : null;
       if (D.pendingFile && !wanted) toast("该文件不在本 PR 中，已切到第一个文件。");
       D.file = wanted
@@ -2183,56 +2643,21 @@
         || null;
       D.pendingFile = null;
       render();
-
-      // 预加载：冻结 PR / SHA / 文件清单，后续只读快照；每个 await 后校验代次
-      const snap = {
-        pr: number,
-        headSha: D.meta.headSha,
-        baseSha: D.meta.baseSha,
-        files: D.files.map((f) => ({ path: f.path, status: f.status })),
-      };
-      const order = snap.files.map((f) => f.path);
-      D.prefetchTotal = order.length;
-      D.prefetchDone = 0;
-      let idx = 0;
-      const run = async () => {
-        while (idx < order.length) {
-          const p = order[idx]; idx += 1;
-          if (D.generation !== myGen) return;
-          const file = snap.files.find((f) => f.path === p);
-          const have = D.texts[p];
-          if (have && have.headLoaded && have.baseLoaded
-            && have.headSha === snap.headSha && have.baseSha === snap.baseSha) {
-            D.prefetchDone += 1;
-            if (p === D.file) render();
-            continue;
-          }
-          try {
-            const hr = await fetchJSON(`/api/approvals/${snap.pr}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(snap.headSha)}`);
-            if (D.generation !== myGen) return;
-            const hp = await hr.json().catch(() => ({}));
-            if (D.generation !== myGen) return;
-            if (!hr.ok) throw new Error(hp.message || `读取正文失败（${hr.status}）`);
-            let bp = { text: "", truncated: false };
-            if (file && file.status !== "added") {
-              const br = await fetchJSON(`/api/approvals/${snap.pr}/file?path=${encodeURIComponent(p)}&ref=${encodeURIComponent(snap.baseSha)}`);
-              if (D.generation !== myGen) return;
-              if (!br.ok) throw new Error(`读取 Base 正文失败（${br.status}）`);
-              bp = await br.json().catch(() => ({}));
-              if (D.generation !== myGen) return;
-            }
-            D.texts[p] = { base: bp.text || "", head: hp.text || "", headLoaded: true, baseLoaded: true, headSha: snap.headSha, baseSha: snap.baseSha, headTruncated: !!hp.truncated, baseTruncated: !!bp.truncated, error: "" };
-          } catch (err) {
-            if (D.generation !== myGen) return;
-            if (!D.texts[p]?.headLoaded) {
-              D.texts[p] = { base: "", head: "", headLoaded: false, baseLoaded: false, headTruncated: false, baseTruncated: false, error: String(err) };
-            }
-          }
-          D.prefetchDone += 1;
-          if (p === D.file) render();
-        }
-      };
-      await Promise.all(Array.from({ length: Math.min(4, order.length) }, run));
+      loadMergeOptions();
+      /* 提交列表与正文并行拉取：列表慢只影响提交选择器，不该挡住默认阅读视图 */
+      const commitsReady = ensureCommits(force || headChanged);
+      if (opts.commit) {
+        await commitsReady;
+        if (D.generation !== myGen) return;
+        const selected = await selectCommit(opts.commit, {
+          fromRoute: true,
+          initial: true,
+          file: opts.file,
+        });
+        if (!selected && D.generation === myGen) await prefetchFiles(D.files, false);
+      } else {
+        await prefetchFiles(D.files, false);
+      }
     } finally { if (D.generation === myGen) spin(-1); }
   }
 
@@ -2242,6 +2667,14 @@
       b.addEventListener("click", () => setMode(b.dataset.mode));
     });
     document.getElementById("wbMarks").addEventListener("change", (e) => { D.marks = e.target.checked; render(); });
+    document.getElementById("wbCommitSelect").addEventListener("change", (e) => {
+      const sha = e.target.value;
+      if (!sha) selectAll();
+      else selectCommit(sha);
+    });
+    document.getElementById("wbCommitBar").addEventListener("click", (e) => {
+      if (e.target.closest("[data-commit-all]")) selectAll();
+    });
 
     /* 外观弹层：文档主题 + 表格样式（只影响阅读呈现，不写进 URL） */
     const lookBtn = document.getElementById("wbLookBtn");
@@ -2342,7 +2775,7 @@
     D.pendingAnchor = opts.line
       ? { line: opts.line, endLine: opts.endLine || null }
       : opts.heading ? { heading: opts.heading } : null;
-    await load(number, false, false);
+    await load(number, false, false, opts);
   }
 
   /** 前进/后退落回工作台：按 URL 切换 PR / 文件 / 视图 / 行号，不再写 URL */
@@ -2352,6 +2785,18 @@
       ? { line: state.line, endLine: state.endLine || null }
       : state.heading ? { heading: state.heading } : null;
     if (state.n !== D.n) { await mountPr(state.n, state); return; }
+    /* 提交视图与「全部改动」之间切换，由 load 负责拉取提交归属 */
+    const curCommit = isCommitView() ? D.rev.sha.toLowerCase() : null;
+    const wantCommit = state.commit ? state.commit.toLowerCase() : null;
+    const sameRev = wantCommit === null ? curCommit === null : Boolean(curCommit && curCommit.startsWith(wantCommit));
+    if (!sameRev) {
+      D.pendingAnchor = anchor;
+      /* 前进/后退可能同时换了视图与阅读方式：先落 mode，再切视图，并保留路由里的锚点 */
+      if (state.mode && MODES.includes(state.mode)) D.mode = state.mode;
+      if (wantCommit) await selectCommit(wantCommit, { fromRoute: true, file: state.file, initial: true });
+      else selectAll({ fromRoute: true, file: state.file, initial: true });
+      return;
+    }
     if (state.mode && MODES.includes(state.mode) && state.mode !== D.mode) {
       D.mode = state.mode;
       D.pendingAnchor = anchor || D.pendingAnchor;
