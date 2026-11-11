@@ -916,4 +916,11 @@ test('内链按 ref 分流：当前视图提交就地切换，其他提交单开
   await new Promise((r) => setTimeout(r, 30));
   assert.ok(world.calls.some((c) => c.url.includes('/commits/c1/file')), '提交视图下 head 链接切文件');
   assert.equal(world.calls.some((c) => c.url.includes('/api/doc')), false, '不再单开引用视图');
+
+  /* 提交视图：指向不在本次改动里的文件，按链接的提交打开，不退回 head */
+  world.calls.length = 0;
+  w.__docLink(ev, link('/doc/notes.md?ref=c1'));
+  await new Promise((r) => setTimeout(r, 30));
+  const docCall2 = world.calls.find((c) => c.url.includes('/api/doc'));
+  assert.ok(docCall2 && /ref=c1/.test(docCall2.url), '引用视图按链接的提交取数');
 });

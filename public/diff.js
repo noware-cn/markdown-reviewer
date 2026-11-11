@@ -1947,7 +1947,8 @@
           if (direct.anchor) scrollToAnchor(direct.anchor);
         });
       } else {
-        openRefDoc(direct.path, direct.anchor);
+        /* 落回引用视图时带上链接的提交：否则提交视图里的内链会退回 PR head 版本 */
+        openRefDoc(direct.path, direct.anchor, { ref: direct.ref || refOf() });
       }
       return true;
     }

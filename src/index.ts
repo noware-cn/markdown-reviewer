@@ -68,12 +68,16 @@ const API_CACHE_MAX = 300;
 
 const repoKey = (env: Env): string => `${env.GITHUB_ORG}/${env.GITHUB_REPO}`;
 
-/** 失效代号：失效时 +1，飞在路上的请求回来后若代号已变就不回写，避免旧数据复活。 */
-const apiGen = new Map<string, number>();
+/**
+ * 失效代号：只在有请求在飞时保留，避免 Map 随 key 无限增长。
+ * 失效时若该 key 正在取数就 +1，那次请求回来只看自己起始的代号，不会把旧结果写回去。
+ */
+const apiGen = new Map<string, { gen: number; inflight: number }>();
 const apiInvalidate = (...keys: string[]) => {
   for (const key of keys) {
     apiCache.delete(key);
-    apiGen.set(key, (apiGen.get(key) ?? 0) + 1);
+    const entry = apiGen.get(key);
+    if (entry) entry.gen += 1;
   }
 };
 
@@ -87,11 +91,14 @@ const apiCached = async <T>(
   const mapKey = `${repoKey(env)}|${key}`;
   const hit = apiCache.get(mapKey);
   if (hit && !refresh && Date.now() - hit.at < apiCacheTTL) return { value: hit.body as T, stale: false };
-  const gen = apiGen.get(mapKey) ?? 0;
+  const entry = apiGen.get(mapKey) || { gen: 0, inflight: 0 };
+  apiGen.set(mapKey, entry);
+  entry.inflight += 1;
+  const gen = entry.gen;
   try {
     const body = await produce();
     /** 期间被失效过：这次结果可能已旧，丢弃不写。 */
-    if ((apiGen.get(mapKey) ?? 0) !== gen) return { value: body, stale: false };
+    if (entry.gen !== gen) return { value: body, stale: false };
     /** 重新写入时移到队尾，淘汰时优先丢最久未更新的 key。 */
     apiCache.delete(mapKey);
     apiCache.set(mapKey, { at: Date.now(), body });
@@ -103,6 +110,10 @@ const apiCached = async <T>(
   } catch (error) {
     if (hit) return { value: hit.body as T, stale: true };
     throw error;
+  } finally {
+    entry.inflight -= 1;
+    /** 没有请求在飞了就不再记这个 key 的代号。 */
+    if (!entry.inflight) apiGen.delete(mapKey);
   }
 };
 
