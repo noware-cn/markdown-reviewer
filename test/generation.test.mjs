@@ -884,3 +884,36 @@ test('相对资源改写保留片段：PDF 页码、图片锚点都不丢', () =
   assert.ok(out.includes('href="/doc/docs/other.md?ref=head1#L20"'), '文档链接带锚点');
   assert.ok(out.includes('head1/docs/p.png'), '图片走 raw');
 });
+
+test('内链按 ref 分流：当前视图提交就地切换，其他提交单开引用视图', async () => {
+  const world = makeWorld();
+  const app = mountApp(world);
+  const w = app.ctx.window;
+  const D = w.__D;
+  D.meta = { url: 'https://github.com/x/y/pull/1', headSha: 'head1', baseSha: 'base1', state: 'open' };
+  D.n = 1;
+  D.files = [{ path: 'a.md', status: 'modified', additions: 1, deletions: 1, patch: '@@ -1,1 +1,1 @@\n-旧\n+新' }];
+  D.rev = { kind: 'all' };
+  const link = (href) => ({ getAttribute: (k) => (k === 'href' ? href : null) });
+  const ev = { preventDefault() {} };
+
+  world.calls.length = 0;
+  assert.equal(w.__docLink(ev, link('/doc/a.md?ref=head1')), true);
+  await new Promise((r) => setTimeout(r, 30));
+  assert.ok(world.calls.some((c) => c.url.includes('/approvals/1/file')), 'head 版本仍是 PR 内文件，就地切换');
+  assert.equal(world.calls.some((c) => c.url.includes('/api/doc')), false, '不额外开引用视图');
+
+  world.calls.length = 0;
+  assert.equal(w.__docLink(ev, link('/doc/a.md?ref=base1')), true);
+  await new Promise((r) => setTimeout(r, 30));
+  const docCall = world.calls.find((c) => c.url.includes('/api/doc'));
+  assert.ok(docCall && /ref=base1/.test(docCall.url), 'base 版本按该提交开引用视图');
+
+  /* 提交视图：commit 与 head 都算「同一次审阅」，指向本 PR 文件的链接仍就地切换 */
+  D.rev = { kind: 'commit', sha: 'c1', parentSha: 'p1' };
+  world.calls.length = 0;
+  w.__docLink(ev, link('/doc/a.md?ref=head1'));
+  await new Promise((r) => setTimeout(r, 30));
+  assert.ok(world.calls.some((c) => c.url.includes('/commits/c1/file')), '提交视图下 head 链接切文件');
+  assert.equal(world.calls.some((c) => c.url.includes('/api/doc')), false, '不再单开引用视图');
+});

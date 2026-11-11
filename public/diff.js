@@ -805,7 +805,7 @@
     const hit = /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/\d+/i.exec((D.meta && D.meta.url) || "");
     return hit ? { owner: hit[1], repo: hit[2] } : null;
   };
-  const refOf = () => (isCommitView() ? D.rev.sha : D.meta.headSha);
+  const refOf = () => (isCommitView() ? D.rev.sha : D.meta?.headSha);
   const rawUrlOf = (path, ref) => {
     const repo = repoOf();
     if (!repo || !path) return "";
@@ -1773,8 +1773,9 @@
     const docEl = document.getElementById("wbDoc");
     if (!D.ref) {
       D.ref = { stack: [], path: "", anchor: "", ref: "", text: "", loading: false, error: "", candidates: [], token: 0 };
-    } else if (!opts.fromBack && D.ref.path && D.ref.path !== path) {
-      D.ref.stack.push({ path: D.ref.path, anchor: D.ref.anchor, scroll: docEl.scrollTop });
+    } else if (!opts.fromBack && D.ref.path
+      && (D.ref.path !== path || (D.ref.ref || "") !== (opts.ref || D.meta?.headSha || ""))) {
+      D.ref.stack.push({ path: D.ref.path, anchor: D.ref.anchor, ref: D.ref.ref || "", scroll: docEl.scrollTop });
     }
     D.ref.path = path;
     D.ref.anchor = anchor || "";
@@ -1838,7 +1839,7 @@
       render();
       return;
     }
-    openRefDoc(previous.path, previous.anchor, { fromBack: true });
+    openRefDoc(previous.path, previous.anchor, { fromBack: true, ref: previous.ref });
     requestAnimationFrame(() => {
       const docEl = document.getElementById("wbDoc");
       if (docEl) docEl.scrollTop = previous.scroll || 0;
@@ -1866,7 +1867,8 @@
     const backLabel = ref.stack.length
       ? "← 返回上一篇"
       : D.file ? `← 返回 ${D.file.split("/").pop()}` : "← 返回";
-    const openHref = `/doc/${encPath(ref.path)}${D.meta?.headSha ? `?ref=${encodeURIComponent(D.meta.headSha)}` : ""}`;
+    const openRef = ref.ref || D.meta?.headSha || "";
+    const openHref = `/doc/${encPath(ref.path)}${openRef ? `?ref=${encodeURIComponent(openRef)}` : ""}`;
     const bar = `<div class="refdoc-bar">`
       + `<button class="btn ghost refdoc-back" type="button" data-ref="back">${esc(backLabel)}</button>`
       + `<span class="refdoc-path" title="${esc(ref.path)}">${esc(ref.path)}</span>`
@@ -1932,8 +1934,10 @@
     const direct = docLinkTarget(link.getAttribute("href"));
     if (direct) {
       event.preventDefault();
-      /* 链接指向别的提交（如「原文」块里的 base 链接）时，按那个提交打开引用视图 */
-      if (direct.ref && direct.ref !== refOf()) {
+      /* 链接指向别的提交（如「原文」块里的 base 链接）时，按那个提交打开引用视图；
+         head 与当前视图提交都算「同一次审阅」，仍按 PR 文件就地切换 */
+      const viewRefs = [refOf(), D.meta?.headSha].filter(Boolean);
+      if (direct.ref && !viewRefs.includes(direct.ref)) {
         openRefDoc(direct.path, direct.anchor, { ref: direct.ref });
         return true;
       }
