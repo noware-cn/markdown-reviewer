@@ -901,7 +901,8 @@
       if (clean.length >= 4) needles.push(clean);
     }
     if (!needles.length) return html;
-    return wrapAddedText(html, needles.sort((a, z) => z.length - a.length));
+    /* 按源码顺序匹配：游标只前进，先匹配长句会把后面更短的唯一行整段吃掉 */
+    return wrapAddedText(html, needles);
   }
 
   /* ---------- 阅读改动渲染 ---------- */
@@ -1877,7 +1878,9 @@
       return bar + `<div class="error-box">${esc(ref.error)}<br><span class="refdoc-hint">${esc(ref.path)}</span></div>` + cands;
     }
     const body = isCsv(ref.path) ? refCsvHTML(ref.text) : window.DiffModel.renderMarkdown(ref.text, { demote: true });
-    return bar + `<article class="md-block refdoc">${body}</article>`;
+    /* 引用文档的相对链接也要按它自己的路径解析，否则新页签打开会拼成工作台 URL */
+    const linked = resolveBlockUrls(body, { path: ref.path }, refOf());
+    return bar + `<article class="md-block refdoc">${linked}</article>`;
   }
 
   function renderRefChapters() {
@@ -1915,6 +1918,8 @@
   function handleDocLink(event, link) {
     /* 明确要新页签的（外链、「新页签打开」）一律交给浏览器 */
     if (link.getAttribute("target") === "_blank") return false;
+    /* Ctrl/Cmd/Shift/Alt + 点击 = 新页签、新窗口、下载：保持浏览器默认行为 */
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return false;
     /* 正文内链已被改写成 /doc/...：先还原成仓库路径，再按原流程就地处理，不能整页跳出工作台 */
     const direct = docLinkTarget(link.getAttribute("href"));
     if (direct) {

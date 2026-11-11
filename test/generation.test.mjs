@@ -178,7 +178,7 @@ function mountApp(world) {
   ctx.window.DiffModel = modelCtx.window.DiffModel;
 
   const ANCHOR = '  let bound = false;';
-  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__wrapAdded = wrapAddedText; window.__docTarget = docLinkTarget; window.__reply = sendReply;\n${ANCHOR}`);
+  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__wrapAdded = wrapAddedText; window.__docTarget = docLinkTarget; window.__docLink = handleDocLink; window.__reply = sendReply;\n${ANCHOR}`);
   vm.runInContext(exposed, ctx);
   return { ctx, els, store };
 }
@@ -838,4 +838,34 @@ test('内链还原：/doc/ 路径与锚点解码回仓库路径，其他链接�
   assert.equal(j(target('/doc/x.md?ref=h1')), j({ path: 'x.md', anchor: '' }));
   assert.equal(target('/pr/1'), null);
   assert.equal(target('https://github.com/a/b'), null);
+});
+
+
+test('新增行按源码顺序匹配：短句在前、长句在后，两处都要标出来', async () => {
+  const world = makeWorld();
+  world.texts = {
+    'a.md': '# 标题\n\n第一段不变。\n\n短句新增。\n原始说明文字，目标是与上一版保持一致，另外补充更长的说明。\n',
+    'a.md@base': '# 标题\n\n第一段不变。\n\n原始说明文字，目标是与上一版保持一致。\n',
+  };
+  world.patches = { 'a.md': '@@ -1,5 +1,6 @@\n # 标题\n \n 第一段不变。\n \n-原始说明文字，目标是与上一版保持一致。\n+短句新增。\n+原始说明文字，目标是与上一版保持一致，另外补充更长的说明。\n' };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const html = app.els.get('wbContent').innerHTML;
+  assert.equal((html.match(/<ins class="md-ins">/g) || []).length, 2, '两处新增都标出来');
+});
+
+test('带修饰键的内链点击交给浏览器：不拦截、不阻止默认行为', () => {
+  const app = mountApp(makeWorld());
+  const handler = app.ctx.window.__docLink;
+  const link = { getAttribute: (k) => (k === 'href' ? '/doc/a.md' : null) };
+  for (const key of ['ctrlKey', 'metaKey', 'shiftKey', 'altKey']) {
+    let prevented = false;
+    const event = { [key]: true, preventDefault: () => { prevented = true; } };
+    assert.equal(handler(event, link), false, `${key} 时交给浏览器`);
+    assert.equal(prevented, false, `${key} 时不阻止默认行为`);
+  }
+  let prevented = false;
+  const plain = handler({ preventDefault: () => { prevented = true; } }, link);
+  assert.equal(prevented, true, '普通点击仍就地处理');
+  assert.equal(plain, true);
 });
