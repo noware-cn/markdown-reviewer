@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · 评论的四种交互</title>
+<link rel="stylesheet" href="../../public/styles.css?v=319">
+<style>
+  body { padding: 28px 24px 70px; background: var(--ground); }
+  .wrap { max-width: 1020px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+  .lead { margin: 0 0 22px; color: var(--muted); font-size: var(--fs-label); line-height: 1.8; }
+
+  .v { margin: 0 0 30px; }
+  .vhead { display: flex; align-items: baseline; gap: 10px; margin: 0 0 10px; flex-wrap: wrap; }
+  .vhead b { font-size: var(--fs-label); font-weight: 600; }
+  .vhead span { color: var(--muted); font-size: var(--fs-meta); }
+  .vhead em { font-style: normal; color: var(--faint); font-size: var(--fs-meta); }
+
+  .stage { display: grid; grid-template-columns: minmax(0, 1fr) 272px; gap: 16px; align-items: start; }
+  .stage.wide { grid-template-columns: minmax(0, 1fr); padding-left: 62px; }
+  .doc {
+    position: relative; padding: 16px 20px; background: var(--sheet);
+    border: 1px solid var(--border); border-radius: 12px;
+    font-size: 15px; line-height: 28px; color: var(--text);
+  }
+  .doc h3 { margin: 0 0 8px; font-size: 14px; font-weight: 600; }
+  .doc p { margin: 0 0 10px; }
+  .doc p:last-child { margin-bottom: 0; }
+
+  /* 文字记号：半高荧光（评过的片段） */
+  .hl {
+    padding: 0 1px; border-radius: 2px; cursor: default;
+    background-image: linear-gradient(transparent 58%, var(--warning-soft) 58%);
+  }
+  .hl.light { background-image: linear-gradient(transparent 70%, #f8efdb 70%); }
+  .hl.flash { background-image: linear-gradient(transparent 45%, #f3e2bb 45%); }
+
+  /* 新增片段的下划线，与荧光并存 */
+  .md-ins { text-decoration: underline; text-decoration-color: var(--mark-add); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+  /* ——— S1 页边头像 + 悬浮卡片 ——— */
+  .mk { position: absolute; left: -44px; display: flex; flex-direction: column; gap: 2px; cursor: pointer; }
+  .av {
+    width: 20px; height: 20px; border-radius: 50%; display: grid; place-items: center;
+    background: var(--raised); border: 1px solid var(--border);
+    font-size: 10px; color: var(--text); line-height: 1;
+  }
+  .mk:hover .av { border-color: var(--warning); }
+  .card {
+    position: absolute; left: 28px; top: -8px; width: 246px; padding: 10px 12px;
+    background: var(--sheet); border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 6px 20px rgba(20, 26, 32, 0.12);
+    font-size: var(--fs-meta); line-height: 1.7; color: var(--muted);
+    opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 5;
+  }
+  .mk:hover .card { opacity: 1; pointer-events: auto; }
+  .card b { display: block; color: var(--text); font-weight: 600; margin-bottom: 2px; }
+  .card q { display: block; color: var(--mod); margin-bottom: 4px; font-style: normal; }
+  .card .row { display: flex; gap: 6px; margin-top: 8px; color: var(--faint); font-size: 10px; }
+  .card .field {
+    margin-top: 8px; padding: 5px 7px; border: 1px solid var(--border); border-radius: 6px;
+    background: var(--ground); color: var(--faint); font-size: 10px;
+  }
+
+  /* ——— S2 悬停气泡 ——— */
+  .hl2 { position: relative; }
+  .bubble {
+    position: absolute; left: -8px; top: 100%; margin-top: 9px; width: 264px;
+    padding: 9px 11px; background: var(--sheet);
+    border: 1px solid var(--border); border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(20, 26, 32, 0.14);
+    font-size: var(--fs-meta); line-height: 1.7; color: var(--muted);
+    opacity: 0; pointer-events: none; transition: opacity 0.12s; z-index: 6;
+  }
+  .bubble::before {
+    content: ""; position: absolute; top: -10px; left: 16px;
+    border: 5px solid transparent; border-bottom-color: var(--border);
+  }
+  .hl2:hover .bubble { opacity: 1; pointer-events: auto; }
+  .bubble b { color: var(--text); font-weight: 600; }
+  .bubble .acts { display: flex; gap: 8px; margin-top: 7px; color: var(--faint); font-size: 10px; }
+
+  /* ——— S3 / S4 右侧评论树 ——— */
+  .rail { display: flex; flex-direction: column; gap: 8px; }
+  .rail .head { font-size: var(--fs-meta); color: var(--faint); padding: 0 2px 2px; }
+  .rcard {
+    padding: 9px 11px; background: var(--sheet); border: 1px solid var(--border);
+    border-radius: 10px; font-size: var(--fs-meta); line-height: 1.7; color: var(--muted);
+  }
+  .rcard:hover { border-color: var(--warning); background: var(--warning-soft); }
+  .rcard b { display: block; color: var(--text); font-weight: 600; }
+  .rcard q { color: var(--mod); font-style: normal; }
+  .rcard .meta { display: flex; gap: 8px; margin-top: 4px; color: var(--faint); font-size: 10px; }
+  .rcard.reply { margin-left: 14px; background: var(--ground); }
+
+  /* 页边窄条：只标位置，不带数字 */
+  .stripe { position: absolute; left: -14px; width: 3px; border-radius: 2px; background: var(--warning); }
+
+  .fold {
+    margin: 0 0 26px; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 10px; background: var(--raised); color: var(--muted);
+    font-size: var(--fs-meta); line-height: 1.9;
+  }
+  .fold b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>评论的四种交互</h1>
+  <p class="lead">共同约定：正文<b>不出现数字</b>。位置靠页边、文字记号或右侧列表表达；评论正文、回复、展开都在悬浮面板或右侧树里完成。</p>
+
+  <section class="v">
+    <div class="vhead"><b>S1 页边头像 + 悬浮卡片</b><span>Google Docs 式：一次性看全，评论按位置排在页边</span><em>悬停左侧头像</em></div>
+    <div class="stage wide">
+      <div class="doc">
+        <h3>2. 目标流程</h3>
+        <p>改为线上预填 + 一次到店核验，<span class="hl">目标压缩到 1 个工作日</span>，核验环节保留双人复核。</p>
+        <p>缺少材料时<span class="hl">系统直接退回并列出缺项</span>，线下补件不再允许。</p>
+
+        <div class="mk" style="top: 52px">
+          <span class="av">李</span>
+          <div class="card">
+            <b>李静 · L2</b>
+            <q>“目标压缩到 1 个工作日”</q>
+            请给出测算依据，或注明是试点数据。
+            <div class="row"><span>回复 1</span><span>在评论树中查看 →</span></div>
+            <div class="field">回复…</div>
+          </div>
+        </div>
+
+        <div class="mk" style="top: 106px">
+          <span class="av">王</span><span class="av">陈</span>
+          <div class="card">
+            <b>王磊 · L2</b>
+            <q>“系统直接退回”</q>
+            退回话术要可配置，别写死在系统里。
+            <div class="row"><span>陈曦：同意，话术放配置中心</span></div>
+            <div class="field">回复…</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="fold">同位置多条评论 → 头像竖着叠在一起（Figma 的 cluster 思路）；只悬停最上面一个就能顺带看到下面一条。</p>
+  </section>
+
+  <section class="v">
+    <div class="vhead"><b>S2 悬停气泡 + 就地回复</b><span>Notion / Figma 式：正文最安静，鼠标划过文字才浮出</span><em>悬停带荧光的文字</em></div>
+    <div class="doc">
+      <h3>2. 目标流程</h3>
+      <p>改为线上预填 + 一次到店核验，<span class="hl hl2" tabindex="0">目标压缩到 1 个工作日
+        <span class="bubble">
+          <b>李静 · L2</b>
+          <q>“目标压缩到 1 个工作日”</q>
+          请给出测算依据，或注明是试点数据。
+          <div class="acts"><span>回复</span><span>解决</span><span>全部评论 →</span></div>
+        </span></span>，核验环节保留双人复核。
+      </p>
+      <p>缺少材料时<span class="hl hl2" tabindex="0">系统直接退回并列出缺项
+        <span class="bubble">
+          <b>王磊 · L2</b> 退回话术要可配置。
+          <div class="acts"><span>回复</span><span>全部评论 →</span></div>
+        </span></span>，线下补件不再允许。
+      </p>
+    </div>
+    <p class="fold">气泡贴在文字下方，带一个小三角指向被评片段；「全部评论 →」跳到右侧树。触摸屏改为点文字打开，气泡常驻到点击空白。</p>
+  </section>
+
+  <section class="v">
+    <div class="vhead"><b>S3 右侧评论树（正文不动）</b><span>Notion 的 Comments pane / Figma 侧栏：评审时集中读、集中回</span><em>悬停右侧卡片</em></div>
+    <div class="stage">
+      <div class="doc" id="doc3">
+        <h3>2. 目标流程</h3>
+        <p>改为线上预填 + 一次到店核验，<span class="hl light" data-q="a">目标压缩到 1 个工作日</span>，核验环节保留双人复核。</p>
+        <p>缺少材料时<span class="hl light" data-q="b">系统直接退回并列出缺项</span>，线下补件不再允许。</p>
+        <p>季度复盘由运营部牵头，<span class="hl light" data-q="c">结论纳入下季度优化清单</span>。</p>
+      </div>
+      <aside class="rail">
+        <div class="head">评论（按位置排序）</div>
+        <div class="rcard" data-target="a"><b>李静</b>请给出测算依据，或注明是试点数据。
+          <div class="meta"><span>L2</span><span>1 条回复</span><span>2 小时前</span></div></div>
+        <div class="rcard reply" data-target="a"><b>陈曦</b>试点数据在第 4 节。</div>
+        <div class="rcard" data-target="b"><b>王磊</b>退回话术要可配置。
+          <div class="meta"><span>L5</span><span>未回复</span><span>昨天</span></div></div>
+        <div class="rcard" data-target="c"><b>赵敏</b>结论落库还是只在文档里？
+          <div class="meta"><span>L12</span><span>未回复</span><span>昨天</span></div></div>
+      </aside>
+    </div>
+    <p class="fold">正文只留极浅荧光标记位置；hover 卡片时正文对应片段加深（brushing），点卡片则滚到该处。可折叠成一列窄条，读正文时让出宽度。</p>
+  </section>
+
+  <section class="v">
+    <div class="vhead"><b>S4 组合：默认右树 + 就地气泡</b><span>推荐：读的时候有树，写的时候有气泡，正文只标位置</span><em>悬停文字或卡片</em></div>
+    <div class="stage">
+      <div class="doc" id="doc4">
+        <div class="stripe" style="top: 52px; height: 26px"></div>
+        <div class="stripe" style="top: 106px; height: 26px"></div>
+        <h3>2. 目标流程</h3>
+        <p>改为线上预填 + 一次到店核验，<span class="hl light hl2" data-q="x" tabindex="0">目标压缩到 1 个工作日
+          <span class="bubble"><b>李静 · L2</b>请给出测算依据。<div class="acts"><span>回复</span><span>全部评论 →</span></div></span>
+        </span>，核验环节保留双人复核。</p>
+        <p>缺少材料时<span class="hl light hl2" data-q="y" tabindex="0">系统直接退回并列出缺项
+          <span class="bubble"><b>王磊 · L2</b>退回话术要可配置。<div class="acts"><span>回复</span><span>全部评论 →</span></div></span>
+        </span>，线下补件不再允许。</p>
+      </div>
+      <aside class="rail">
+        <div class="head">评论</div>
+        <div class="rcard" data-target="x"><b>李静</b>请给出测算依据。<div class="meta"><span>L2</span><span>1 条回复</span></div></div>
+        <div class="rcard" data-target="y"><b>王磊</b>退回话术要可配置。<div class="meta"><span>L5</span><span>未回复</span></div></div>
+      </aside>
+    </div>
+    <p class="fold">页边 3px 窄条只标「这行有评论」，不带数字；气泡负责快速回复；树负责通读与筛选（未回复 / 我参与的 / 已解决）。</p>
+  </section>
+</div>
+
+<script>
+  /* brushing：悬停右侧卡片，加深正文对应片段；悬停正文片段，点亮对应卡片 */
+  const bind = (docSel) => {
+    const doc = document.querySelector(docSel);
+    if (!doc) return;
+    const stage = doc.parentElement;
+    stage.querySelectorAll('.rcard[data-target]').forEach((card) => {
+      const key = card.dataset.target;
+      const span = doc.querySelector('[data-q="' + key + '"]');
+      if (!span) return;
+      card.addEventListener('mouseenter', () => span.classList.add('flash'));
+      card.addEventListener('mouseleave', () => span.classList.remove('flash'));
+      span.addEventListener('mouseenter', () => card.style.borderColor = 'var(--warning)');
+      span.addEventListener('mouseleave', () => card.style.borderColor = '');
+    });
+  };
+  bind('#doc3');
+  bind('#doc4');
+</script>
+</body>
+</html>

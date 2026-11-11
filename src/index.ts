@@ -2,6 +2,7 @@ import type { Env } from "./github";
 import { getApproval, listApprovals } from "./github";
 import {
   createIssueComment,
+  createReviewCommentReply,
   createReview,
   getCommitDetail,
   getFileText,
@@ -67,6 +68,19 @@ const API_CACHE_MAX = 300;
 
 const repoKey = (env: Env): string => `${env.GITHUB_ORG}/${env.GITHUB_REPO}`;
 
+/**
+ * 失效代号：只在有请求在飞时保留，避免 Map 随 key 无限增长。
+ * 失效时若该 key 正在取数就 +1，那次请求回来只看自己起始的代号，不会把旧结果写回去。
+ */
+const apiGen = new Map<string, { gen: number; inflight: number }>();
+const apiInvalidate = (...keys: string[]) => {
+  for (const key of keys) {
+    apiCache.delete(key);
+    const entry = apiGen.get(key);
+    if (entry) entry.gen += 1;
+  }
+};
+
 /** 取数并回写缓存。GitHub 失败且存在旧缓存时返回旧数据（stale=true），避免把用户晾在加载态。 */
 const apiCached = async <T>(
   env: Env,
@@ -77,8 +91,14 @@ const apiCached = async <T>(
   const mapKey = `${repoKey(env)}|${key}`;
   const hit = apiCache.get(mapKey);
   if (hit && !refresh && Date.now() - hit.at < apiCacheTTL) return { value: hit.body as T, stale: false };
+  const entry = apiGen.get(mapKey) || { gen: 0, inflight: 0 };
+  apiGen.set(mapKey, entry);
+  entry.inflight += 1;
+  const gen = entry.gen;
   try {
     const body = await produce();
+    /** 期间被失效过：这次结果可能已旧，丢弃不写。 */
+    if (entry.gen !== gen) return { value: body, stale: false };
     /** 重新写入时移到队尾，淘汰时优先丢最久未更新的 key。 */
     apiCache.delete(mapKey);
     apiCache.set(mapKey, { at: Date.now(), body });
@@ -90,6 +110,10 @@ const apiCached = async <T>(
   } catch (error) {
     if (hit) return { value: hit.body as T, stale: true };
     throw error;
+  } finally {
+    entry.inflight -= 1;
+    /** 没有请求在飞了就不再记这个 key 的代号。 */
+    if (!entry.inflight) apiGen.delete(mapKey);
   }
 };
 
@@ -606,7 +630,7 @@ export default {
           `/diff/${number}`,
           `/commits/${number}`,
         ]) {
-          apiCache.delete(`${repoKey(env)}|${key}`);
+          apiInvalidate(`${repoKey(env)}|${key}`);
         }
         return json({
           ok: true,
@@ -825,7 +849,7 @@ export default {
         const plainComments = await Promise.all(plains.map((d) => createIssueComment(env, token, number, d.body)));
         // 新评论/新 Review 已写入：立刻失效该 PR 的 diff 缓存（meta+files+comments），
         // 否则客户端提交后的 /diff 会继续返回最长 5 分钟的旧评论。
-        apiCache.delete(`${repoKey(env)}|/diff/${number}`);
+        apiInvalidate(`${repoKey(env)}|/diff/${number}`);
         return json({ ok: true, review, plainCount: plainComments.length, source: "github" });
       } catch (error) {
         const status = error instanceof GitHubError ? error.status : 502;
@@ -837,6 +861,51 @@ export default {
               : status === 404
                 ? "PR 或文件不存在。"
                 : "GitHub 暂时不可用，请稍后重试。";
+        return json(
+          { status: "error", message: `${hint}（${String(error)}）`, retryable: status >= 500 },
+          status >= 500 ? 502 : status,
+        );
+      }
+    }
+
+    /** 回复一条已有的行级评论，挂进同一线程。 */
+    const replyRoute = path.match(/^\/api\/approvals\/(\d+)\/comments\/(\d+)\/replies$/);
+    if (replyRoute && request.method === "POST") {
+      if (!session) return json({ status: "error", message: "unauthenticated" }, 401);
+      const number = Number(replyRoute[1]);
+      const commentId = Number(replyRoute[2]);
+      let body: { body?: string };
+      try {
+        body = (await request.json()) as { body?: string };
+      } catch {
+        return json({ status: "error", message: "请求体不是合法 JSON" }, 400);
+      }
+      const text = String(body.body ?? "").trim();
+      if (!text) return json({ status: "error", message: "回复内容不能为空" }, 400);
+      if (isMock) return json({ ok: true, reply: { id: 990002, url: "#" }, source: "mock" });
+      const token = session.token;
+      if (!token) return json({ status: "error", message: "当前登录会话没有 GitHub 写入令牌，请重新登录。" }, 503);
+      try {
+        /* 与评论、Review 一致：已关闭或已合并的 PR 不再接受回复 */
+        const meta = await getPrMeta(env, token, number);
+        if (meta.merged || meta.state !== "open") {
+          return json({
+            status: "error",
+            message: `PR #${number} 已${meta.merged ? "合并" : "关闭"}，不能再回复评论。`,
+          }, 409);
+        }
+        const reply = await createReviewCommentReply(env, token, number, commentId, text);
+        apiInvalidate(`${repoKey(env)}|/diff/${number}`);
+        return json({ ok: true, reply, source: "github" });
+      } catch (error) {
+        const status = error instanceof GitHubError ? error.status : 502;
+        const hint = status === 404
+          ? "该评论或 PR 不存在。"
+          : status === 403
+            ? "当前登录令牌没有回复评论所需的仓库写权限。"
+            : status === 422
+              ? "GitHub 拒绝了该回复（目标可能不是根评论，或内容不合法）。"
+              : "GitHub 暂时不可用，请稍后重试。";
         return json(
           { status: "error", message: `${hint}（${String(error)}）`, retryable: status >= 500 },
           status >= 500 ? 502 : status,

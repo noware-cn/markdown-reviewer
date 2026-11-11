@@ -26,6 +26,13 @@
   --warning: #8a5300;
   --warning-soft: #fdf6e9;
 
+  /* 页边记号：新增 / 修改 / 删除。形状先于颜色，色觉障碍也读得出 */
+  --mark-add: var(--positive);
+  --mark-mod: var(--mod);
+  --mark-del: var(--negative);
+  --rail-w: 2px;
+  --rail-gap: 14px;
+
   /* 兼容少量内联样式里沿用的旧变量名 */
   --ink-3: var(--muted);
 
@@ -610,6 +617,9 @@ body.wb-mode-on .layout { display: none; }
 .fitem.reviewed .fname { color: var(--muted); font-weight: 600; }
 
 .chapter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   padding: 4px 8px;
   border-radius: 6px;
   font-size: var(--fs-label);
@@ -617,7 +627,6 @@ body.wb-mode-on .layout { display: none; }
   color: var(--text);
   cursor: pointer;
   overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
 }
 .chapter:hover { background: var(--raised); }
@@ -636,6 +645,14 @@ body.wb-mode-on .layout { display: none; }
   vertical-align: middle;
 }
 .chapter.empty2 { color: var(--text); }
+.chapter .ctitle { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+
+/* 改动密度：5 格微条，改几处填几格。未改动的节保持浅色，不争夺注意力 */
+.cbar { flex: none; display: inline-flex; gap: 2px; align-items: center; }
+.cbar i { width: 3px; height: 10px; border-radius: 1px; background: var(--active); }
+.cbar i.on { background: var(--mark-mod); }
+.cbar.is-empty i { height: 6px; background: var(--rule); }
+.chapter.has-change .ctitle { color: var(--text); }
 .chapter-stat { padding: 2px 8px 8px; color: var(--faint); font-size: var(--fs-meta); }
 
 /* ===== 中间：文档纸面 ===== */
@@ -711,13 +728,74 @@ body.wb-mode-on .layout { display: none; }
 .md-block hr { margin: 32px 0; border: 0; border-top: 1px solid var(--border); }
 .md-block a { color: var(--mod); text-decoration: underline; text-underline-offset: 2px; }
 
-/* 差异标记 */
+/* 差异标记：改动记在页边，不在正文上涂色 */
 .md-block.is-added,
-.md-block.is-modified-new { padding: 6px 12px; margin: 4px -12px 14px; border-radius: 0 8px 8px 0; }
+.md-block.is-modified-new { position: relative; }
 .md-block.is-added > :last-child,
 .md-block.is-modified-new > :last-child { margin-bottom: 0; }
-.md-block.is-added { background: var(--raised); box-shadow: inset 3px 0 0 var(--text); }
-.md-block.is-modified-new { background: var(--raised); box-shadow: inset 3px 0 0 var(--muted); }
+
+/* 页边线：新增实线，修改实线加段首方块，删除虚线 */
+.md-block.is-added::before,
+.md-block.is-modified-new::before,
+.md-block.is-removed::before {
+  content: "";
+  position: absolute;
+  left: calc(var(--rail-gap) * -1);
+  top: 4px;
+  bottom: 4px;
+  width: var(--rail-w);
+  border-radius: 1px;
+  background: var(--mark-add);
+}
+.md-block.is-modified-new::before { background: var(--mark-mod); }
+.md-block.is-removed::before { background: none; border-left: 2px dashed var(--mark-del); width: 0; }
+.md-block.is-modified-new::after {
+  content: "";
+  position: absolute;
+  left: calc(var(--rail-gap) * -1 - 2px);
+  top: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 1px;
+  background: var(--mark-mod);
+}
+
+/* 行内记号：只有新增的片段加下划线 */
+.md-ins {
+  text-decoration: underline;
+  text-decoration-color: var(--mark-add);
+  text-decoration-thickness: 2px;
+  text-underline-offset: 3px;
+}
+
+/* 原文（已替换）：按文档排版，虚线框起来，不当代码看 */
+.del-block.md-old { border-left: 2px dashed var(--mark-del); background: var(--negative-soft); }
+.md-old .del-body { color: var(--muted); }
+.md-old .del-body > :first-child { margin-top: 0; }
+.md-old .del-body > :last-child { margin-bottom: 0; }
+.md-old .del-body .md-block { padding: 0; }
+.md-old .del-body .md-block::before,
+.md-old .del-body .md-block::after { content: none; }
+.md-old .del-body h1,
+.md-old .del-body h2,
+.md-old .del-body h3,
+.md-old .del-body h4 { margin: 10px 0 6px; font-size: var(--fs-label); font-weight: 600; color: var(--muted); }
+.md-old .del-body p,
+.md-old .del-body ul,
+.md-old .del-body ol { margin: 0 0 8px; }
+.md-old .del-body table { font-size: var(--fs-meta); }
+
+/* 图片没取到：给一条可点开的说明，不留破图标 */
+.img-miss {
+  display: inline-block;
+  padding: 6px 10px;
+  border: 1px dashed var(--control);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: var(--fs-meta);
+  text-decoration: none;
+}
+.img-miss:hover { border-color: var(--mod); color: var(--mod); }
 
 .diff-tag {
   display: inline-block;
@@ -755,14 +833,13 @@ body.wb-mode-on .layout { display: none; }
 .del-block .del-jump { margin-top: 6px; font-size: var(--fs-meta); color: var(--mod); cursor: pointer; }
 .del-block .del-jump:hover { text-decoration: underline; text-underline-offset: 2px; }
 
-.wb-doc.marks-off .md-block.is-added,
-.wb-doc.marks-off .md-block.is-modified-new {
-  padding: 2px 0;
-  margin: 0;
-  background: transparent;
-  box-shadow: none;
-}
+.wb-doc.marks-off .md-block.is-added::before,
+.wb-doc.marks-off .md-block.is-modified-new::before,
+.wb-doc.marks-off .md-block.is-modified-new::after,
+.wb-doc.marks-off .md-block.is-removed::before { content: none; }
+.wb-doc.marks-off .md-ins { text-decoration: none; }
 .wb-doc.marks-off .diff-tag { display: none; }
+.wb-doc.marks-off .cbar { display: none; }
 
 /* 行号锚点：停在左侧留白里，悬停才出现 */
 .md-block .line-anchor {
@@ -835,12 +912,18 @@ body.wb-mode-on .layout { display: none; }
 .csv-table .csv-row.is-modified > *,
 .csv-table .csv-row.is-partial > * { background: var(--raised); }
 .csv-table .csv-row.is-removed > * { background: var(--negative-soft); color: var(--muted); }
-.csv-table .csv-row.is-added > *:first-child { box-shadow: inset 2px 0 0 var(--text); }
+.csv-table .csv-row.is-added > *:first-child { box-shadow: inset 3px 0 0 var(--mark-add); }
 .csv-table .csv-row.is-modified > *:first-child,
-.csv-table .csv-row.is-partial > *:first-child { box-shadow: inset 2px 0 0 var(--muted); }
-.csv-table .csv-row.is-removed > *:first-child { box-shadow: inset 2px 0 0 var(--negative); }
+.csv-table .csv-row.is-partial > *:first-child { box-shadow: inset 3px 0 0 var(--mark-mod); }
+.csv-table .csv-row.is-removed > *:first-child { box-shadow: inset 3px 0 0 var(--mark-del); }
 .csv-table .csv-row td.is-changed,
 .csv-table .csv-row th.is-changed { background: #dceff3; box-shadow: inset 0 -2px 0 var(--mod); }
+
+/* 台账很长：表头与首列冻结，横向滚动时行号不跟着跑 */
+.table-shell.is-csv .tscroll { max-height: min(72vh, 860px); overflow: auto; }
+.csv-table thead th { position: sticky; top: 0; z-index: 3; background: var(--sheet); }
+.csv-table .csv-row > .csv-ln { position: sticky; left: 0; z-index: 2; background: var(--sheet); }
+.csv-table thead .csv-ln { z-index: 4; }
 
 .wb-doc.marks-off .csv-table tbody .csv-row > * { background: transparent; box-shadow: none; }
 .wb-doc.marks-off .csv-table tbody .csv-row > *:first-child { box-shadow: none; }
@@ -2429,9 +2512,9 @@ body.tbl-full-on { overflow: hidden; }
   border-radius: 2px;
   background: var(--muted);
 }
-.drail-t.add::before { background: var(--text); }
-.drail-t.mod::before { background: var(--muted); }
-.drail-t.del::before { background: var(--negative); }
+.drail-t.add::before { background: var(--mark-add); }
+.drail-t.mod::before { background: var(--mark-mod); }
+.drail-t.del::before { background: var(--mark-del); }
 .drail-t:hover::before { width: 5px; }
 .drail-t:focus-visible { outline: 1px solid var(--text); outline-offset: 1px; }
 .wb-doc.marks-off .drail { display: none; }
@@ -2439,3 +2522,82 @@ body.tbl-full-on { overflow: hidden; }
 @media (max-width: 900px) {
   .drail { display: none; }
 }
+
+/* =====================================================================
+   评论记号：正文只留极浅底色 + 页边窄条，正文里不出现数字。
+   评论正文、回复、展开都在悬停气泡或右侧评论树里完成。
+   ===================================================================== */
+.md-block.has-comments {
+  background: linear-gradient(90deg, rgba(138, 83, 0, 0.055), rgba(138, 83, 0, 0) 62%);
+  border-radius: 4px;
+}
+.md-block.has-comments:hover,
+.md-block.has-comments:focus-within { background: linear-gradient(90deg, rgba(138, 83, 0, 0.1), rgba(138, 83, 0, 0) 72%); }
+.md-block.has-comments.cflash { background: linear-gradient(90deg, rgba(138, 83, 0, 0.17), rgba(138, 83, 0, 0) 78%); }
+.md-block.has-comments:hover { z-index: 5; }
+
+/* 页边窄条：只标「这一段有评论」，不带条数 */
+.cstripe {
+  position: absolute; left: -8px; top: 3px; bottom: 3px; width: 3px;
+  border-radius: 2px; background: var(--warning); opacity: 0.45;
+  transition: opacity 0.12s;
+}
+.md-block.has-comments:hover .cstripe { opacity: 1; }
+
+/* 悬停气泡 */
+.cbubble {
+  position: absolute; left: 0; top: 100%; z-index: 6;
+  width: min(340px, 100%); padding: 9px 11px;
+  background: var(--sheet); border: 1px solid var(--border); border-radius: 10px;
+  box-shadow: 0 10px 28px rgba(20, 26, 32, 0.16);
+  font-size: var(--fs-meta); line-height: 1.7; color: var(--muted);
+  opacity: 0; pointer-events: none; transition: opacity 0.12s;
+}
+.md-block.has-comments:hover .cbubble,
+.md-block.has-comments:focus-within .cbubble {
+  opacity: 1; pointer-events: auto; transition-delay: 0.18s;
+}
+.cbubble .chead { font-size: 10px; color: var(--faint); margin-bottom: 6px; }
+.cbubble .thr + .thr { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--border); }
+.cbubble b { color: var(--text); font-weight: 600; }
+.cbubble .tln { margin-left: 6px; color: var(--faint); font-family: var(--mono); font-size: 10px; }
+.cbubble .tmsg { color: var(--muted); }
+.cbubble .trep { color: var(--faint); font-size: 10px; }
+.cbubble .trow { display: flex; gap: 6px; align-items: flex-end; margin-top: 6px; }
+.cbubble .trta {
+  flex: 1; min-height: 30px; padding: 4px 7px; resize: vertical;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--ground);
+  color: var(--text); font: inherit; font-size: 11px; line-height: 1.6;
+}
+.cbubble .trow .btn { padding: 3px 9px; font-size: 11px; }
+.cbubble .tmore { margin-top: 6px; color: var(--faint); }
+.cbubble .clink {
+  margin-top: 8px; padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--mod); font: inherit; font-size: 11px;
+}
+.cbubble .clink:hover { text-decoration: underline; }
+
+/* 右侧评论树（复用抽屉）：按位置排序，回复缩进，悬停与正文联动 */
+.ctree-head { font-size: var(--fs-meta); color: var(--muted); margin: 4px 0 6px; }
+.ctree { display: flex; flex-direction: column; gap: 8px; }
+.ctree .tthread { border-left: 2px solid var(--border); padding-left: 8px; }
+.ctree .titem { padding: 3px 6px; border-radius: 6px; cursor: pointer; }
+.ctree .titem:hover,
+.ctree .titem.chot { background: var(--warning-soft); }
+.ctree .titem.reply { margin-left: 10px; border-left: 1px solid var(--border); border-radius: 0 6px 6px 0; }
+.ctree .tmeta { display: flex; align-items: baseline; gap: 6px; font-size: var(--fs-meta); }
+.ctree .tmeta b { font-weight: 600; color: var(--text); }
+.ctree .tln { color: var(--faint); font-family: var(--mono); font-size: 10px; }
+.ctree .ttext { font-size: var(--fs-meta); line-height: 1.6; color: var(--muted); }
+.ctree .tlink { font-size: 10px; color: var(--mod); text-decoration: none; }
+.ctree .tlink:hover { text-decoration: underline; }
+
+/* 变更刻度尺右移，给评论窄条让位 */
+.drail { left: -24px; }
+
+@media (hover: none) {
+  .md-block.has-comments:focus-within .cbubble { opacity: 1; pointer-events: auto; transition-delay: 0; }
+}
+
+/* 「标记」关闭时，大纲里的改动微条也一起收掉（开关落在工作台骨架上，章节面板是它的兄弟节点） */
+.wb-body.marks-off .chapter .cbar { visibility: hidden; }
