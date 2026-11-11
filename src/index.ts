@@ -2,6 +2,7 @@ import type { Env } from "./github";
 import { getApproval, listApprovals } from "./github";
 import {
   createIssueComment,
+  createReviewCommentReply,
   createReview,
   getCommitDetail,
   getFileText,
@@ -837,6 +838,41 @@ export default {
               : status === 404
                 ? "PR 或文件不存在。"
                 : "GitHub 暂时不可用，请稍后重试。";
+        return json(
+          { status: "error", message: `${hint}（${String(error)}）`, retryable: status >= 500 },
+          status >= 500 ? 502 : status,
+        );
+      }
+    }
+
+    /** 回复一条已有的行级评论，挂进同一线程。 */
+    const replyRoute = path.match(/^\/api\/approvals\/(\d+)\/comments\/(\d+)\/replies$/);
+    if (replyRoute && request.method === "POST") {
+      if (!session) return json({ status: "error", message: "unauthenticated" }, 401);
+      const number = Number(replyRoute[1]);
+      const commentId = Number(replyRoute[2]);
+      let body: { body?: string };
+      try {
+        body = (await request.json()) as { body?: string };
+      } catch {
+        return json({ status: "error", message: "请求体不是合法 JSON" }, 400);
+      }
+      const text = String(body.body ?? "").trim();
+      if (!text) return json({ status: "error", message: "回复内容不能为空" }, 400);
+      if (isMock) return json({ ok: true, reply: { id: 990002, url: "#" }, source: "mock" });
+      const token = session.token;
+      if (!token) return json({ status: "error", message: "当前登录会话没有 GitHub 写入令牌，请重新登录。" }, 503);
+      try {
+        const reply = await createReviewCommentReply(env, token, number, commentId, text);
+        apiCache.delete(`${repoKey(env)}|/diff/${number}`);
+        return json({ ok: true, reply, source: "github" });
+      } catch (error) {
+        const status = error instanceof GitHubError ? error.status : 502;
+        const hint = status === 404
+          ? "该评论不存在，或所在 PR 已关闭。"
+          : status === 403
+            ? "当前登录令牌没有回复评论所需的仓库写权限。"
+            : "GitHub 暂时不可用，请稍后重试。";
         return json(
           { status: "error", message: `${hint}（${String(error)}）`, retryable: status >= 500 },
           status >= 500 ? 502 : status,

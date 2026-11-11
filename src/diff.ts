@@ -523,6 +523,27 @@ export const createIssueComment = async (
   return { id: comment.id, url: comment.html_url };
 };
 
+/** 回复一条行级评论：GitHub 只有 replies 接口能挂进同一线程，不能用 issue comments 替代。 */
+export const createReviewCommentReply = async (
+  env: Env,
+  token: string,
+  number: number,
+  commentId: number,
+  body: string,
+): Promise<IssueCommentResult> => {
+  const comment = await call<{ id: number; html_url: string }>(
+    env,
+    token,
+    `${repoPath(env)}/pulls/${number}/comments/${commentId}/replies`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ body }),
+    },
+  );
+  return { id: comment.id, url: comment.html_url };
+};
+
 /** 一次提交把草稿合并成一条 review；event 默认 COMMENT，可指定 REQUEST_CHANGES 或 APPROVE。 */
 export const createReview = async (
   env: Env,

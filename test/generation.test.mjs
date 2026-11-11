@@ -34,6 +34,12 @@ function makeWorld() {
   const respond = (call, body) => {
     if (body) return { status: body.status, ok: body.status >= 200 && body.status < 300, json: async () => body.data };
     const u = new URL(call.url, 'http://x');
+    const reply = /^\/api\/approvals\/(\d+)\/comments\/(\d+)\/replies$/.exec(u.pathname);
+    if (reply) {
+      world.replies = world.replies || [];
+      world.replies.push({ commentId: Number(reply[2]), body: (JSON.parse(call.body || '{}') || {}).body });
+      return { status: 200, ok: true, json: async () => ({ ok: true, reply: { id: 990002, url: '#' } }) };
+    }
     const sub = /^\/api\/approvals\/(\d+)\/commits\/([^/]+)(\/file)?$/.exec(u.pathname);
     if (sub) {
       const n = Number(sub[1]);
@@ -82,19 +88,23 @@ function makeWorld() {
         meta: meta(n),
         files: world.prs[n].files.map((f) => ({
           path: f.path, previousPath: null, status: f.status, additions: 1, deletions: 0,
-          patch: f.status === 'added' ? null : '@@ -1,1 +1,1 @@\n-旧\n+新', isMarkdown: true,
+          patch: (world.patches && world.patches[f.path])
+            || (f.status === 'added' ? null : '@@ -1,1 +1,1 @@\n-旧\n+新'),
+          isMarkdown: true,
         })),
-        comments: [],
+        comments: world.comments || [],
       }) };
     }
     if (m[2] === 'file') {
       const p = u.searchParams.get('path');
-      return { status: 200, ok: true, json: async () => ({ text: `# ${p} @ ${u.searchParams.get('ref')}\n\n- 项目\n`, truncated: false }) };
+      const body = (world.texts && world.texts[p])
+        || `# ${p} @ ${u.searchParams.get('ref')}\n\n- 项目\n`;
+      return { status: 200, ok: true, json: async () => ({ text: body, truncated: false }) };
     }
     return { status: world.post.status, ok: world.post.status === 200, json: async () => world.post.data };
   };
   world.fetch = (url, opts = {}) => {
-    const call = { url, method: opts.method || 'GET' };
+    const call = { url, method: opts.method || "GET", body: opts.body };
     world.calls.push(call);
     if (world.gate(call)) {
       return new Promise((resolve) => { call.release = (body) => { call.released = true; resolve(respond(call, body)); }; });
@@ -165,7 +175,7 @@ function mountApp(world) {
   ctx.window.DiffModel = modelCtx.window.DiffModel;
 
   const ANCHOR = '  let bound = false;';
-  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml;\n${ANCHOR}`);
+  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__reply = sendReply;\n${ANCHOR}`);
   vm.runInContext(exposed, ctx);
   return { ctx, els, store };
 }
@@ -639,4 +649,106 @@ test('切换并重新打开原 PR 后，旧提交只清除旧快照草稿', asyn
   const drawer = app.els.get('wbDrawerBody').innerHTML;
   assert.ok(drawer.includes('新意见'));
   assert.ok(!drawer.includes('旧意见'));
+});
+
+test('文档内相对资源：图片与文档链接按当前提交解析', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n看图：![图示](img/a.png) 与 [细则](./b.md#L20)\n' };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+
+  const html = app.els.get('wbContent').innerHTML;
+  assert.ok(
+    html.includes('https://raw.githubusercontent.com/x/y/h1/img/a.png'),
+    '图片要按 head 提交解析，不能留相对路径',
+  );
+  assert.ok(html.includes('/doc/b.md?ref=h1#L20'), '文档链接落到工作台文档页并保留行锚点');
+});
+
+test('语义 diff：块内只给新增片段加下划线，不再出现整块徽章', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n第一段保持不动，\n这里新增了一句话。\n' };
+  world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n 第一段保持不动，\n-旧的一句。\n+这里新增了一句话。\n' };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+
+  const html = app.els.get('wbContent').innerHTML;
+  assert.ok(!html.includes('class="diff-tag'), '正文里不再出现「新增/修改」徽章');
+  assert.ok(html.includes('<ins class="md-ins">这里新增了一句话。</ins>'), '只标记新增的片段');
+  assert.ok(!html.includes('<ins class="md-ins">第一段保持不动'), '未改动的文本不能被一起标上');
+});
+
+test('章节列表：右侧微条按改动数填充', async () => {
+  const world = makeWorld();
+  world.texts = {
+    'a.md': '# 标题\n\n第一节正文。\n\n## 二节\n\n第二节正文。\n',
+  };
+  world.patches = { 'a.md': '@@ -1,6 +1,6 @@\n # 标题\n \n-第一节正文。\n+第一节正文改了。\n \n ## 二节\n \n 第二节正文。\n' };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+
+  const chapters = app.els.get('wbChapters').innerHTML;
+  assert.ok(chapters.includes('class="cbar'), '每个章节条目带改动密度微条');
+  assert.ok(chapters.includes('<i class="on"></i>'), '有改动的节至少填一格');
+});
+
+test('评论记号：有评论的段落带浅底与页边窄条，正文不写数字', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n第一段内容。\n\n第二段内容。\n' };
+  world.patches = { 'a.md': '@@ -1,3 +1,5 @@\n # 标题\n \n+第一段内容。\n+\n+第二段内容。\n' };
+  world.comments = [
+    { id: 11, path: 'a.md', line: 3, originalLine: 3, side: 'RIGHT', body: '这段要补依据', author: 'reviewer', url: 'https://github.com/x/y/pull/1#c11', inReplyTo: null },
+    { id: 12, path: 'a.md', line: 3, originalLine: 3, side: 'RIGHT', body: '同意，补一下测算', author: 'other', url: null, inReplyTo: 11 },
+  ];
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+
+  const html = app.els.get('wbContent').innerHTML;
+  assert.ok(/class="md-block[^"]*has-comments"/.test(html), '有评论的块要带 has-comments');
+  assert.ok(html.includes('class="cstripe"'), '页边要有一条窄条标位置');
+  assert.ok(html.includes('此段 1 个评论线程'), '气泡说明线程数，而不是在正文里写数字');
+  assert.ok(!/<sup/.test(html), '正文不出现上标数字');
+  assert.ok(/class="md-block(?! has-comments)[^"]*"(?![^>]*has-comments)/.test(html), '没有评论的块保持原样');
+});
+
+test('评论树：按行排序、回复缩进，悬停与正文用同一个行锚点', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n第一段内容。\n\n第二段内容。\n' };
+  world.patches = { 'a.md': '@@ -1,3 +1,5 @@\n # 标题\n \n+第一段内容。\n+\n+第二段内容。\n' };
+  world.comments = [
+    { id: 21, path: 'a.md', line: 5, originalLine: 5, side: 'RIGHT', body: '第二段的问题', author: 'b', url: null, inReplyTo: null },
+    { id: 20, path: 'a.md', line: 3, originalLine: 3, side: 'RIGHT', body: '第一段的问题', author: 'a', url: 'https://github.com/x/y/pull/1#c20', inReplyTo: null },
+    { id: 22, path: 'a.md', line: 3, originalLine: 3, side: 'RIGHT', body: '第一段的回复', author: 'c', url: null, inReplyTo: 20 },
+  ];
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+
+  const drawer = app.els.get('wbDrawerBody').innerHTML;
+  assert.ok(drawer.includes('评论树 · 2 线程 / 1 回复'), '标题按线程统计');
+  assert.ok(drawer.indexOf('第一段的问题') < drawer.indexOf('第二段的问题'), '按行号升序，不按返回顺序');
+  assert.ok(drawer.includes('titem reply'), '回复缩进成子项');
+  assert.ok(drawer.includes('data-jump-to="3"'), '每条都带正文行锚点，供悬停联动与跳转');
+});
+
+test('气泡回复：就地 POST 到 replies，成功后本地补进评论树', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n第一段内容。\n' };
+  world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n+第一段内容。\n' };
+  world.comments = [
+    { id: 31, path: 'a.md', line: 3, originalLine: 3, side: 'RIGHT', body: '这段要补依据', author: 'reviewer', url: null, inReplyTo: null },
+  ];
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+
+  const html = app.els.get('wbContent').innerHTML;
+  assert.ok(html.includes('class="trta"'), '气泡里要有回复框');
+  assert.ok(html.includes('data-act="reply"'));
+
+  await app.ctx.window.__reply(31, '已补在第 4 节', null);
+  await new Promise((r) => setTimeout(r, 30));
+
+  assert.equal(world.replies?.length, 1, '要走 replies 接口');
+  assert.equal(world.replies[0].commentId, 31);
+  assert.equal(world.replies[0].body, '已补在第 4 节');
+  assert.ok(app.els.get('wbDrawerBody').innerHTML.includes('已补在第 4 节'), '回复立刻出现在评论树里');
 });

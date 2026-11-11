@@ -271,6 +271,74 @@
     return true;
   }
 
+  /* ---------- 评论线程 ---------- */
+  /** 把 inReplyTo 串成组并按行排序：一条根评论 + 它的回复算一个线程。 */
+  function commentThreads(file) {
+    const list = (file && D.commentsByPath && D.commentsByPath.get(file.path)) || [];
+    if (!list.length) return [];
+    const byId = new Map(list.filter((c) => c.id != null).map((c) => [c.id, c]));
+    const groups = new Map();
+    for (const c of list) {
+      let root = c;
+      let guard = 0;
+      while (root && root.inReplyTo != null && byId.has(root.inReplyTo) && guard < 20) {
+        root = byId.get(root.inReplyTo);
+        guard += 1;
+      }
+      const key = root.id != null ? `c${root.id}` : `c${root.line}-${root.author}`;
+      if (!groups.has(key)) {
+        groups.set(key, { key, root, replies: [], line: root.line ?? root.originalLine ?? null });
+      }
+      if (root !== c) groups.get(key).replies.push(c);
+    }
+    return [...groups.values()].sort((a, b) => (a.line || 0) - (b.line || 0));
+  }
+
+  /** 落在指定块行范围内的线程。行级锚点，所以块的起止行就够用。 */
+  function threadsInBlock(file, b) {
+    if (!file || b.startLine == null) return [];
+    const end = b.endLine ?? b.startLine;
+    return commentThreads(file).filter((t) => t.line != null && t.line >= b.startLine && t.line <= end);
+  }
+
+  /** 正文悬停气泡：先看这一段的线程，需要就回一句；完整讨论仍在评论树里。 */
+  function commentBubbleHTML(threads, b) {
+    const shown = threads.slice(0, 3).map((t) => {
+      const first = esc((t.root.body || "").split("\n").filter(Boolean)[0] || "").slice(0, 90);
+      const replies = t.replies.length ? `<div class="trep">${t.replies.length} 条回复</div>` : "";
+      const reply = D.meta?.merged ? ""
+        : `<div class="trow"><textarea class="trta" rows="2" data-reply-to="${t.root.id}" placeholder="回复 ${esc(t.root.author)}…"></textarea>`
+          + `<button type="button" class="btn" data-act="reply" data-reply-to="${t.root.id}">回复</button></div>`;
+      return `<div class="thr"><b>${esc(t.root.author)}</b><span class="tln">L${t.line}</span>`
+        + `<div class="tmsg">${first}</div>${replies}${reply}</div>`;
+    }).join("");
+    const more = threads.length > 3 ? `<div class="tmore">此段还有 ${threads.length - 3} 个线程</div>` : "";
+    return `<div class="cbubble" role="dialog" aria-label="第 ${b.startLine} 行附近的评论">`
+      + `<div class="chead">此段 ${threads.length} 个评论线程</div>${shown}${more}`
+      + `<button type="button" class="clink" data-act="open-tree">在评论树中查看 →</button></div>`;
+  }
+
+  /** 行 → 所在正文块：评论树与气泡靠它做「悬停哪里、正文哪里亮」。 */
+  function blockAtLine(line) {
+    if (!line) return null;
+    return [...document.querySelectorAll("#wbDoc .md-block[data-line]")].find((el) => {
+      const start = Number(el.dataset.line);
+      const end = Number(el.dataset.endLine) || start;
+      return line >= start && line <= end;
+    }) || null;
+  }
+
+  function jumpToCommentLine(line) {
+    if (!line) return;
+    D.pendingAnchor = { line };
+    applyAnchor();
+    const block = blockAtLine(line);
+    if (block) {
+      block.classList.add("cflash");
+      setTimeout(() => block.classList.remove("cflash"), 1200);
+    }
+  }
+
   const statusMark = (status) => (status === "added" ? "A" : status === "removed" ? "D" : status === "renamed" ? "R" : "M");
   const reviewInfo = (path) => {
     const drafts = D.drafts.filter((d) => d.path === path).length;
@@ -663,13 +731,49 @@
     if (!model) { box.innerHTML = `<div class="dempty">—</div>`; return; }
     const heads = model.headBlocks.filter((b) => b.type === "h1" || b.type === "h2" || b.type === "h3" || b.type === "h4");
     if (!heads.length) { box.innerHTML = `<div class="dempty">本文档没有标题</div>`; return; }
-    box.innerHTML = heads.map((b) => {
+    /* 每节右侧一条 5 格微条：改了几处就填几格，未改动保持浅色 */
+    const marks = model.headBlocks.filter((b) => b.startLine && b.changeState && b.changeState !== "normal" && b.changeState !== "same");
+    box.innerHTML = heads.map((b, i) => {
+      const next = i + 1 < heads.length ? heads[i + 1].startLine : Infinity;
+      const count = marks.filter((m) => m.startLine >= b.startLine && m.startLine < next).length;
+      const filled = Math.min(count, 5);
+      const bar = `<span class="cbar${count ? "" : " is-empty"}" aria-hidden="true">`
+        + [0, 1, 2, 3, 4].map((k) => `<i${k < filled ? ' class="on"' : ""}></i>`).join("")
+        + `</span>`;
       const lvl = Number(b.type[1]);
-      const changed = b.changeState !== "normal";
-      return `<div class="chapter l${lvl}${changed ? " empty2" : ""}" data-line="${b.startLine}" data-chapter="${b.startLine}">`
-        + (changed ? `<span class="cdot"></span>` : "")
-        + esc(b.title || "(无标题)") + `</div>`;
+      return `<div class="chapter l${lvl}${count ? " has-change" : ""}" data-line="${b.startLine}" data-chapter="${b.startLine}" title="${count ? `${count} 处改动 · ` : ""}${esc(b.title || "")}">`
+        + `<span class="ctitle">${esc(b.title || "(无标题)")}</span>${bar}</div>`;
     }).join("");
+  }
+
+  /* 章节联动：滚动时高亮当前所在节，目录跟着走到可视区 */
+  let spyFrame = 0;
+  function syncChapterSpy() {
+    if (spyFrame) return;
+    const run = () => {
+      spyFrame = 0;
+      const doc = document.getElementById("wbDoc");
+      const box = document.getElementById("wbChapters");
+      if (!doc || !box || typeof doc.getBoundingClientRect !== "function") return;
+      const items = Array.from(box.querySelectorAll(".chapter[data-line]"));
+      if (!items.length) return;
+      const edge = doc.getBoundingClientRect().top + 80;
+      let current = items[0];
+      for (const item of items) {
+        const block = doc.querySelector(`[data-block="${item.dataset.line}"]`);
+        if (!block) continue;
+        if (block.getBoundingClientRect().top > edge) break;
+        current = item;
+      }
+      items.forEach((item) => item.classList.toggle("active", item === current));
+      const top = current.getBoundingClientRect().top;
+      const view = box.getBoundingClientRect();
+      if ((top < view.top || top > view.bottom - 24) && typeof current.scrollIntoView === "function") {
+        current.scrollIntoView({ block: "nearest" });
+      }
+    };
+    if (typeof requestAnimationFrame === "function") spyFrame = requestAnimationFrame(run);
+    else run();
   }
 
   /* ---------- 差异模型缓存 ---------- */
@@ -692,6 +796,78 @@
     ? cachedModel(file, "csv", window.DiffModel.csvModel)
     : null);
 
+  /* ---------- 文档内的相对资源 ---------- */
+  /* 仓库与提交都从已有字段推导：meta.url 形如 https://github.com/<owner>/<repo>/pull/16 */
+  const repoOf = () => {
+    const hit = /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/\d+/i.exec((D.meta && D.meta.url) || "");
+    return hit ? { owner: hit[1], repo: hit[2] } : null;
+  };
+  const refOf = () => (isCommitView() ? D.rev.sha : D.meta.headSha);
+  const rawUrlOf = (path) => {
+    const repo = repoOf();
+    if (!repo || !path) return "";
+    return `https://raw.githubusercontent.com/${repo.owner}/${repo.repo}/${refOf()}/${path}`;
+  };
+
+  /**
+   * 块内相对地址按「当前提交」解析：图片去 raw，仓库内文件去 raw，
+   * 文档链接落到工作台的 /doc 页（同窗口打开，不新开标签）。
+   */
+  function resolveBlockUrls(html, file) {
+    if (!html) return html;
+    const base = file ? file.path : "";
+    const out = html.replace(/\b(src|href)="([^"]*)"/g, (match, attr, value) => {
+      const raw = String(value || "").trim();
+      if (!raw || raw.startsWith("#") || /^(https?:|mailto:|tel:|data:|blob:)/i.test(raw)) return match;
+      const hit = window.DiffModel.resolveDocLink(raw, base);
+      if (hit.kind !== "repo") return match;
+      if (attr === "src") return `src="${esc(rawUrlOf(hit.path))}"`;
+      if (hit.isDoc) {
+        const hash = hit.anchor ? `#${encodeURIComponent(hit.anchor)}` : "";
+        const target = String(hit.path || "").split("/").map(encodeURIComponent).join("/");
+        return `href="/doc/${target}?ref=${encodeURIComponent(refOf())}${hash}"`;
+      }
+      return `href="${esc(rawUrlOf(hit.path))}"`;
+    });
+    return out
+      .replace(/<a\b[^>]*href="\/doc\/[^"]*"[^>]*>/g, (tag) => tag.replace(/\s+target="_blank"/, ""))
+      .replace(/<img\b(?![^>]*\bloading=)/g, '<img loading="lazy" decoding="async"');
+  }
+
+  /* 旧文按文档排版渲染，图片与链接同样按提交解析 */
+  const oldDocHtml = (text, file) => window.DiffModel.mdBlocks(text)
+    .map((b) => resolveBlockUrls(b.html, file)).join("");
+
+  /** 把新增文本在渲染结果里包一层 <ins>：只标真正变化的片段，找不到就只留页边记号。 */
+  function wrapAddedText(html, needles) {
+    const parts = html.split(/(<[^>]+>)/);
+    return parts.map((part) => {
+      if (!part || part.startsWith("<")) return part;
+      let out = part;
+      needles.forEach((needle) => {
+        const at = out.indexOf(needle);
+        if (at < 0) return;
+        out = `${out.slice(0, at)}<ins class="md-ins">${needle}</ins>${out.slice(at + needle.length)}`;
+      });
+      return out;
+    }).join("");
+  }
+
+  function markInlineAdded(html, b) {
+    if (!b || b.type === "code" || b.changeState === "normal" || b.changeState === "added") return html;
+    const model = modelFor(curFile());
+    const ops = (model && model.parsed && model.parsed.ops) || [];
+    const needles = [];
+    for (const op of ops) {
+      if (op.t !== "add" || op.new == null) continue;
+      if (op.new < b.startLine || op.new > b.endLine) continue;
+      const clean = String(op.text || "").replace(/^\s*[>#*+-]*\s*/, "").replace(/[*_`[\]]/g, "").trim();
+      if (clean.length >= 4) needles.push(clean);
+    }
+    if (!needles.length) return html;
+    return wrapAddedText(html, needles.sort((a, z) => z.length - a.length));
+  }
+
   /* ---------- 阅读改动渲染 ---------- */
   function readingHTML(file) {
     const textState = textsOf(file.path);
@@ -712,7 +888,7 @@
       const baseBlocks = window.DiffModel.mdBlocks(textOf(file.path, "base"));
       return `<div class="del-block"><div class="del-head">此文件在本 PR 中已删除</div>`
         + `<div class="del-body">以下为删除前完整内容（Base 版本）：</div></div>`
-        + baseBlocks.map((b) => `<div class="md-block" data-base-line="${b.startLine}">${b.html}</div>`).join("");
+        + baseBlocks.map((b) => `<div class="md-block" data-base-line="${b.startLine}">${resolveBlockUrls(b.html, file)}</div>`).join("");
     }
 
     const model = modelFor(file);
@@ -753,25 +929,19 @@
 
   function blockHtml(b, opts) {
     let cls = "md-block";
-    let tag = "";
     if (!opts.plain) {
-      if (b.changeState === "added") { cls += " is-added"; tag = `<span class="diff-tag add">新增</span>`; }
-      else if (b.changeState === "modified-new") {
-        cls += " is-modified-new";
-        tag = `<span class="diff-tag mod">修改</span>`;
-      }
-      else if (b.changeState === "partial") {
-        cls += " is-modified-new";
-        tag = `<span class="diff-tag mod">修改</span>`;
-      }
+      if (b.changeState === "added") cls += " is-added";
+      else if (b.changeState === "modified-new" || b.changeState === "partial") cls += " is-modified-new";
+      else if (b.changeState === "removed") cls += " is-removed";
     }
-    // 显示所有配对删除内容（可能有多处修改）
-    const oldBlocks = (b.pairedChanges || (b.pairedChange ? [b.pairedChange] : []))
-      .map((pc) => `<div class="del-block"><div class="del-head">旧内容（已替换）</div><div class="del-body"><pre>${esc(pc.oldText)}</pre></div></div>`)
+    const file = curFile();
+    // 旧文按文档排版渲染（不再当作代码），相对资源同样按提交解析
+    const oldBlock = (b.pairedChanges || (b.pairedChange ? [b.pairedChange] : []))
+      .map((pc) => `<div class="del-block md-old"><div class="del-head">原文（已替换）</div>`
+        + `<div class="del-body">${oldDocHtml(pc.oldText, file)}</div></div>`)
       .join("");
-    const oldBlock = oldBlocks;
     // 代码块：逐行 data-line
-    let bodyHtml = b.html;
+    let bodyHtml = resolveBlockUrls(b.html, file);
     if (b.type === "code" && b.startLine != null) {
       bodyHtml = bodyHtml.replace(/(<pre><code>)([\s\S]*?)(<\/code><\/pre>)/, (_m, open, code, close) => {
         const lines = code.split("\n");
@@ -813,7 +983,14 @@
       bodyHtml = bodyHtml.replace(/^(\s*)<h([1-4])([^>]*)>/, (_m, pad, level, attrs) =>
         `${pad}<h${level}${attrs} data-line="${b.startLine}"><a class="hlink" href="#L${b.startLine}" data-hlink="${b.startLine}" title="复制本段链接" aria-label="复制第 ${b.startLine} 行所在标题的链接">#</a>`);
     }
-    return `<div class="${cls}" data-line="${b.startLine}" data-end-line="${b.endLine}" data-block="${b.startLine}">${oldBlock}${tag}${bodyHtml}${anchor}</div>`;
+    /* 行内记号：修改块里只给新增的片段加下划线，其余保持正文排版 */
+    bodyHtml = markInlineAdded(bodyHtml, b);
+    /* 有评论的块：极浅底色 + 页边窄条，正文不出现数字；气泡悬停才出 */
+    const threads = threadsInBlock(file, b);
+    const quiet = threads.length ? " has-comments" : "";
+    const stripe = threads.length ? `<span class="cstripe" aria-hidden="true"></span>` : "";
+    const bubble = threads.length ? commentBubbleHTML(threads, b) : "";
+    return `<div class="${cls}${quiet}" data-line="${b.startLine}" data-end-line="${b.endLine}" data-block="${b.startLine}">${stripe}${oldBlock}${bodyHtml}${anchor}${bubble}</div>`;
   }
 
   /**
@@ -883,7 +1060,7 @@
   function insertionHtml(ch, file) {
     return `<div class="del-block" data-old-line="${ch.oldStart}" data-change="${ch.id}">`
       + `<div class="del-head">删除（Base L${ch.oldStart}${ch.oldEnd > ch.oldStart ? "–" + ch.oldEnd : ""}）</div>`
-      + `<div class="del-body"><pre>${esc(ch.oldText)}</pre></div>`
+      + `<div class="del-body">${oldDocHtml(ch.oldText, file)}</div>`
       + `<div class="del-jump" data-jump-source="${esc(file.path)}">在源码 Diff 中查看 →</div></div>`;
   }
 
@@ -1172,16 +1349,66 @@
       + `</div>`;
   }
 
+  /** 评论树的一条线程：根评论 + 缩进的回复，整块可点，点了滚到正文对应行。 */
+  function treeItemHTML(t) {
+    const one = (c, kind) => `<div class="titem ${kind}"${t.line != null ? ` data-jump-to="${t.line}"` : ""}>`
+      + `<div class="tmeta"><b>${esc(c.author)}</b><span class="tln">L${c.line ?? c.originalLine ?? "?"}</span></div>`
+      + `<div class="ttext">${esc((c.body || "").replace(/\n+/g, " ").slice(0, 160))}</div>`
+      + (c.url ? `<a class="tlink" href="${esc(c.url)}" target="_blank" rel="noopener">GitHub ↗</a>` : "")
+      + `</div>`;
+    return `<div class="tthread">${one(t.root, "root")}${t.replies.map((c) => one(c, "reply")).join("")}</div>`;
+  }
+
+  /** 回复一条行级评论：成功后本地补进列表，不整页刷新，保住滚动位置与输入焦点。 */
+  async function sendReply(commentId, text, btn) {
+    const body = String(text || "").trim();
+    if (!body) { toast("回复内容不能为空"); return; }
+    const label = btn ? btn.textContent : "";
+    if (btn) { btn.disabled = true; btn.textContent = "发送中…"; }
+    try {
+      const res = await fetchJSON(`/api/approvals/${D.n}/comments/${commentId}/replies`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ body }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.message || `回复失败（${res.status}）`);
+      const target = (D.all.comments || []).find((c) => c.id === commentId);
+      if (target) {
+        D.all.comments.push({
+          id: data.reply?.id ?? `local-${Date.now()}`,
+          path: target.path,
+          line: target.line,
+          originalLine: target.originalLine,
+          body,
+          author: "我",
+          url: data.reply?.url || null,
+          inReplyTo: commentId,
+          commitId: target.commitId ?? null,
+          originalCommitId: target.originalCommitId ?? null,
+        });
+        rebuildComments();
+        render();
+      }
+      toast("回复已提交");
+    } catch (error) {
+      toast(String(error.message || error));
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = label || "回复"; }
+    }
+  }
+
   function drawerHTML() {
     const parts = [];
     // existing comments for current file
     const file = curFile();
-    if (file && D.commentsByPath) {
-      const list = D.commentsByPath.get(file.path) || [];
-      if (list.length) {
-        parts.push(`<div style="font-size:var(--fs-meta);color:var(--muted);margin:4px 0;">${isCommitView() ? "本提交的评论" : "历史评论"}（${list.length}）</div>`);
-        parts.push(list.map((c) => `<div class="commentnote"><b>${esc(c.author)} · L${c.line || c.originalLine}</b><br>${esc(c.body.replace(/\n+/g, " "))}${c.url ? ` <a href="${esc(c.url)}" target="_blank" rel="noopener">→</a>` : ""}</div>`).join(""));
-      }
+    const threads = file ? commentThreads(file) : [];
+    if (threads.length) {
+      const replies = threads.reduce((n, t) => n + t.replies.length, 0);
+      parts.push(`<div class="ctree-head">${isCommitView() ? "本提交的评论" : "评论树"} · ${threads.length} 线程${replies ? ` / ${replies} 回复` : ""}</div>`);
+      parts.push(`<div class="ctree">${threads.map(treeItemHTML).join("")}</div>`);
+    } else if (file && D.commentsByPath) {
+      parts.push(`<div class="ctree-head">评论树 · 此文件暂无评论</div>`);
     }
     if (isCommitView()) {
       parts.push(`<div class="dhint readonly-hint">历史提交为只读视图；切回「全部改动」后可继续评论、审批与合并。</div>`);
@@ -1928,6 +2155,22 @@
       }
       const retry = e.target.closest("[data-retry]");
       if (retry) { if (D.file) selectFile(D.file, true); return; }
+      /* 气泡里的回复：就地提交，不离开正文 */
+      const replyBtn = e.target.closest('[data-act="reply"]');
+      if (replyBtn) {
+        const id = Number(replyBtn.dataset.replyTo);
+        const box = replyBtn.parentElement.querySelector(".trta");
+        if (id) sendReply(id, box ? box.value : "", replyBtn);
+        return;
+      }
+      const openTree = e.target.closest('[data-act="open-tree"]');
+      if (openTree) {
+        document.getElementById("wbBody").classList.add("drawer-open");
+        const line = Number(openTree.closest(".md-block")?.dataset.line) || 0;
+        const jump = document.querySelector(`#wbDrawerBody [data-jump-to="${line}"]`);
+        if (jump) jump.scrollIntoView({ block: "nearest" });
+        return;
+      }
       /* 标题「#」：把本段行号写进地址并复制整条深链 */
       const hlink = e.target.closest("a.hlink");
       if (hlink) {
@@ -2021,6 +2264,23 @@
     content.addEventListener("scroll", (e) => {
       const target = e.target;
       if (target && target.classList && target.classList.contains("tscroll")) syncTableScroll(target);
+      if (target && target.id === "wbDoc") syncChapterSpy();
+    }, true);
+    /* 图片按提交解析后仍可能 404：换成一则可点击的占位，不留破图标 */
+    content.addEventListener("error", (e) => {
+      const img = e.target;
+      if (!img || img.tagName !== "IMG" || img.dataset.missing) return;
+      if (typeof document.createElement !== "function") return;
+      img.dataset.missing = "1";
+      const src = img.getAttribute("src") || "";
+      const name = decodeURIComponent(src.split("/").pop() || "图片");
+      const miss = document.createElement("a");
+      miss.className = "img-miss";
+      miss.href = src;
+      miss.target = "_blank";
+      miss.rel = "noopener noreferrer";
+      miss.textContent = `图片未能加载：${name}`;
+      img.replaceWith(miss);
     }, true);
     document.addEventListener("click", (e) => {
       if (!e.target.closest(".table-shell")) {
@@ -2059,6 +2319,16 @@
       }
     });
 
+    /* brushing 的另一半：划过正文里的评论块，评论树对应条目也亮起来 */
+    doc.addEventListener("mouseover", (e) => {
+      const block = e.target.closest(".md-block.has-comments");
+      if (!block) return;
+      const line = Number(block.dataset.line) || 0;
+      document.querySelectorAll("#wbDrawerBody .titem.chot").forEach((el) => el.classList.remove("chot"));
+      const hit = document.querySelector(`#wbDrawerBody [data-jump-to="${line}"]`);
+      if (hit) hit.classList.add("chot");
+    });
+
     // drawer interactions (delegate on drawer body)
     const drawer = document.getElementById("wbDrawerBody");
     drawer.addEventListener("click", (e) => {
@@ -2087,7 +2357,18 @@
       if (ev) { D.event = ev.dataset.ev; render(); return; }
       const submit = e.target.closest("#wbSubmit");
       if (submit) submitDrafts();
+      const jump = e.target.closest("[data-jump-to]");
+      if (jump) jumpToCommentLine(Number(jump.dataset.jumpTo));
     });
+    /* brushing：悬停评论树的一条，正文对应块亮一下，反之亦然 */
+    const brush = (on) => (e) => {
+      const item = e.target.closest("[data-jump-to]");
+      if (!item) return;
+      const block = blockAtLine(Number(item.dataset.jumpTo));
+      if (block) block.classList.toggle("cflash", on);
+    };
+    drawer.addEventListener("mouseover", brush(true));
+    drawer.addEventListener("mouseout", brush(false));
     drawer.addEventListener("change", (e) => {
       if (e.target.id !== "wbMergeMethod") return;
       D.merge.method = e.target.value;

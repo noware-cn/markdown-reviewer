@@ -28,9 +28,12 @@ async function boot() {
     SECRET,
   );
   const env = { MOCK_MODE: '1', SESSION_SECRET: SECRET, SERVICE_NAME: 'x', ENVIRONMENT: 'test' };
-  const call = async (p) => {
+  const call = async (p, init = {}) => {
     const res = await worker.fetch(
-      new Request(`https://worker.test${p}`, { headers: { cookie: `sess=${session}` } }),
+      new Request(`https://worker.test${p}`, {
+        ...init,
+        headers: { cookie: `sess=${session}`, ...(init.headers || {}) },
+      }),
       env,
       {},
     );
@@ -87,4 +90,18 @@ test('未收录的 PR 号仍回落到 #11 快照，列表里能点到 #16', asyn
   assert.ok(item, '列表应包含 #16');
   assert.equal(item.state, 'open');
   assert.match(item.title, /中标台账/);
+});
+
+test('回复评论：快照模式直接成功，空内容被拒，路径要求 PR 号与评论号', async () => {
+  const { call } = await boot();
+  const ok = await call('/api/approvals/16/comments/123/replies', {
+    method: 'POST', body: JSON.stringify({ body: '已补依据' }),
+  });
+  assert.equal(ok.status, 200);
+  assert.equal(ok.body.source, 'mock');
+
+  const empty = await call('/api/approvals/16/comments/123/replies', {
+    method: 'POST', body: JSON.stringify({ body: '   ' }),
+  });
+  assert.equal(empty.status, 400);
 });
