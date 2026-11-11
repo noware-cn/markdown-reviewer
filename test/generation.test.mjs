@@ -478,6 +478,55 @@ test('提交条：文件列表被截断时标注数量并指向 GitHub', async (
   assert.ok(app.els.get('wbStats').textContent.includes('1+ 个文件'));
 });
 
+test('选提交失败不会把正在加载的正文丢掉', async () => {
+  const world = makeWorld();
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const D = app.ctx.window.__D;
+
+  delete D.texts[D.revKey]['b.md'];
+  world.gate = (c) => c.url.includes('/file?path=b.md');
+  const slow = app.ctx.window.__selectFile('b.md');
+  await tick();
+  assert.equal(world.gated().length, 1);
+
+  /* 选一个不在列表里的提交：只弹提示，视图仍是「全部改动」 */
+  const picked = await app.ctx.window.__selectCommit('ffffffff');
+  assert.equal(picked, false);
+  assert.equal(D.rev.kind, 'all');
+
+  await releaseGated(world, (c) => c.url.includes('/file?path=b.md'));
+  await slow;
+  const texts = D.texts[D.revKey]['b.md'];
+  assert.ok(texts && texts.headLoaded, '正文仍要落到当前视图，不能卡在「正在加载正文…」');
+});
+
+test('提交列表晚到只刷新下拉，不重建抽屉', async () => {
+  const world = makeWorld();
+  const app = mountApp(world);
+  const isList = (c) => /^\/api\/approvals\/1\/commits$/.test(c.url);
+  world.gate = (c) => c.url.includes('/diff') || isList(c)
+    || c.url.includes('/merge-options') || c.url.includes('/file?');
+
+  const mounted = app.ctx.window.DiffView.mount(1);
+  await tick();
+  world.gated().find((c) => c.url.includes('/1/diff')).release();
+  await tick();
+  await releaseGated(world, (c) => c.url.includes('/file?'));
+  await releaseGated(world, (c) => c.url.includes('/merge-options'));
+  await tick();
+  await tick();
+  assert.ok(world.gated().some(isList), '此时只剩提交列表未返回');
+
+  /* 模拟审核人正在抽屉里写评论：后台请求完成后不该重建抽屉 */
+  app.els.get('wbDrawerBody').innerHTML = 'COMPOSER-SENTINEL';
+  await releaseGated(world, isList);
+  await mounted;
+
+  assert.equal(app.els.get('wbDrawerBody').innerHTML, 'COMPOSER-SENTINEL', '列表到达不应重建抽屉');
+  assert.ok(app.els.get('wbCommitSelect').innerHTML.includes('提交 1'), '下拉框要更新');
+});
+
 test('严格选区定位：多行块取整块范围，单行/代码行仍精确', () => {
   const world = makeWorld();
   const app = mountApp(world);

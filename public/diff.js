@@ -2232,7 +2232,8 @@
         if (D.generation === myGen) {
           D.commits.loading = false;
           D.commits.promise = null;
-          if (D.rev.kind === "all") render();
+          /* 只刷新提交下拉：整页 render 会重建抽屉，把正在写的评论框焦点和光标弄丢 */
+          if (D.rev.kind === "all") syncCommitPicker();
         }
       }
     })();
@@ -2345,7 +2346,8 @@
     } finally {
       if (D.generation === myGen) {
         D.merge.loading = false;
-        if (D.rev.kind === "all") render();
+        /* 正在写评论时不整页重绘：合并区等下一次自然 render 再更新，避免抢走输入焦点 */
+        if (D.rev.kind === "all" && !D.active) render();
       }
     }
   }
@@ -2462,7 +2464,6 @@
 
   async function selectFile(path, force, fromRoute) {
     const myGen = D.generation;
-    const myRev = D.revSeq;
     const myRevKey = D.revKey;
     const myPr = D.n;
     const commit = isCommitView();
@@ -2494,7 +2495,7 @@
       const headPayload = await headRes.json().catch(() => ({}));
       if (!headRes.ok) throw new Error(`加载正文失败（${headRes.status}）：${headPayload.message || ""}`);
       /* 视图已经换掉：不必再取 base 正文，也不要写进新视图的缓存 */
-      if (D.generation !== myGen || D.revSeq !== myRev || D.revKey !== myRevKey) return;
+      if (D.generation !== myGen || D.revKey !== myRevKey) return;
       let basePayload = { text: "", truncated: false };
       const needBase = file.status !== "added" && (!commit || baseRef);
       if (needBase) {
@@ -2505,7 +2506,7 @@
         if (!baseRes.ok) throw new Error(`读取改前正文失败（${baseRes.status}）`);
         basePayload = await baseRes.json().catch(() => ({}));
       }
-      if (D.generation !== myGen || D.revSeq !== myRev || D.revKey !== myRevKey) return;
+      if (D.generation !== myGen || D.revKey !== myRevKey) return;
       setTexts(path, {
         base: basePayload.text || "", head: headPayload.text || "",
         headLoaded: true, baseLoaded: true,
@@ -2514,7 +2515,7 @@
         error: "",
       });
     } catch (err) {
-      if (D.generation !== myGen || D.revSeq !== myRev || D.revKey !== myRevKey) return;
+      if (D.generation !== myGen || D.revKey !== myRevKey) return;
       D.err = err.name === "AbortError" ? "正文加载超时，请重试" : String(err);
       setTexts(path, {
         base: "", head: "", headLoaded: false, baseLoaded: false,
