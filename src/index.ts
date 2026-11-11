@@ -863,6 +863,14 @@ export default {
       const token = session.token;
       if (!token) return json({ status: "error", message: "当前登录会话没有 GitHub 写入令牌，请重新登录。" }, 503);
       try {
+        /* 与评论、Review 一致：已关闭或已合并的 PR 不再接受回复 */
+        const meta = await getPrMeta(env, token, number);
+        if (meta.merged || meta.state !== "open") {
+          return json({
+            status: "error",
+            message: `PR #${number} 已${meta.merged ? "合并" : "关闭"}，不能再回复评论。`,
+          }, 409);
+        }
         const reply = await createReviewCommentReply(env, token, number, commentId, text);
         apiCache.delete(`${repoKey(env)}|/diff/${number}`);
         return json({ ok: true, reply, source: "github" });

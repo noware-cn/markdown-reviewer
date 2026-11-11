@@ -26,7 +26,7 @@ function makeWorld() {
     commitTruncated: false,   // 提交明细的文件列表被截断
   };
   const meta = (n) => ({
-    number: n, title: `PR ${n}`, state: 'open', merged: false,
+    number: n, title: `PR ${n}`, state: world.prState || 'open', merged: Boolean(world.prMerged),
     baseSha: world.prs[n].baseSha, headSha: world.prs[n].headSha, baseRef: 'main', headRef: `f${n}`,
     commits: 1, changedFiles: world.prs[n].files.length, additions: 1, deletions: 1,
     author: 'u', createdAt: '', mergedAt: null, url: `https://github.com/x/y/pull/${n}`,
@@ -97,7 +97,10 @@ function makeWorld() {
     }
     if (m[2] === 'file') {
       const p = u.searchParams.get('path');
-      const body = (world.texts && world.texts[p])
+      const side = u.searchParams.get('side');
+      const body = (side === 'base' && world.texts && world.texts[`${p}@base`])
+        || (side !== 'base' && world.texts && world.texts[p])
+        || (world.texts && world.texts[p])
         || `# ${p} @ ${u.searchParams.get('ref')}\n\n- 项目\n`;
       return { status: 200, ok: true, json: async () => ({ text: body, truncated: false }) };
     }
@@ -751,4 +754,58 @@ test('气泡回复：就地 POST 到 replies，成功后本地补进评论树', 
   assert.equal(world.replies[0].commentId, 31);
   assert.equal(world.replies[0].body, '已补在第 4 节');
   assert.ok(app.els.get('wbDrawerBody').innerHTML.includes('已补在第 4 节'), '回复立刻出现在评论树里');
+});
+
+
+test('只读视图：已关闭 / 已合并的 PR 不出现回复框', async () => {
+  for (const flag of [{ prState: 'closed' }, { prMerged: true }]) {
+    const world = makeWorld();
+    Object.assign(world, flag);
+    world.texts = { 'a.md': '# 标题\n\n第一段内容。\n' };
+    world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n+第一段内容。\n' };
+    world.comments = [
+      { id: 41, path: 'a.md', line: 3, originalLine: 3, body: '看一下这段', author: 'reviewer', url: null, inReplyTo: null },
+    ];
+    const app = mountApp(world);
+    await mountComplete(world, app, 1);
+    const html = app.els.get('wbContent').innerHTML;
+    assert.ok(html.includes('has-comments'), '评论记号还在');
+    assert.equal(html.includes('class="trta"'), false, '只读视图不出回复框');
+    assert.equal(app.els.get('wbDrawerBody').innerHTML.includes('data-act="reply-tree"'), false);
+  }
+});
+
+test('评论树不截断长评论；过期评论标注位置已变', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n第一段内容。\n' };
+  world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n+第一段内容。\n' };
+  const longBody = '这里的结论需要补充三条依据：' + '甲'.repeat(200);
+  world.comments = [
+    { id: 51, path: 'a.md', line: 3, originalLine: 3, body: longBody, author: 'reviewer', url: null, inReplyTo: null },
+    { id: 52, path: 'a.md', line: null, originalLine: 2, body: '旧位置的评论', author: 'reviewer', url: null, inReplyTo: null },
+  ];
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const tree = app.els.get('wbDrawerBody').innerHTML;
+  assert.ok(tree.includes(longBody), '长评论完整显示');
+  assert.ok(tree.includes('位置已变'), '过期评论有标注');
+  const html = app.els.get('wbContent').innerHTML;
+  assert.equal((html.match(/has-comments/g) || []).length, 1, '只有当前行号的评论标在正文上');
+});
+
+test('原文块按 base 提交解析图片，不用 head', async () => {
+  const world = makeWorld();
+  world.texts = {
+    'a.md': '# 标题\n\n![图](images/a%23b.png) 新说明\n',
+    'a.md@base': '# 标题\n\n![图](images/a%23b.png) 旧说明\n',
+  };
+  world.prs[1].baseSha = 'base123456';
+  world.prs[1].headSha = 'head123456';
+  world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n-![图](images/a%23b.png) 旧说明\n+![图](images/a%23b.png) 新说明\n' };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const html = app.els.get('wbContent').innerHTML;
+  assert.ok(html.includes('/base123456/'), '原文用 base 提交');
+  assert.ok(html.includes('/head123456/'), '新文用 head 提交');
+  assert.ok(html.includes('images/a%23b.png'), '路径段编码，%23 不被当成片段');
 });

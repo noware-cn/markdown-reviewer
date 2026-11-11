@@ -2598,3 +2598,6 @@ body.tbl-full-on { overflow: hidden; }
 @media (hover: none) {
   .md-block.has-comments:focus-within .cbubble { opacity: 1; pointer-events: auto; transition-delay: 0; }
 }
+
+/* 「标记」关闭时，大纲里的改动微条也一起收掉（开关落在工作台骨架上，章节面板是它的兄弟节点） */
+.wb-body.marks-off .chapter .cbar { visibility: hidden; }

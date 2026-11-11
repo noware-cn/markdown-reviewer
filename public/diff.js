@@ -287,7 +287,8 @@
       }
       const key = root.id != null ? `c${root.id}` : `c${root.line}-${root.author}`;
       if (!groups.has(key)) {
-        groups.set(key, { key, root, replies: [], line: root.line ?? root.originalLine ?? null });
+        const line = root.line ?? null;
+        groups.set(key, { key, root, replies: [], line, staleLine: line == null ? (root.originalLine ?? null) : null });
       }
       if (root !== c) groups.get(key).replies.push(c);
     }
@@ -302,11 +303,13 @@
   }
 
   /** 正文悬停气泡：先看这一段的线程，需要就回一句；完整讨论仍在评论树里。 */
+  const canReply = () => Boolean(D.meta && D.meta.state === "open" && !D.meta.merged && !isCommitView());
+
   function commentBubbleHTML(threads, b) {
     const shown = threads.slice(0, 3).map((t) => {
       const first = esc((t.root.body || "").split("\n").filter(Boolean)[0] || "").slice(0, 90);
       const replies = t.replies.length ? `<div class="trep">${t.replies.length} 条回复</div>` : "";
-      const reply = D.meta?.merged ? ""
+      const reply = !canReply() ? ""
         : `<div class="trow"><textarea class="trta" rows="2" data-reply-to="${t.root.id}" placeholder="回复 ${esc(t.root.author)}…"></textarea>`
           + `<button type="button" class="btn" data-act="reply" data-reply-to="${t.root.id}">回复</button></div>`;
       return `<div class="thr"><b>${esc(t.root.author)}</b><span class="tln">L${t.line}</span>`
@@ -803,17 +806,19 @@
     return hit ? { owner: hit[1], repo: hit[2] } : null;
   };
   const refOf = () => (isCommitView() ? D.rev.sha : D.meta.headSha);
-  const rawUrlOf = (path) => {
+  const rawUrlOf = (path, ref) => {
     const repo = repoOf();
     if (!repo || !path) return "";
-    return `https://raw.githubusercontent.com/${repo.owner}/${repo.repo}/${refOf()}/${path}`;
+    /* 逐段编码：路径里合法的 # 或 % 不编码会被当成片段/转义，取到别的文件 */
+    const encoded = String(path).split("/").map((seg) => encodeURIComponent(seg)).join("/");
+    return `https://raw.githubusercontent.com/${repo.owner}/${repo.repo}/${encodeURIComponent(ref || refOf())}/${encoded}`;
   };
 
   /**
    * 块内相对地址按「当前提交」解析：图片去 raw，仓库内文件去 raw，
    * 文档链接落到工作台的 /doc 页（同窗口打开，不新开标签）。
    */
-  function resolveBlockUrls(html, file) {
+  function resolveBlockUrls(html, file, ref) {
     if (!html) return html;
     const base = file ? file.path : "";
     const out = html.replace(/\b(src|href)="([^"]*)"/g, (match, attr, value) => {
@@ -821,22 +826,26 @@
       if (!raw || raw.startsWith("#") || /^(https?:|mailto:|tel:|data:|blob:)/i.test(raw)) return match;
       const hit = window.DiffModel.resolveDocLink(raw, base);
       if (hit.kind !== "repo") return match;
-      if (attr === "src") return `src="${esc(rawUrlOf(hit.path))}"`;
+      if (attr === "src") return `src="${esc(rawUrlOf(hit.path, ref))}"`;
       if (hit.isDoc) {
         const hash = hit.anchor ? `#${encodeURIComponent(hit.anchor)}` : "";
         const target = String(hit.path || "").split("/").map(encodeURIComponent).join("/");
-        return `href="/doc/${target}?ref=${encodeURIComponent(refOf())}${hash}"`;
+        return `href="/doc/${target}?ref=${encodeURIComponent(ref || refOf())}${hash}"`;
       }
-      return `href="${esc(rawUrlOf(hit.path))}"`;
+      return `href="${esc(rawUrlOf(hit.path, ref))}"`;
     });
     return out
       .replace(/<a\b[^>]*href="\/doc\/[^"]*"[^>]*>/g, (tag) => tag.replace(/\s+target="_blank"/, ""))
       .replace(/<img\b(?![^>]*\bloading=)/g, '<img loading="lazy" decoding="async"');
   }
 
-  /* 旧文按文档排版渲染，图片与链接同样按提交解析 */
-  const oldDocHtml = (text, file) => window.DiffModel.mdBlocks(text)
-    .map((b) => resolveBlockUrls(b.html, file)).join("");
+  /* 旧文按文档排版渲染，但资源按 base 提交与改前路径解析：否则会显示改后的图片与链接 */
+  const oldDocHtml = (text, file) => {
+    const baseRef = isCommitView() ? (D.rev.parentSha || D.rev.sha) : D.meta?.baseSha;
+    const oldPath = (file && file.previousPath) || (file ? file.path : "");
+    return window.DiffModel.mdBlocks(text)
+      .map((b) => resolveBlockUrls(b.html, { path: oldPath }, baseRef)).join("");
+  };
 
   /** 把新增文本在渲染结果里包一层 <ins>：只标真正变化的片段，找不到就只留页边记号。 */
   function wrapAddedText(html, needles) {
@@ -1352,11 +1361,26 @@
   /** 评论树的一条线程：根评论 + 缩进的回复，整块可点，点了滚到正文对应行。 */
   function treeItemHTML(t) {
     const one = (c, kind) => `<div class="titem ${kind}"${t.line != null ? ` data-jump-to="${t.line}"` : ""}>`
-      + `<div class="tmeta"><b>${esc(c.author)}</b><span class="tln">L${c.line ?? c.originalLine ?? "?"}</span></div>`
-      + `<div class="ttext">${esc((c.body || "").replace(/\n+/g, " ").slice(0, 160))}</div>`
+      + `<div class="tmeta"><b>${esc(c.author)}</b><span class="tln">L${t.line ?? (t.staleLine != null ? `${t.staleLine}（位置已变）` : "?")}</span></div>`
+      + `<div class="ttext">${esc((c.body || "").replace(/\n+/g, " "))}</div>`
       + (c.url ? `<a class="tlink" href="${esc(c.url)}" target="_blank" rel="noopener">GitHub ↗</a>` : "")
       + `</div>`;
-    return `<div class="tthread">${one(t.root, "root")}${t.replies.map((c) => one(c, "reply")).join("")}</div>`;
+    const reply = canReply() && t.root.id != null
+      ? `<div class="trow"><textarea class="trta" rows="1" data-reply-to="${t.root.id}" placeholder="回复 ${esc(t.root.author)}…"></textarea>`
+        + `<button type="button" class="btn" data-act="reply-tree" data-reply-to="${t.root.id}">回复</button></div>`
+      : "";
+    return `<div class="tthread">${one(t.root, "root")}${t.replies.map((c) => one(c, "reply")).join("")}${reply}</div>`;
+  }
+
+  /* 块 → 评论树条目：按块的行范围匹配，多行段落里第 2 行以后的评论也能对上 */
+  function treeItemsForBlock(block) {
+    if (!block) return [];
+    const start = Number(block.dataset.line) || 0;
+    const end = Number(block.dataset.endLine) || start;
+    return [...document.querySelectorAll("#wbDrawerBody [data-jump-to]")].filter((el) => {
+      const line = Number(el.dataset.jumpTo);
+      return line >= start && line <= end;
+    });
   }
 
   /** 回复一条行级评论：成功后本地补进列表，不整页刷新，保住滚动位置与输入焦点。 */
@@ -1388,7 +1412,17 @@
           originalCommitId: target.originalCommitId ?? null,
         });
         rebuildComments();
+        /* 重绘会重建正文里的回复框：先存下未发送的内容，发出去的那条清空 */
+        const box = btn ? btn.parentElement.querySelector(".trta") : null;
+        if (box) box.value = "";
+        const kept = new Map([...document.querySelectorAll("#wbDoc .trta, #wbDrawerBody .trta")]
+          .filter((el) => el.value && el.value.trim())
+          .map((el) => [el.dataset.replyTo, el.value]));
         render();
+        document.querySelectorAll("#wbDoc .trta, #wbDrawerBody .trta").forEach((el) => {
+          const v = kept.get(el.dataset.replyTo);
+          if (v) el.value = v;
+        });
       }
       toast("回复已提交");
     } catch (error) {
@@ -1826,6 +1860,8 @@
 
   /** 拦截文档内链接：PR 文件就地切换，仓库其他文件用引用视图，外链照旧。 */
   function handleDocLink(event, link) {
+    /* 工作台自己生成的文档页链接（相对资源已改写成 /doc/...）不能按仓库路径再解析一遍 */
+    if (String(link.getAttribute("href") || "").startsWith("/doc/")) return false;
     const orgRepo = /github\.com\/([^/]+)\/([^/]+)\//.exec(D.meta?.url || "");
     const resolved = window.DiffModel.resolveDocLink(link.getAttribute("href"), D.ref ? D.ref.path : D.file, {
       host: location.host,
@@ -1995,6 +2031,8 @@
 
     const doc = document.getElementById("wbDoc");
     doc.classList.toggle("marks-off", !D.marks);
+    const shell = document.getElementById("wbBody");
+    if (shell) shell.classList.toggle("marks-off", !D.marks);
     doc.classList.toggle("readonly", isCommitView());
     doc.dataset.mode = D.mode;
     const file = curFile();
@@ -2166,8 +2204,7 @@
       const openTree = e.target.closest('[data-act="open-tree"]');
       if (openTree) {
         document.getElementById("wbBody").classList.add("drawer-open");
-        const line = Number(openTree.closest(".md-block")?.dataset.line) || 0;
-        const jump = document.querySelector(`#wbDrawerBody [data-jump-to="${line}"]`);
+        const jump = treeItemsForBlock(openTree.closest(".md-block"))[0];
         if (jump) jump.scrollIntoView({ block: "nearest" });
         return;
       }
@@ -2264,8 +2301,12 @@
     content.addEventListener("scroll", (e) => {
       const target = e.target;
       if (target && target.classList && target.classList.contains("tscroll")) syncTableScroll(target);
-      if (target && target.id === "wbDoc") syncChapterSpy();
     }, true);
+    /* #wbDoc 是正文的滚动容器，滚动事件不冒泡，只能直接挂在它身上 */
+    const docScroll = document.getElementById("wbDoc");
+    if (docScroll && typeof docScroll.addEventListener === "function") {
+      docScroll.addEventListener("scroll", () => syncChapterSpy());
+    }
     /* 图片按提交解析后仍可能 404：换成一则可点击的占位，不留破图标 */
     content.addEventListener("error", (e) => {
       const img = e.target;
@@ -2323,10 +2364,8 @@
     doc.addEventListener("mouseover", (e) => {
       const block = e.target.closest(".md-block.has-comments");
       if (!block) return;
-      const line = Number(block.dataset.line) || 0;
       document.querySelectorAll("#wbDrawerBody .titem.chot").forEach((el) => el.classList.remove("chot"));
-      const hit = document.querySelector(`#wbDrawerBody [data-jump-to="${line}"]`);
-      if (hit) hit.classList.add("chot");
+      treeItemsForBlock(block).forEach((el) => el.classList.add("chot"));
     });
 
     // drawer interactions (delegate on drawer body)
@@ -2336,6 +2375,12 @@
       if (act) {
         if (act.dataset.act === "merge") { mergePr(); return; }
         if (act.dataset.act === "merge-refresh") { loadMergeOptions(); return; }
+        if (act.dataset.act === "reply-tree") {
+          const id = Number(act.dataset.replyTo);
+          const box = act.parentElement.querySelector(".trta");
+          if (id) sendReply(id, box ? box.value : "", act);
+          return;
+        }
         const ta = document.getElementById("wbcText");
         const text = ta ? ta.value.trim() : "";
         if (act.dataset.act === "cancel") { D.active = null; render(); return; }
