@@ -847,18 +847,45 @@
       .map((b) => resolveBlockUrls(b.html, { path: oldPath }, baseRef)).join("");
   };
 
-  /** 把新增文本在渲染结果里包一层 <ins>：只标真正变化的片段，找不到就只留页边记号。 */
+  /**
+   * 把新增文本在渲染结果里包一层 <ins>。
+   * 按位置匹配：把纯文本片段拼成一条流，用游标保证新增行按文档顺序消费，
+   * 同一段里同一句话出现多次时无法判断哪处是新增，直接不标，只留页边记号。
+   */
   function wrapAddedText(html, needles) {
     const parts = html.split(/(<[^>]+>)/);
-    return parts.map((part) => {
-      if (!part || part.startsWith("<")) return part;
-      let out = part;
-      needles.forEach((needle) => {
-        const at = out.indexOf(needle);
-        if (at < 0) return;
-        out = `${out.slice(0, at)}<ins class="md-ins">${needle}</ins>${out.slice(at + needle.length)}`;
-      });
-      return out;
+    const segs = [];
+    let flat = "";
+    parts.forEach((part, index) => {
+      if (!part || part.startsWith("<")) return;
+      segs.push({ index, start: flat.length, end: flat.length + part.length });
+      flat += part;
+    });
+    if (!segs.length) return html;
+    let cursor = 0;
+    const marks = new Map();
+    for (const needle of needles) {
+      const at = flat.indexOf(needle, cursor);
+      if (at < 0) continue;
+      if (flat.indexOf(needle, at + 1) >= 0) continue;
+      const seg = segs.find((s) => at >= s.start && at + needle.length <= s.end);
+      if (!seg) continue;
+      const list = marks.get(seg.index) || [];
+      list.push({ at: at - seg.start, len: needle.length });
+      marks.set(seg.index, list);
+      cursor = at + needle.length;
+    }
+    if (!marks.size) return html;
+    return parts.map((part, index) => {
+      const list = marks.get(index);
+      if (!list) return part;
+      let out = "";
+      let last = 0;
+      for (const m of list.sort((x, y) => x.at - y.at)) {
+        out += `${part.slice(last, m.at)}<ins class="md-ins">${part.slice(m.at, m.at + m.len)}</ins>`;
+        last = m.at + m.len;
+      }
+      return out + part.slice(last);
     }).join("");
   }
 
@@ -1412,9 +1439,11 @@
           originalCommitId: target.originalCommitId ?? null,
         });
         rebuildComments();
-        /* 重绘会重建正文里的回复框：先存下未发送的内容，发出去的那条清空 */
+        /* 重绘会重建正文里的回复框：先存下未发送的内容与焦点位置，发出去的那条清空 */
         const box = btn ? btn.parentElement.querySelector(".trta") : null;
         if (box) box.value = "";
+        const active = typeof document.activeElement === "object" ? document.activeElement : null;
+        const focusKey = active && active.dataset ? active.dataset.replyTo : null;
         const kept = new Map([...document.querySelectorAll("#wbDoc .trta, #wbDrawerBody .trta")]
           .filter((el) => el.value && el.value.trim())
           .map((el) => [el.dataset.replyTo, el.value]));
@@ -1423,6 +1452,15 @@
           const v = kept.get(el.dataset.replyTo);
           if (v) el.value = v;
         });
+        if (focusKey) {
+          const back = [...document.querySelectorAll(".trta")].find((el) => el.dataset.replyTo === focusKey);
+          if (back && typeof back.focus === "function") {
+            back.focus();
+            if (typeof back.setSelectionRange === "function") {
+              back.setSelectionRange(back.value.length, back.value.length);
+            }
+          }
+        }
       }
       toast("回复已提交");
     } catch (error) {
@@ -2361,12 +2399,16 @@
     });
 
     /* brushing 的另一半：划过正文里的评论块，评论树对应条目也亮起来 */
+    const clearTreeHighlight = () => {
+      document.querySelectorAll("#wbDrawerBody .titem.chot").forEach((el) => el.classList.remove("chot"));
+    };
     doc.addEventListener("mouseover", (e) => {
+      clearTreeHighlight();
       const block = e.target.closest(".md-block.has-comments");
       if (!block) return;
-      document.querySelectorAll("#wbDrawerBody .titem.chot").forEach((el) => el.classList.remove("chot"));
       treeItemsForBlock(block).forEach((el) => el.classList.add("chot"));
     });
+    doc.addEventListener("mouseleave", clearTreeHighlight);
 
     // drawer interactions (delegate on drawer body)
     const drawer = document.getElementById("wbDrawerBody");

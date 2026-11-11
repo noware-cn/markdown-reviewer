@@ -178,7 +178,7 @@ function mountApp(world) {
   ctx.window.DiffModel = modelCtx.window.DiffModel;
 
   const ANCHOR = '  let bound = false;';
-  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__reply = sendReply;\n${ANCHOR}`);
+  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__wrapAdded = wrapAddedText; window.__reply = sendReply;\n${ANCHOR}`);
   vm.runInContext(exposed, ctx);
   return { ctx, els, store };
 }
@@ -808,4 +808,22 @@ test('原文块按 base 提交解析图片，不用 head', async () => {
   assert.ok(html.includes('/base123456/'), '原文用 base 提交');
   assert.ok(html.includes('/head123456/'), '新文用 head 提交');
   assert.ok(html.includes('images/a%23b.png'), '路径段编码，%23 不被当成片段');
+});
+
+
+test('行内新增标记：位置有序；同一段里同一句出现多次时不猜，只留页边记号', () => {
+  const app = mountApp(makeWorld());
+  const wrap = app.ctx.window.__wrapAdded;
+
+  const twice = '<p>目标压到 15 秒，再说一遍目标压到 15 秒。</p>';
+  assert.equal(wrap(twice, ['目标压到 15 秒']), twice, '有歧义时整句都不标');
+
+  const once = wrap('<p>其余不变，目标压到 15 秒。</p>', ['目标压到 15 秒']);
+  assert.ok(once.includes('<ins class="md-ins">目标压到 15 秒</ins>'), '唯一匹配才标');
+
+  const two = wrap('<p>甲段。</p><p>乙段新句。</p>', ['甲段。', '乙段新句。']);
+  assert.equal((two.match(/<ins class="md-ins">/g) || []).length, 2, '多个新增片段各标一次');
+
+  const acrossTags = wrap('<p>前 <b>后</b>。</p>', ['前 后。']);
+  assert.equal(acrossTags.includes('<ins'), false, '跨标签的新增文本不拆标签，只留页边记号');
 });
