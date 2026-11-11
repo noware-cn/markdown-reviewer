@@ -305,15 +305,39 @@
   /** 正文悬停气泡：先看这一段的线程，需要就回一句；完整讨论仍在评论树里。 */
   const canReply = () => Boolean(D.meta && D.meta.state === "open" && !D.meta.merged && !isCommitView());
 
+  /** 回复面板默认收起：正文气泡与评论树共用同一套标记，点「回复」才展开输入框。 */
+  function threadReplyHTML(t, where) {
+    if (!canReply() || t.root.id == null) return "";
+    const key = `${where}:${t.root.id}`;
+    return `<div class="treply">`
+      + `<button type="button" class="treply-open" data-act="reply-toggle" data-draft-key="${key}" aria-expanded="false">回复</button>`
+      + `<div class="tcomposer" data-composer="${key}" hidden>`
+        + `<textarea class="trta" rows="2" data-reply-to="${t.root.id}" data-draft-key="${key}" placeholder="回复 ${esc(t.root.author)}…"></textarea>`
+        + `<button type="button" class="btn" data-act="reply" data-reply-to="${t.root.id}" data-draft-key="${key}">发送</button>`
+      + `</div></div>`;
+  }
+
+  /** 展开 / 收起一条线程的回复面板；收起时草稿保留，重新展开还在。 */
+  function toggleReply(act) {
+    const key = act && act.dataset ? act.dataset.draftKey : "";
+    const box = key ? document.querySelector(`[data-composer="${key}"]`) : null;
+    if (!box) return;
+    const open = box.hidden;
+    box.hidden = !open;
+    act.setAttribute("aria-expanded", String(open));
+    act.textContent = open ? "取消回复" : "回复";
+    if (open) {
+      const ta = box.querySelector(".trta");
+      if (ta) ta.focus();
+    }
+  }
+
   function commentBubbleHTML(threads, b) {
     const shown = threads.slice(0, 3).map((t) => {
       const first = esc(((t.root.body || "").split("\n").filter(Boolean)[0] || "").slice(0, 90));
       const replies = t.replies.length ? `<div class="trep">${t.replies.length} 条回复</div>` : "";
-      const reply = !canReply() ? ""
-        : `<div class="trow"><textarea class="trta" rows="2" data-reply-to="${t.root.id}" data-draft-key="doc:${t.root.id}" placeholder="回复 ${esc(t.root.author)}…"></textarea>`
-          + `<button type="button" class="btn" data-act="reply" data-reply-to="${t.root.id}" data-draft-key="doc:${t.root.id}">回复</button></div>`;
       return `<div class="thr"><b>${esc(t.root.author)}</b><span class="tln">L${t.line}</span>`
-        + `<div class="tmsg">${first}</div>${replies}${reply}</div>`;
+        + `<div class="tmsg">${first}</div>${replies}${threadReplyHTML(t, "doc")}</div>`;
     }).join("");
     const more = threads.length > 3 ? `<div class="tmore">此段还有 ${threads.length - 3} 个线程</div>` : "";
     return `<div class="cbubble" role="dialog" aria-label="第 ${b.startLine} 行附近的评论">`
@@ -419,6 +443,19 @@
         + `</div>`;
     }).join("");
     return { html, hits: shown.length };
+  }
+
+  /** 抽屉收起后在右缘留一个把手，避免「点掉箭头就再也打不开」。 */
+  function syncDrawerHandle() {
+    const btn = document.getElementById("wbDrawerOpen");
+    if (!btn) return;
+    if (document.getElementById("wbBody").classList.contains("drawer-open")) {
+      btn.hidden = true;
+      return;
+    }
+    const total = (D.comments || []).length;
+    btn.textContent = total ? `意见 ${total}` : "意见";
+    btn.hidden = false;
   }
 
   function renderFiles() {
@@ -1395,11 +1432,7 @@
       + `<div class="ttext">${esc((c.body || "").replace(/\n+/g, " "))}</div>`
       + (c.url ? `<a class="tlink" href="${esc(c.url)}" target="_blank" rel="noopener">GitHub ↗</a>` : "")
       + `</div>`;
-    const reply = canReply() && t.root.id != null
-      ? `<div class="trow"><textarea class="trta" rows="1" data-reply-to="${t.root.id}" data-draft-key="tree:${t.root.id}" placeholder="回复 ${esc(t.root.author)}…"></textarea>`
-        + `<button type="button" class="btn" data-act="reply-tree" data-reply-to="${t.root.id}" data-draft-key="tree:${t.root.id}">回复</button></div>`
-      : "";
-    return `<div class="tthread">${one(t.root, "root")}${t.replies.map((c) => one(c, "reply")).join("")}${reply}</div>`;
+    return `<div class="tthread">${one(t.root, "root")}${t.replies.map((c) => one(c, "reply")).join("")}${threadReplyHTML(t, "tree")}</div>`;
   }
 
   /* 块 → 评论树条目：按块的行范围匹配，多行段落里第 2 行以后的评论也能对上 */
@@ -1452,10 +1485,21 @@
         const kept = new Map([...document.querySelectorAll("#wbDoc .trta, #wbDrawerBody .trta")]
           .filter((el) => el.value && el.value.trim())
           .map((el) => [keyOf(el), el.value]));
+        /* 已经展开（或正在写）的面板重绘后仍保持展开，否则用户会被合上 */
+        const opened = new Set([...document.querySelectorAll("[data-composer]")]
+          .filter((el) => !el.hidden)
+          .map((el) => el.dataset.composer));
         render();
         document.querySelectorAll("#wbDoc .trta, #wbDrawerBody .trta").forEach((el) => {
           const v = kept.get(keyOf(el));
           if (v) el.value = v;
+        });
+        document.querySelectorAll("[data-composer]").forEach((box) => {
+          const key = box.dataset.composer;
+          if (!opened.has(key) && !kept.get(key)) return;
+          box.hidden = false;
+          const act = document.querySelector(`[data-act="reply-toggle"][data-draft-key="${key}"]`);
+          if (act) { act.setAttribute("aria-expanded", "true"); act.textContent = "取消回复"; }
         });
         if (focusKey) {
           const back = [...document.querySelectorAll("#wbDoc .trta, #wbDrawerBody .trta")]
@@ -2140,6 +2184,7 @@
     decorateTables(content);
 
     document.getElementById("wbDrawerBody").innerHTML = drawerHTML();
+    syncDrawerHandle();
     // 恢复当前视图的滚动位置，记录本次 key
     const key = D.ref ? `ref:${D.ref.path}` : `${D.revKey}:${D.file}:${D.mode}`;
     D.lastViewKey = key;
@@ -2283,6 +2328,8 @@
       }
       const retry = e.target.closest("[data-retry]");
       if (retry) { if (D.file) selectFile(D.file, true); return; }
+      const replyToggle = e.target.closest('[data-act="reply-toggle"]');
+      if (replyToggle) { toggleReply(replyToggle); return; }
       /* 气泡里的回复：就地提交，不离开正文 */
       const replyBtn = e.target.closest('[data-act="reply"]');
       if (replyBtn) {
@@ -2469,7 +2516,8 @@
       if (act) {
         if (act.dataset.act === "merge") { mergePr(); return; }
         if (act.dataset.act === "merge-refresh") { loadMergeOptions(); return; }
-        if (act.dataset.act === "reply-tree") {
+        if (act.dataset.act === "reply-toggle") { toggleReply(act); return; }
+        if (act.dataset.act === "reply") {
           const id = Number(act.dataset.replyTo);
           const box = act.parentElement.querySelector(".trta");
           if (id) sendReply(id, box ? box.value : "", act);
@@ -3131,9 +3179,15 @@
     }));
     document.getElementById("wbDrawerBtn").addEventListener("click", () => {
       document.getElementById("wbBody").classList.toggle("drawer-open");
+      syncDrawerHandle();
     });
     document.getElementById("wbDrawerFold").addEventListener("click", () => {
       document.getElementById("wbBody").classList.remove("drawer-open");
+      syncDrawerHandle();
+    });
+    document.getElementById("wbDrawerOpen").addEventListener("click", () => {
+      document.getElementById("wbBody").classList.add("drawer-open");
+      syncDrawerHandle();
     });
     document.getElementById("wbNavFold").addEventListener("click", () => {
       document.getElementById("wbBody").classList.toggle("nav-collapsed");

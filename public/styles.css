@@ -2601,3 +2601,41 @@ body.tbl-full-on { overflow: hidden; }
 
 /* 「标记」关闭时，大纲里的改动微条也一起收掉（开关落在工作台骨架上，章节面板是它的兄弟节点） */
 .wb-body.marks-off .chapter .cbar { visibility: hidden; }
+
+/* =====================================================================
+   评论面板：收起后右缘留下的把手 + 折叠式回复
+   ===================================================================== */
+.wb-drawer-open {
+  position: fixed; right: 0; top: 46%; transform: translateY(-50%);
+  z-index: 9;
+  padding: 10px 4px;
+  border: 1px solid var(--border); border-right: 0;
+  border-radius: 8px 0 0 8px;
+  background: var(--sheet);
+  color: var(--muted);
+  font: inherit; font-size: var(--fs-meta); letter-spacing: 1px;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+  box-shadow: -2px 0 10px rgba(20, 26, 32, 0.08);
+}
+.wb-drawer-open:hover { color: var(--text); border-color: var(--text); }
+.wb-drawer-open[hidden] { display: none; }
+
+/* 回复默认收起：一行链接，点开才出现输入框 */
+.treply { margin-top: 4px; }
+.treply-open {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--mod); font: inherit; font-size: 11px;
+}
+.treply-open:hover { text-decoration: underline; }
+.tcomposer { display: flex; gap: 6px; align-items: flex-end; margin-top: 6px; }
+.tcomposer[hidden] { display: none; }
+.tcomposer .trta {
+  flex: 1; min-height: 30px; padding: 4px 7px; resize: vertical;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--ground);
+  color: var(--text); font: inherit; font-size: 11px; line-height: 1.6;
+}
+.tcomposer .btn { padding: 3px 9px; font-size: 11px; }
+
+/* 气泡最多占屏幕一半，不再压住下面的正文 */
+.cbubble { max-height: min(58vh, 440px); overflow: auto; }

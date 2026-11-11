@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Markdown 文档审批工作台 · noware-cn/workspace</title>
-<link rel="stylesheet" href="/styles.css?v=321">
+<link rel="stylesheet" href="/styles.css?v=322">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -177,6 +177,7 @@
   </div>
 </div>
 
+<button class="wb-drawer-open" id="wbDrawerOpen" type="button" title="打开意见面板" hidden>意见</button>
 <button class="selchip" id="dselchip" type="button" hidden>评论所选</button>
 <div class="nav-float" id="navFloat" hidden>
   <button type="button" id="navPrev" title="上一处变更 (p)">↑</button>
@@ -190,15 +191,17 @@
 /* marked + DOMPurify 配置：GFM 表格；链接新窗口打开 */
 window.marked.setOptions({ gfm: true, breaks: false });
 window.DOMPurify.addHook("afterSanitizeAttributes", (node) => {
-  if (node.tagName === "A" && node.getAttribute("href")) {
-    node.setAttribute("target", "_blank");
-    node.setAttribute("rel", "noopener noreferrer");
-  }
+  /* 只给外链加 target：站内锚点（#L12）与 /doc/、相对文档链接要留在工作台里 */
+  if (node.tagName !== "A") return;
+  const href = node.getAttribute("href") || "";
+  if (!/^https?:\/\//i.test(href)) return;
+  node.setAttribute("target", "_blank");
+  node.setAttribute("rel", "noopener noreferrer");
 });
 </script>
 <script src="/route.js?v=2"></script>
 <script src="/diff-model.js?v=211"></script>
-<script src="/diff.js?v=244"></script>
+<script src="/diff.js?v=245"></script>
 <script src="/app.js?v=220"></script>
 </body>
 </html>

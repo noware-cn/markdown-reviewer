@@ -924,3 +924,25 @@ test('内链按 ref 分流：当前视图提交就地切换，其他提交单开
   const docCall2 = world.calls.find((c) => c.url.includes('/api/doc'));
   assert.ok(docCall2 && /ref=c1/.test(docCall2.url), '引用视图按链接的提交取数');
 });
+
+
+test('回复面板默认收起：正文气泡与评论树都先给「回复」按钮，点开才有输入框', async () => {
+  const world = makeWorld();
+  world.texts = {
+    'a.md': '# 标题\n\n这一段有评论。\n',
+  };
+  world.comments = [
+    { id: 71, path: 'a.md', line: 3, side: 'RIGHT', author: 'lijing', body: '这里需要补数据来源', url: null, inReplyTo: null, commitId: 'b1', createdAt: '2026-01-01T00:00:00Z' },
+  ];
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+
+  for (const [where, html] of [
+    ['正文气泡', app.els.get('wbContent').innerHTML],
+    ['评论树', app.els.get('wbDrawerBody').innerHTML],
+  ]) {
+    assert.ok(html.includes('data-act="reply-toggle"'), `${where} 要有「回复」按钮`);
+    assert.ok(/data-composer="(doc|tree):71" hidden/.test(html), `${where} 的输入框默认隐藏`);
+    assert.ok(html.includes('class="trta"'), `${where} 输入框仍在（展开时复用）`);
+  }
+});
