@@ -946,3 +946,25 @@ test('回复面板默认收起：正文气泡与评论树都先给「回复」�
     assert.ok(html.includes('class="trta"'), `${where} 输入框仍在（展开时复用）`);
   }
 });
+
+
+test('未发送的草稿也在正文里标出来：页边虚线 + 气泡条目', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n这一段有评论。\n' };
+  world.comments = [
+    { id: 81, path: 'a.md', line: 3, side: 'RIGHT', author: 'lijing', body: '补数据来源', url: null, inReplyTo: null, commitId: 'b1', createdAt: '2026-01-01T00:00:00Z' },
+  ];
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+
+  const D = app.ctx.window.__D;
+  D.drafts = [{ id: 'd1', path: 'a.md', start: 3, end: 3, body: '这里的口径要说明', headSha: D.meta.headSha }];
+  await app.ctx.window.__selectFile('a.md', true);
+
+  const html = app.els.get('wbContent').innerHTML;
+  assert.ok(html.includes('has-drafts'), '块上要带 has-drafts');
+  assert.ok(html.includes('class="dstripe"'), '页边要有草稿虚线');
+  assert.ok(html.includes('1 条草稿未发送'), '气泡头部要写草稿数');
+  assert.ok(html.includes('这里的口径要说明'), '气泡里要能读到草稿内容');
+  assert.ok(html.includes('has-comments'), '已发出的评论标记不受影响');
+});

@@ -332,17 +332,38 @@
     }
   }
 
-  function commentBubbleHTML(threads, b) {
+  function commentBubbleHTML(threads, b, drafts) {
+    const list = drafts || [];
+    const draftRows = list.slice(0, 2).map((d) => {
+      const first = esc(((d.body || "").split("\n").filter(Boolean)[0] || "").slice(0, 90));
+      return `<div class="thr is-draft"><b>草稿</b><span class="tln">L${d.start} · 未发送</span>`
+        + `<div class="tmsg">${first}</div></div>`;
+    }).join("");
     const shown = threads.slice(0, 3).map((t) => {
       const first = esc(((t.root.body || "").split("\n").filter(Boolean)[0] || "").slice(0, 90));
       const replies = t.replies.length ? `<div class="trep">${t.replies.length} 条回复</div>` : "";
       return `<div class="thr"><b>${esc(t.root.author)}</b><span class="tln">L${t.line}</span>`
         + `<div class="tmsg">${first}</div>${replies}${threadReplyHTML(t, "doc")}</div>`;
     }).join("");
-    const more = threads.length > 3 ? `<div class="tmore">此段还有 ${threads.length - 3} 个线程</div>` : "";
+    const rest = Math.max(threads.length - 3, 0) + Math.max(list.length - 2, 0);
+    const more = rest ? `<div class="tmore">此段还有 ${rest} 条待看</div>` : "";
+    const head = []
+      .concat(threads.length ? [`${threads.length} 个评论线程`] : [])
+      .concat(list.length ? [`${list.length} 条草稿未发送`] : [])
+      .join(" · ");
     return `<div class="cbubble" role="dialog" aria-label="第 ${b.startLine} 行附近的评论">`
-      + `<div class="chead">此段 ${threads.length} 个评论线程</div>${shown}${more}`
+      + `<div class="chead">此段 ${head}</div>${draftRows}${shown}${more}`
       + `<button type="button" class="clink" data-act="open-tree">在评论树中查看 →</button></div>`;
+  }
+
+  /** 本块里还没发出的本地草稿（按行范围重叠判定）。 */
+  function draftsInBlock(file, b) {
+    if (!file || !D.drafts || !D.drafts.length) return [];
+    const start = b.startLine;
+    const end = b.endLine ?? b.startLine;
+    if (start == null) return [];
+    return D.drafts.filter((d) => d.path === file.path
+      && d.start != null && d.start <= end && (d.end ?? d.start) >= start);
   }
 
   /** 行 → 所在正文块：评论树与气泡靠它做「悬停哪里、正文哪里亮」。 */
@@ -1062,10 +1083,14 @@
     bodyHtml = markInlineAdded(bodyHtml, b);
     /* 有评论的块：极浅底色 + 页边窄条，正文不出现数字；气泡悬停才出 */
     const threads = threadsInBlock(file, b);
-    const quiet = threads.length ? " has-comments" : "";
+    const drafts = draftsInBlock(file, b);
+    let quiet = threads.length ? " has-comments" : "";
+    if (drafts.length) quiet += " has-drafts";
     const stripe = threads.length ? `<span class="cstripe" aria-hidden="true"></span>` : "";
-    const bubble = threads.length ? commentBubbleHTML(threads, b) : "";
-    return `<div class="${cls}${quiet}" data-line="${b.startLine}" data-end-line="${b.endLine}" data-block="${b.startLine}">${stripe}${oldBlock}${bodyHtml}${anchor}${bubble}</div>`;
+    // 草稿用页边虚线：读者一眼能分出「已发出的评论」和「我还压在本地没发」
+    const dstripe = drafts.length ? `<span class="dstripe" aria-hidden="true" title="未发送的草稿"></span>` : "";
+    const bubble = threads.length || drafts.length ? commentBubbleHTML(threads, b, drafts) : "";
+    return `<div class="${cls}${quiet}" data-line="${b.startLine}" data-end-line="${b.endLine}" data-block="${b.startLine}">${stripe}${dstripe}${oldBlock}${bodyHtml}${anchor}${bubble}</div>`;
   }
 
   /**

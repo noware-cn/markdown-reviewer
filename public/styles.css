@@ -2639,3 +2639,22 @@ body.tbl-full-on { overflow: hidden; }
 
 /* 气泡最多占屏幕一半，不再压住下面的正文 */
 .cbubble { max-height: min(58vh, 440px); overflow: auto; }
+
+/* 本地草稿：页边一道虚线，与已发出评论的实线窄条区分 */
+.md-block.has-drafts:hover,
+.md-block.has-drafts:focus-within { z-index: 5; }
+.dstripe {
+  position: absolute; left: -3px; top: 3px; bottom: 3px; width: 3px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(180deg, var(--warning) 0 4px, transparent 4px 7px);
+  opacity: 0.55;
+  transition: opacity 0.12s;
+}
+.md-block.has-drafts:hover .dstripe { opacity: 1; }
+.md-block.has-drafts .cbubble { opacity: 0; }
+.md-block.has-drafts:hover .cbubble,
+.md-block.has-drafts:focus-within .cbubble {
+  opacity: 1; pointer-events: auto; transition-delay: 0.18s;
+}
+.cbubble .thr.is-draft b { color: var(--warning); }
+.cbubble .thr.is-draft .tmsg { color: var(--text); font-style: italic; }
