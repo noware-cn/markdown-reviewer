@@ -1442,7 +1442,11 @@
         /* 重绘会重建正文里的回复框：先存下未发送的内容与焦点位置，发出去的那条清空 */
         const box = btn ? btn.parentElement.querySelector(".trta") : null;
         if (box) box.value = "";
+        /* 同一线程在气泡和评论树里各有一个回复框：只在发起回复的那个容器里还原焦点 */
         const active = typeof document.activeElement === "object" ? document.activeElement : null;
+        const hostEl = (active && active.closest && active.closest("#wbDoc, #wbDrawerBody"))
+          || (btn && btn.closest && btn.closest("#wbDoc, #wbDrawerBody"));
+        const scope = hostEl ? `#${hostEl.id}` : "";
         const focusKey = active && active.dataset ? active.dataset.replyTo : null;
         const kept = new Map([...document.querySelectorAll("#wbDoc .trta, #wbDrawerBody .trta")]
           .filter((el) => el.value && el.value.trim())
@@ -1453,7 +1457,7 @@
           if (v) el.value = v;
         });
         if (focusKey) {
-          const back = [...document.querySelectorAll(".trta")].find((el) => el.dataset.replyTo === focusKey);
+          const back = [...document.querySelectorAll(`${scope} .trta`)].find((el) => el.dataset.replyTo === focusKey);
           if (back && typeof back.focus === "function") {
             back.focus();
             if (typeof back.setSelectionRange === "function") {
@@ -1896,10 +1900,35 @@
     }).join("");
   }
 
+  /** /doc/<已编码路径>?ref=..#锚点 → 仓库路径与锚点；不是工作台内部链接则返回 null。 */
+  function docLinkTarget(href) {
+    const hit = /^\/doc\/([^?#]*)(?:\?[^#]*)?(?:#(.*))?$/.exec(String(href || ""));
+    if (!hit) return null;
+    const decode = (seg) => { try { return decodeURIComponent(seg); } catch { return seg; } };
+    return {
+      path: hit[1].split("/").map(decode).join("/"),
+      anchor: hit[2] ? decode(hit[2]) : "",
+    };
+  }
+
   /** 拦截文档内链接：PR 文件就地切换，仓库其他文件用引用视图，外链照旧。 */
   function handleDocLink(event, link) {
-    /* 工作台自己生成的文档页链接（相对资源已改写成 /doc/...）不能按仓库路径再解析一遍 */
-    if (String(link.getAttribute("href") || "").startsWith("/doc/")) return false;
+    /* 明确要新页签的（外链、「新页签打开」）一律交给浏览器 */
+    if (link.getAttribute("target") === "_blank") return false;
+    /* 正文内链已被改写成 /doc/...：先还原成仓库路径，再按原流程就地处理，不能整页跳出工作台 */
+    const direct = docLinkTarget(link.getAttribute("href"));
+    if (direct) {
+      event.preventDefault();
+      if (D.files.some((f) => f.path === direct.path)) {
+        D.ref = null;
+        Promise.resolve(selectFile(direct.path)).then(() => {
+          if (direct.anchor) scrollToAnchor(direct.anchor);
+        });
+      } else {
+        openRefDoc(direct.path, direct.anchor);
+      }
+      return true;
+    }
     const orgRepo = /github\.com\/([^/]+)\/([^/]+)\//.exec(D.meta?.url || "");
     const resolved = window.DiffModel.resolveDocLink(link.getAttribute("href"), D.ref ? D.ref.path : D.file, {
       host: location.host,

@@ -178,7 +178,7 @@ function mountApp(world) {
   ctx.window.DiffModel = modelCtx.window.DiffModel;
 
   const ANCHOR = '  let bound = false;';
-  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__wrapAdded = wrapAddedText; window.__reply = sendReply;\n${ANCHOR}`);
+  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__wrapAdded = wrapAddedText; window.__docTarget = docLinkTarget; window.__reply = sendReply;\n${ANCHOR}`);
   vm.runInContext(exposed, ctx);
   return { ctx, els, store };
 }
@@ -826,4 +826,16 @@ test('行内新增标记：位置有序；同一段里同一句出现多次时�
 
   const acrossTags = wrap('<p>前 <b>后</b>。</p>', ['前 后。']);
   assert.equal(acrossTags.includes('<ins'), false, '跨标签的新增文本不拆标签，只留页边记号');
+});
+
+
+test('内链还原：/doc/ 路径与锚点解码回仓库路径，其他链接不受影响', () => {
+  const app = mountApp(makeWorld());
+  const target = app.ctx.window.__docTarget;
+  const j = (v) => JSON.stringify(v);
+  assert.equal(j(target('/doc/a%20b/c%23d.md?ref=abc#L20')), j({ path: 'a b/c#d.md', anchor: 'L20' }));
+  assert.equal(j(target('/doc/x.md')), j({ path: 'x.md', anchor: '' }));
+  assert.equal(j(target('/doc/x.md?ref=h1')), j({ path: 'x.md', anchor: '' }));
+  assert.equal(target('/pr/1'), null);
+  assert.equal(target('https://github.com/a/b'), null);
 });
