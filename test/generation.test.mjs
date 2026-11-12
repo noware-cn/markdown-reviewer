@@ -182,7 +182,7 @@ function mountApp(world) {
   ctx.window.DiffModel = modelCtx.window.DiffModel;
 
   const ANCHOR = '  let bound = false;';
-  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__docTarget = docLinkTarget; window.__docLink = handleDocLink; window.__resolve = resolveBlockUrls; window.__reply = sendReply;\n${ANCHOR}`);
+  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__docTarget = docLinkTarget; window.__render = render; window.__clickReview = (line) => { const f = curFile(); setReviewed(f, Number(line), !isReviewed(f, Number(line))); render(); }; window.__docLink = handleDocLink; window.__resolve = resolveBlockUrls; window.__reply = sendReply;\n${ANCHOR}`);
   const semCtx = { window: { marked: modelCtx.window.marked }, console };
   semCtx.window.window = semCtx.window;
   semCtx.globalThis = semCtx;
@@ -971,3 +971,63 @@ test('未发送的草稿也在正文里标出来：页边虚线 + 气泡条目',
 
 
 
+
+test('显示状态：最终态不显示改动记号与评论，原始态显示改前正文', async () => {
+  const world = makeWorld();
+  world.texts = {
+    'a.md': '# 标题\n\n改后的段落。\n',
+    'a.md@base': '# 标题\n\n改前的段落。\n',
+  };
+  world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n-改前的段落。\n+改后的段落。\n' };
+  world.comments = [{ id: 1, line: 3, path: 'a.md', side: 'RIGHT', body: '旧意见', user: 'x', replies: [] }];
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const D = app.ctx.window.__D;
+
+  D.docView = 'final';
+  app.ctx.window.__render();
+  let html = app.els.get('wbContent').innerHTML;
+  assert.ok(html.includes('最终稿'), '顶部说明当前是最终稿');
+  assert.ok(html.includes('改后的段落'), '显示定稿正文');
+  assert.ok(!html.includes('is-added') && !html.includes('is-modified-new'), '不显示改动记号');
+  assert.ok(!html.includes('del-block'), '不显示删除块');
+  assert.ok(!html.includes('cstripe'), '不显示评论窄条');
+
+  D.docView = 'original';
+  app.ctx.window.__render();
+  html = app.els.get('wbContent').innerHTML;
+  assert.ok(html.includes('改前的段落'), '原始态显示 base 正文');
+  assert.ok(!html.includes('改后的段落'), '不回显定稿正文');
+
+  D.docView = 'markup';
+  app.ctx.window.__render();
+  assert.ok(app.els.get('wbContent').innerHTML.includes('is-modified-new'), '回到标记态');
+});
+
+test('已阅：切一下整块退成普通正文，计数随之更新，再点恢复', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n改后的段落。\n', 'a.md@base': '# 标题\n\n改前的段落。\n' };
+  world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n-改前的段落。\n+改后的段落。\n' };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const D = app.ctx.window.__D;
+
+  assert.ok(app.els.get('wbReviewCount').textContent.includes('已阅 0/'), '初始计数');
+  assert.ok(/data-review="3"/.test(app.els.get('wbContent').innerHTML), '改动块上有已阅开关');
+  app.ctx.window.__clickReview('3');
+  assert.ok(app.els.get('wbContent').innerHTML.includes('is-reviewed'), '标记后整块退成普通正文');
+  assert.ok(app.els.get('wbReviewCount').textContent.includes('已阅 1/'), '计数加一');
+  assert.ok(D.reviewed && Object.keys(D.reviewed).length === 1, '写入本地偏好');
+});
+
+test('改动清单：抽屉顶部列出改动块，与引擎状态一致', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n甲段。\n\n新段。\n', 'a.md@base': '# 标题\n\n甲段。\n\n乙段。\n' };
+  world.patches = { 'a.md': '@@ -1,4 +1,4 @@\n # 标题\n \n 甲段。\n \n-乙段。\n+新段。\n' };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const drawer = app.els.get('wbDrawerBody').innerHTML;
+  assert.ok(drawer.includes('chg-list'), '抽屉里有改动清单');
+  assert.ok(drawer.includes('chg-chip modified') || drawer.includes('chg-chip added'), '条目带状态标签');
+  assert.ok(drawer.includes('data-review'), '条目可以标已阅');
+});

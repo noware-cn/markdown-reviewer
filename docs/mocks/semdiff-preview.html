@@ -1,0 +1,302 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · 大图 mermaid 与代码块行级标记</title>
+<style>
+  :root { --line:#e3e0d8; --text:#24211c; --muted:#7a746a; --raised:#f6f4ee; --surface:#fffdf8;
+    --add:#1a7f37; --del:#b42318; --mark-add:#1a7f37; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:#faf8f2; color:var(--text);
+    font:15px/1.7 -apple-system,"Segoe UI","Noto Sans SC",sans-serif; }
+  .wrap { max-width:1060px; margin:0 auto; padding:32px 24px 80px; }
+  h1 { font-size:22px; margin:0 0 6px; }
+  .lede { color:var(--muted); margin:0 0 26px; font-size:14px; }
+  section { background:var(--surface); border:1px solid var(--line); border-radius:12px;
+    padding:18px 20px; margin:0 0 22px; }
+  h2 { font-size:16px; margin:0 0 4px; }
+  .sub { color:var(--muted); font-size:13px; margin:0 0 14px; }
+  .metrics { display:flex; flex-wrap:wrap; gap:10px; margin:10px 0 14px; }
+  .metric { background:var(--raised); border-radius:8px; padding:6px 10px; font-size:12.5px;
+    font-variant-numeric:tabular-nums; }
+  .metric b { font-weight:600; }
+  .mm-host { border:1px solid var(--line); border-radius:10px; padding:10px; overflow:auto;
+    max-height:78vh; background:#fff; }
+  .mm-host svg { max-width:100%; height:auto; display:block; margin:0 auto; }
+  .mm-badge { display:inline-block; font-size:11px; padding:1px 7px; border-radius:999px;
+    background:#fff4e5; color:#8a5300; border:1px solid #f0d9b5; margin-left:6px; }
+  pre.code { margin:0; background:#fbfaf6; border:1px solid var(--line); border-radius:10px;
+    overflow:auto; font:12.5px/1.85 ui-monospace,SFMono-Regular,Menlo,monospace; }
+  .code-line { display:block; padding:0 12px 0 0; white-space:pre; position:relative; }
+  .code-line > .ln { display:inline-block; width:46px; text-align:right; padding-right:10px;
+    color:#a9a297; user-select:none; }
+  .code-line.added { background:rgba(26,127,55,.075); }
+  .code-line.added > .ln::after { content:"+"; color:var(--mark-add); font-weight:700; margin-left:4px; }
+  .code-line.removed { background:rgba(180,35,24,.06); }
+  .code-line.removed > .ln::after { content:"−"; color:var(--del); font-weight:700; margin-left:4px; }
+  .split { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+  @media (max-width:820px) { .split { grid-template-columns:1fr; } }
+  .pane-h { font-size:12px; color:var(--muted); margin:0 0 6px; }
+  .note { font-size:12.5px; color:var(--muted); margin:10px 0 0; }
+  .err { color:var(--del); font-size:13px; }
+  .controls { display:flex; gap:8px; margin:0 0 12px; flex-wrap:wrap; }
+  button { font:inherit; font-size:13px; padding:5px 12px; border-radius:8px;
+    border:1px solid var(--line); background:var(--surface); cursor:pointer; }
+  button[aria-pressed="true"] { background:var(--raised); font-weight:600; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>大图 mermaid 与代码块行级标记</h1>
+  <p class="lede">这两块都在真实资源上跑：mermaid 11.4.1 与 highlight.js 11.11.1 由页面按需注入，行级差异用 <code>SemDiff.diffCodeLines</code> 计算，高亮按行拆分用 <code>SemDiff.splitHighlightedLines</code>。数字是这台机器上的实测值，不是估算。</p>
+
+  <section>
+    <h2>1 · 大图 mermaid<span class="mm-badge" id="mmBadge" hidden>图表已变更</span></h2>
+    <p class="sub">50 个节点、4 个子图、带样式类与连线的真实规模。首次渲染包含脚本加载耗时（懒加载），第二次是纯渲染耗时。</p>
+    <div class="controls">
+      <button type="button" id="mmLoad">首次渲染（含懒加载）</button>
+      <button type="button" id="mmAgain">再渲染一次（仅渲染）</button>
+      <button type="button" id="mmBig">插入 120 节点压测</button>
+    </div>
+    <div class="metrics" id="mmMetrics"></div>
+    <div class="mm-host" id="mmHost"><span class="note">点“首次渲染”开始。</span></div>
+    <p class="note">纵向超过 78vh 时容器内滚动；横向超宽同样在容器内滚动，不会把正文撑开。</p>
+  </section>
+
+  <section>
+    <h2>2 · 代码块的行级标记</h2>
+    <p class="sub">改后代码整块高亮后按行拆开，行边界补 <code>&lt;/span&gt;</code> 并重开；跨行的块注释与模板字符串不会断色。新增行标 <code>+</code>，删除行标 <code>−</code>。</p>
+    <div class="controls">
+      <button type="button" data-view="markup" aria-pressed="true">并排（改前 / 改后）</button>
+      <button type="button" data-view="head">只看改后</button>
+    </div>
+    <div class="split" id="codeSplit"></div>
+    <p class="note">只做行级、不做字符级：高亮产物是嵌套标签，字符级插入会把 token 切碎。</p>
+  </section>
+</div>
+
+<script src="../../public/semdiff.js"></script>
+<script>
+(function () {
+  "use strict";
+
+  /* ---------------- 1. mermaid ---------------- */
+  const DIAGRAM = [
+    "flowchart TB",
+    "  classDef svc fill:#eef4ff,stroke:#6b8fd6,color:#1b2b45",
+    "  classDef store fill:#f6f1e7,stroke:#b8955a,color:#3a2f1c",
+    "  classDef edge fill:#eefaf1,stroke:#3f9d63,color:#173d26",
+    "  subgraph 接入层",
+    "    A1[审批单入口]:::svc --> A2[参数校验]:::svc",
+    "    A2 --> A3[鉴权]:::svc",
+    "    A3 --> A4[限流]:::svc",
+    "    A4 --> A5[路由分发]:::svc",
+    "  end",
+    "  subgraph 领域层",
+    "    B1[文档解析]:::svc --> B2[块对齐]:::svc",
+    "    B2 --> B3[行内差异]:::svc",
+    "    B3 --> B4[粒度判定]:::svc",
+    "    B4 --> B5[语义投影]:::svc",
+    "    B5 --> B6[锚点计算]:::svc",
+    "    B6 --> B14[表格列对齐]:::svc",
+    "    B14 --> B15[代码行比较]:::svc",
+    "    B15 --> B16[搬移检测]:::svc",
+    "  end",
+    "  subgraph 存储层",
+    "    C1[(评论缓存)]:::store",
+    "    C2[(正文缓存)]:::store",
+    "    C3[(已阅状态)]:::store",
+    "    C4[(草稿)]:::store",
+    "    C5[(偏好)]:::store",
+    "    C6[(修订历史)]:::store",
+    "    C7[(附件索引)]:::store",
+    "  end",
+    "  subgraph 外部",
+    "    D1[GitHub API]:::edge",
+    "    D2[GitHub 评论]:::edge",
+    "    D3[GitHub 提交]:::edge",
+    "    D4[GitHub 文件树]:::edge",
+    "    D5[GitHub 原始文件]:::edge",
+    "  end",
+    "  A5 --> B1",
+    "  A5 --> C2",
+    "  B2 --> C6",
+    "  B3 --> C1",
+    "  B5 --> C3",
+    "  B5 --> C4",
+    "  B5 --> C5",
+    "  B16 --> C7",
+    "  C1 --> D2",
+    "  C2 --> D5",
+    "  C6 --> D3",
+    "  C7 --> D4",
+    "  A3 --> D1",
+    "  A4 --> D1",
+    "  B14 --> D4",
+    "  B15 --> D5",
+    "  D1 --> D2",
+    "  D1 --> D3",
+    "  B4 --> C5",
+    "  B6 --> C1",
+  ].join("\n");
+
+  const host = document.getElementById("mmHost");
+  const metrics = document.getElementById("mmMetrics");
+  let mermaidReady = null;
+
+  function loadMermaid() {
+    if (mermaidReady) return mermaidReady;
+    mermaidReady = new Promise((resolve, reject) => {
+      const s = document.createElement("script");
+      s.src = "../../public/mermaid.min.js";
+      s.onload = () => {
+        window.mermaid.initialize({ startOnLoad: false, theme: "neutral", securityLevel: "strict" });
+        resolve(window.mermaid);
+      };
+      s.onerror = () => reject(new Error("mermaid 脚本加载失败"));
+      document.head.appendChild(s);
+    });
+    return mermaidReady;
+  }
+
+  function show(rows) {
+    metrics.innerHTML = rows.map(([k, v]) => `<span class="metric">${k} <b>${v}</b></span>`).join("");
+  }
+
+  async function renderDiagram(src, withLoad) {
+    const t0 = performance.now();
+    let loadedMs = 0;
+    try {
+      if (withLoad) {
+        await loadMermaid();
+        loadedMs = performance.now() - t0;
+      } else {
+        await loadMermaid();
+      }
+      const tr = performance.now();
+      const { svg } = await window.mermaid.render("mm" + Date.now(), src);
+      const renderMs = performance.now() - tr;
+      host.innerHTML = svg;
+      const nodes = host.querySelectorAll("g.node").length;
+      const edges = host.querySelectorAll("path.flowchart-link, g.edgePath").length;
+      const svgKb = Math.round(svg.length / 1024);
+      show([
+        ["懒加载脚本", withLoad ? loadedMs.toFixed(0) + " ms" : "已加载"],
+        ["渲染", renderMs.toFixed(0) + " ms"],
+        ["节点", nodes],
+        ["连线", edges],
+        ["SVG", svgKb + " KB"],
+      ]);
+    } catch (e) {
+      host.innerHTML = `<div class="err">渲染失败：${String(e && e.message || e)}</div>`;
+      show([["结果", "失败"]]);
+    }
+  }
+
+  document.getElementById("mmLoad").addEventListener("click", () => renderDiagram(DIAGRAM, true));
+  document.getElementById("mmAgain").addEventListener("click", () => renderDiagram(DIAGRAM, false));
+  document.getElementById("mmBig").addEventListener("click", () => {
+    const lines = ["flowchart LR"];
+    for (let i = 0; i < 120; i += 1) {
+      lines.push(`  N${i}[服务 ${i}]:::svc`);
+      if (i) lines.push(`  N${i - 1} --> N${i}`);
+    }
+    lines.push("  classDef svc fill:#eef4ff,stroke:#6b8fd6");
+    renderDiagram(lines.join("\n"), false);
+  });
+
+  /* ---------------- 2. 代码块行级标记 ---------------- */
+  const BASE_CODE = [
+    "export async function syncRail(docEl, blocks) {",
+    "  /* 每块的真实盒子：",
+    "     标题、表格、代码块高度完全不同 */",
+    "  const total = blocks.length;",
+    "  for (const b of blocks) {",
+    "    const box = b.getBoundingClientRect();",
+    "    rail.appendChild(tick(box.top, box.height, b.kind));",
+    "  }",
+    "  return rail;",
+    "}",
+  ].join("\n");
+
+  const HEAD_CODE = [
+    "export async function syncRail(docEl, blocks, opts = {}) {",
+    "  /* 每块的真实盒子：",
+    "     标题、表格、代码块高度完全不同，",
+    "     所以只量几何，不再按行号比例估算 */",
+    "  const total = blocks.length;",
+    "  const merged = [];",
+    "  for (const b of blocks) {",
+    "    const box = b.getBoundingClientRect();",
+    "    merged.push(tick(box.top, box.height, b.kind));",
+    "  }",
+    "  if (opts.merge) return mergeTicks(merged);",
+    "  return rail;",
+    "}",
+  ].join("\n");
+
+  const split = document.getElementById("codeSplit");
+
+  function highlight(code, lang) {
+    if (window.hljs && window.hljs.getLanguage(lang)) {
+      return window.hljs.highlight(code, { language: lang, ignoreIllegals: true }).value;
+    }
+    return code.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+  }
+
+  function linesOf(html) {
+    return window.SemDiff.splitHighlightedLines(html);
+  }
+
+  function pane(title, code, marks) {
+    const lines = linesOf(highlight(code, "javascript"));
+    const body = lines.map((h, i) => {
+      const n = i + 1;
+      const mark = marks.get(n);
+      const cls = mark ? ` ${mark === "add" ? "added" : "removed"}` : "";
+      return `<span class="code-line${cls}"><span class="ln">${n}</span>${h || " "}</span>`;
+    }).join("");
+    return `<div><p class="pane-h">${title}</p><pre class="code">${body}</pre></div>`;
+  }
+
+  function paint(view) {
+    const ops = window.SemDiff.diffCodeLines(BASE_CODE, HEAD_CODE);
+    const baseMarks = new Map();
+    const headMarks = new Map();
+    for (const op of ops) {
+      if (op.op === "add") headMarks.set(op.line, "add");
+      else baseMarks.set(op.line, "removed");
+    }
+    if (view === "head") {
+      const added = [...headMarks.keys()].length;
+      split.style.gridTemplateColumns = "1fr";
+      split.innerHTML = pane(`改后（${added} 行新增）`, HEAD_CODE, headMarks);
+    } else {
+      split.style.gridTemplateColumns = "";
+      split.innerHTML = pane(`改前（${baseMarks.size} 行删除）`, BASE_CODE, baseMarks)
+        + pane(`改后（${headMarks.size} 行新增）`, HEAD_CODE, headMarks);
+    }
+  }
+
+  document.querySelectorAll("[data-view]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll("[data-view]").forEach((b) => b.setAttribute("aria-pressed", String(b === btn)));
+      paint(btn.dataset.view);
+    });
+  });
+
+  // 高亮脚本按需注入，先给出结构
+  paint("markup");
+  const hs = document.createElement("script");
+  hs.src = "../../public/highlight.min.js";
+  hs.onload = () => paint("markup");
+  hs.onerror = () => { /* 高亮失败仍显示纯文本 */ };
+  document.head.appendChild(hs);
+
+  // 图表已变更角标（模拟改动块）
+  document.getElementById("mmBadge").hidden = false;
+})();
+</script>
+</body>
+</html>
