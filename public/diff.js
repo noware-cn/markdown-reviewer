@@ -174,6 +174,7 @@
     docView: "wb.doc.docview",
     zoom: "wb.doc.zoom",
     focus: "wb.doc.focus",
+    outline: "wb.doc.outline",
     reviewed: "wb.doc.reviewed",
   };
   const readPref = (key, fallback) => {
@@ -950,6 +951,15 @@
     writePref(PREF.zoom, D.zoom);
     applyZoom();
   }
+  /* 全屏阅读的左侧大纲：可隐藏，状态记忆 */
+  function setOutline(on) {
+    D.outline = Boolean(on);
+    writePref(PREF.outline, D.outline);
+    document.body.classList.toggle("outline-off", !D.outline);
+    const btn = document.getElementById("focusOutline");
+    if (btn) btn.setAttribute("aria-pressed", String(D.outline));
+  }
+
   function setFocus(on) {
     D.focus = Boolean(on);
     writePref(PREF.focus, D.focus);
@@ -1032,7 +1042,9 @@
         + `<span class="chg-line">L${u.line == null ? "-" : u.line}</span></li>`;
     }).join("");
     const { done, total } = reviewStats(file);
-    return `<div class="chg-head">改动 · ${total} 处 · 已阅 ${done}</div><ul class="chg-list">${items}</ul>`;
+    // 改动不是评审焦点：默认收起，放在评论之后
+    return `<details class="chg-fold"><summary>改动清单 · ${total} 处 · 已阅 ${done}</summary>`
+      + `<div class="chg-head">改动 · ${total} 处 · 已阅 ${done}</div><ul class="chg-list">${items}</ul></details>`;
   }
 
   /* ---------- 显示状态：最终 / 原始 / 标记 ---------- */
@@ -1669,8 +1681,6 @@
 
   function drawerHTML() {
     const parts = [];
-    const file0 = curFile();
-    if (file0 && D.ref == null) parts.push(changeListHTML(file0));
     // existing comments for current file
     const file = curFile();
     const threads = file ? commentThreads(file) : [];
@@ -1731,6 +1741,8 @@
       parts.push(`<div class="dhint">PR 已合并，GitHub 不允许再新增评论，此页只读。</div>`);
     }
     parts.push(mergeBoxHTML());
+    const changeList = D.ref == null ? changeListHTML(curFile()) : "";
+    if (changeList) parts.push(changeList);
     return parts.join("");
   }
 
@@ -3375,6 +3387,8 @@
     });
     document.getElementById("wbFocusBtn").addEventListener("click", () => setFocus(!D.focus));
     document.getElementById("focusExit").addEventListener("click", () => setFocus(false));
+    const fo = document.getElementById("focusOutline");
+    if (fo) fo.addEventListener("click", () => setOutline(!D.outline));
     document.getElementById("focusZoomIn").addEventListener("click", () => stepZoom(1));
     document.getElementById("focusZoomOut").addEventListener("click", () => stepZoom(-1));
     document.getElementById("focusDrawer").addEventListener("click", () => {
@@ -3414,6 +3428,8 @@
     const rvBtn = document.getElementById("wbReviewCount");
     if (rvBtn) rvBtn.addEventListener("click", () => {
       openDrawer();
+      const fold = document.querySelector("#wbDrawerBody .chg-fold");
+      if (fold) fold.open = true;
       const head = document.querySelector("#wbDrawerBody .chg-head");
       if (head) head.scrollIntoView({ block: "start", behavior: "smooth" });
     });
@@ -3473,6 +3489,7 @@
     D.zoom = clampZoom(readPref(PREF.zoom, 1) || 1);
     D.focus = Boolean(readPref(PREF.focus, false));
     applyZoom();
+    D.outline = readPref(PREF.outline, true) !== false;
     if (D.focus) setFocus(true);
     const rv = readPref(PREF.reviewed, {});
     /* 旧版本键是 revKey|path|line，没有侧别：按 head 认领，避免升级后已阅全清零 */
