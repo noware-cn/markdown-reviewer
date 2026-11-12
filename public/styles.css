@@ -2578,7 +2578,8 @@ body.tbl-full-on { overflow: hidden; }
    ===================================================================== */
 .wb-drawer-open {
   position: fixed; right: 0; top: 46%; transform: translateY(-50%);
-  z-index: 9;
+  /* 工作台是 z-index 40 的整屏层：把手必须排在它之上，否则既看不见也点不到 */
+  z-index: 45;
   padding: 10px 4px;
   border: 1px solid var(--border); border-right: 0;
   border-radius: 8px 0 0 8px;
