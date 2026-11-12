@@ -3456,7 +3456,8 @@
       D.pendingFile = null;
       render();
       if (opts.onRendered) opts.onRendered();
-      loadMergeOptions();
+      /* force 一并透给合并条件：刷新与合并成功回调都要求它是最新的 */
+      loadMergeOptions(force);
       /* 提交列表与正文并行拉取：列表慢只影响提交选择器，不该挡住默认阅读视图 */
       const commitsReady = ensureCommits(force || headChanged);
       if (opts.commit) {
@@ -3628,11 +3629,7 @@
         } };
         // 历史提交视图刷新后仍停在那个提交，不要被切回「全部改动」
         if (isCommitView()) opts.commit = D.rev.sha;
-        try {
-          await load(D.n, true, true, opts);
-          // 合并条件也和 PR 状态有关（别人刚合并、冲突刚出现）：刷新时一并强制拉
-          await loadMergeOptions(true);
-        } finally { refreshBtn.disabled = false; }
+        try { await load(D.n, true, true, opts); } finally { refreshBtn.disabled = false; }
       });
     }
     /* 面板头部的停靠 / 悬浮三态控件 */
