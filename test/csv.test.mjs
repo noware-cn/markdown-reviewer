@@ -78,7 +78,7 @@ function mountView() {
   vm.createContext(ctx);
   const ANCHOR = '  let bound = false;';
   const exposed = diffSrc.replace(ANCHOR,
-    `  window.__D = D; window.__reading = csvReadingHTML; window.__sb = csvSideBySideHTML; window.__locate = locateFromSelection; window.__commentBody = commentBody; window.__tools = csvToolsHTML;\n${ANCHOR}`);
+    `  window.__D = D; window.__reading = csvReadingHTML; window.__locate = locateFromSelection; window.__commentBody = commentBody; window.__tools = csvToolsHTML;\n${ANCHOR}`);
   vm.runInContext(exposed, ctx);
   return ctx.window;
 }
@@ -285,14 +285,6 @@ test('阅读视图：新增文件不逐行标注，但显式说明是新增文�
   assert.ok(!html.includes('is-added'), '整表新增时不再逐行涂色');
 });
 
-test('前后对照：Base 侧标出被替换行，Head 侧标出修改行', () => {
-  const file = mountFile(fileOf({ patch: PATCH_MOD }), BASE, HEAD);
-  const html = win.__sb(file);
-  assert.equal((html.match(/class="csv-table"/g) || []).length, 2);
-  assert.equal((html.match(/<tr class="csv-row is-partial"/g) || []).length, 2);
-  assert.equal((html.match(/<tr class="csv-row is-modified"/g) || []).length, 2);
-  assert.ok(html.includes('data-old-line="2"'), 'Base 行用旧行号定位');
-});
 
 /* ---------- 选区定位 ---------- */
 

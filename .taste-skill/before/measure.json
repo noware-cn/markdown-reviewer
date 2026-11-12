@@ -1,0 +1,1412 @@
+{
+  "desktop": {
+    "list": {
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "overflow": {
+        "scrollW": 1440,
+        "bodyScrollW": 1440
+      },
+      "background": "rgb(242, 243, 245)",
+      "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "sizes": {
+        "16px": 1,
+        "12px": 82,
+        "13px": 3,
+        "14px": 26,
+        "15px": 1
+      },
+      "colors": {
+        "rgb(31, 35, 41)": 25,
+        "rgb(134, 144, 156)": 55,
+        "rgb(199, 0, 11)": 20,
+        "rgb(81, 86, 93)": 5,
+        "rgb(43, 164, 113)": 5,
+        "rgb(51, 51, 51)": 2,
+        "rgb(102, 102, 102)": 1
+      },
+      "radii": {
+        "20px": 1,
+        "12px": 2
+      },
+      "shadows": {
+        "nav-float": "rgba(0, 0, 0, 0.12) 0px 2px 8px 0px"
+      },
+      "topbar": {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0,
+        "children": [],
+        "overflow": false
+      },
+      "list": {
+        "layout": {
+          "x": 0,
+          "y": 56,
+          "w": 1440,
+          "h": 848
+        },
+        "sidebar": {
+          "x": 24,
+          "y": 72,
+          "w": 380,
+          "h": 800
+        },
+        "detail": {
+          "x": 420,
+          "y": 72,
+          "w": 996,
+          "h": 420
+        },
+        "title": "Markdown 审批工作台",
+        "brandSubColor": "rgb(134, 144, 156)",
+        "itemSubColor": "rgb(134, 144, 156)"
+      },
+      "workbench": null
+    },
+    "workbench": {
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "overflow": {
+        "scrollW": 1440,
+        "bodyScrollW": 1440
+      },
+      "background": "rgb(242, 243, 245)",
+      "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "sizes": {
+        "13px": 1,
+        "14px": 4,
+        "12px": 3,
+        "12.5px": 17,
+        "10.5px": 1,
+        "11px": 23,
+        "30px": 1,
+        "16px": 12,
+        "24px": 3,
+        "13.5px": 1,
+        "20px": 1
+      },
+      "colors": {
+        "rgb(81, 86, 93)": 10,
+        "rgb(31, 35, 41)": 22,
+        "rgb(134, 144, 156)": 3,
+        "rgb(199, 0, 11)": 1,
+        "rgb(255, 255, 255)": 17,
+        "rgb(43, 164, 113)": 7,
+        "rgb(31, 94, 255)": 4,
+        "rgb(51, 51, 51)": 2,
+        "rgb(102, 102, 102)": 1
+      },
+      "radii": {
+        "8px": 1,
+        "0px 3px 3px 0px": 9,
+        "3px": 10,
+        "20px": 1,
+        "12px": 2
+      },
+      "shadows": {
+        "md-block is-added": "rgb(43, 164, 113) 3px 0px 0px 0px inset",
+        "nav-float": "rgba(0, 0, 0, 0.12) 0px 2px 8px 0px"
+      },
+      "topbar": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 56,
+        "children": [
+          {
+            "id": "wbBack",
+            "x": 16,
+            "y": 13,
+            "w": 94,
+            "h": 33
+          },
+          {
+            "id": "wbNavToggle",
+            "x": 124,
+            "y": 13,
+            "w": 35,
+            "h": 32
+          },
+          {
+            "id": "wbPrTitle",
+            "x": 172,
+            "y": 18,
+            "w": 315,
+            "h": 22
+          },
+          {
+            "id": "wbStats",
+            "x": 501,
+            "y": 19,
+            "w": 191,
+            "h": 19
+          },
+          {
+            "id": "wb-modes",
+            "x": 714,
+            "y": 14,
+            "w": 312,
+            "h": 30
+          },
+          {
+            "id": "wb-marks",
+            "x": 1048,
+            "y": 19,
+            "w": 96,
+            "h": 19
+          },
+          {
+            "id": "wbDrawerBtn",
+            "x": 1354,
+            "y": 14,
+            "w": 70,
+            "h": 30
+          }
+        ],
+        "overflow": false
+      },
+      "list": {
+        "layout": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "detail": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "title": "Markdown 审批工作台",
+        "brandSubColor": "rgb(134, 144, 156)",
+        "itemSubColor": "rgb(134, 144, 156)"
+      },
+      "workbench": {
+        "nav": {
+          "x": 0,
+          "y": 56,
+          "w": 220,
+          "h": 844
+        },
+        "doc": {
+          "x": 220,
+          "y": 56,
+          "w": 1220,
+          "h": 844
+        },
+        "content": {
+          "x": 290,
+          "y": 56,
+          "w": 1080,
+          "h": 1386
+        },
+        "contentFont": "16px",
+        "contentLine": "29.6px",
+        "drawer": null,
+        "h1": {
+          "text": "项目工作记忆",
+          "x": 290,
+          "y": 144,
+          "w": 1080,
+          "h": 42,
+          "font": "30px"
+        },
+        "paragraphs": [
+          {
+            "x": 290,
+            "y": 249,
+            "w": 1080,
+            "h": 59,
+            "chars": 68,
+            "font": "16px"
+          }
+        ],
+        "modes": [
+          {
+            "text": "阅读改动",
+            "x": 714,
+            "y": 14,
+            "w": 76,
+            "h": 30
+          },
+          {
+            "text": "前后对照",
+            "x": 794,
+            "y": 14,
+            "w": 76,
+            "h": 30
+          },
+          {
+            "text": "统一 Diff",
+            "x": 874,
+            "y": 14,
+            "w": 74,
+            "h": 30
+          },
+          {
+            "text": "分栏 Diff",
+            "x": 952,
+            "y": 14,
+            "w": 74,
+            "h": 30
+          }
+        ]
+      }
+    },
+    "drawer": {
+      "viewport": {
+        "w": 1440,
+        "h": 900
+      },
+      "overflow": {
+        "scrollW": 1440,
+        "bodyScrollW": 1440
+      },
+      "background": "rgb(242, 243, 245)",
+      "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "sizes": {
+        "13px": 2,
+        "14px": 4,
+        "12px": 3,
+        "12.5px": 18,
+        "10.5px": 1,
+        "11px": 23,
+        "30px": 1,
+        "16px": 12,
+        "24px": 3,
+        "13.5px": 1,
+        "20px": 1,
+        "13.3333px": 1,
+        "11.5px": 1
+      },
+      "colors": {
+        "rgb(81, 86, 93)": 10,
+        "rgb(31, 35, 41)": 23,
+        "rgb(134, 144, 156)": 6,
+        "rgb(199, 0, 11)": 1,
+        "rgb(255, 255, 255)": 17,
+        "rgb(43, 164, 113)": 7,
+        "rgb(31, 94, 255)": 4,
+        "rgb(51, 51, 51)": 2,
+        "rgb(102, 102, 102)": 1
+      },
+      "radii": {
+        "8px": 1,
+        "0px 3px 3px 0px": 9,
+        "3px": 10,
+        "20px": 1,
+        "12px": 2
+      },
+      "shadows": {
+        "md-block is-added": "rgb(43, 164, 113) 3px 0px 0px 0px inset",
+        "nav-float": "rgba(0, 0, 0, 0.12) 0px 2px 8px 0px"
+      },
+      "topbar": {
+        "x": 0,
+        "y": 0,
+        "w": 1440,
+        "h": 56,
+        "children": [
+          {
+            "id": "wbBack",
+            "x": 16,
+            "y": 13,
+            "w": 94,
+            "h": 33
+          },
+          {
+            "id": "wbNavToggle",
+            "x": 124,
+            "y": 13,
+            "w": 35,
+            "h": 32
+          },
+          {
+            "id": "wbPrTitle",
+            "x": 172,
+            "y": 18,
+            "w": 315,
+            "h": 22
+          },
+          {
+            "id": "wbStats",
+            "x": 501,
+            "y": 19,
+            "w": 191,
+            "h": 19
+          },
+          {
+            "id": "wb-modes",
+            "x": 714,
+            "y": 14,
+            "w": 312,
+            "h": 30
+          },
+          {
+            "id": "wb-marks",
+            "x": 1048,
+            "y": 19,
+            "w": 96,
+            "h": 19
+          },
+          {
+            "id": "wbDrawerBtn",
+            "x": 1354,
+            "y": 14,
+            "w": 70,
+            "h": 30
+          }
+        ],
+        "overflow": false
+      },
+      "list": {
+        "layout": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "detail": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "title": "Markdown 审批工作台",
+        "brandSubColor": "rgb(134, 144, 156)",
+        "itemSubColor": "rgb(134, 144, 156)"
+      },
+      "workbench": {
+        "nav": {
+          "x": 0,
+          "y": 56,
+          "w": 220,
+          "h": 844
+        },
+        "doc": {
+          "x": 220,
+          "y": 56,
+          "w": 900,
+          "h": 844
+        },
+        "content": {
+          "x": 252,
+          "y": 56,
+          "w": 836,
+          "h": 1386
+        },
+        "contentFont": "16px",
+        "contentLine": "29.6px",
+        "drawer": {
+          "x": 1120,
+          "y": 56,
+          "w": 320,
+          "h": 844
+        },
+        "h1": {
+          "text": "项目工作记忆",
+          "x": 252,
+          "y": 144,
+          "w": 836,
+          "h": 42,
+          "font": "30px"
+        },
+        "paragraphs": [
+          {
+            "x": 252,
+            "y": 249,
+            "w": 836,
+            "h": 59,
+            "chars": 68,
+            "font": "16px"
+          }
+        ],
+        "modes": [
+          {
+            "text": "阅读改动",
+            "x": 714,
+            "y": 14,
+            "w": 76,
+            "h": 30
+          },
+          {
+            "text": "前后对照",
+            "x": 794,
+            "y": 14,
+            "w": 76,
+            "h": 30
+          },
+          {
+            "text": "统一 Diff",
+            "x": 874,
+            "y": 14,
+            "w": 74,
+            "h": 30
+          },
+          {
+            "text": "分栏 Diff",
+            "x": 952,
+            "y": 14,
+            "w": 74,
+            "h": 30
+          }
+        ]
+      }
+    }
+  },
+  "tablet": {
+    "list": {
+      "viewport": {
+        "w": 768,
+        "h": 900
+      },
+      "overflow": {
+        "scrollW": 768,
+        "bodyScrollW": 768
+      },
+      "background": "rgb(242, 243, 245)",
+      "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "sizes": {
+        "16px": 1,
+        "12px": 82,
+        "13px": 3,
+        "14px": 26,
+        "15px": 1
+      },
+      "colors": {
+        "rgb(31, 35, 41)": 25,
+        "rgb(134, 144, 156)": 55,
+        "rgb(199, 0, 11)": 20,
+        "rgb(81, 86, 93)": 5,
+        "rgb(43, 164, 113)": 5,
+        "rgb(51, 51, 51)": 2,
+        "rgb(102, 102, 102)": 1
+      },
+      "radii": {
+        "20px": 1,
+        "12px": 2
+      },
+      "shadows": {
+        "nav-float": "rgba(0, 0, 0, 0.12) 0px 2px 8px 0px"
+      },
+      "topbar": {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0,
+        "children": [],
+        "overflow": false
+      },
+      "list": {
+        "layout": {
+          "x": 0,
+          "y": 56,
+          "w": 768,
+          "h": 2392
+        },
+        "sidebar": {
+          "x": 24,
+          "y": 72,
+          "w": 720,
+          "h": 1908
+        },
+        "detail": {
+          "x": 24,
+          "y": 1996,
+          "w": 720,
+          "h": 420
+        },
+        "title": "Markdown 审批工作台",
+        "brandSubColor": "rgb(134, 144, 156)",
+        "itemSubColor": "rgb(134, 144, 156)"
+      },
+      "workbench": null
+    },
+    "workbench": {
+      "viewport": {
+        "w": 768,
+        "h": 900
+      },
+      "overflow": {
+        "scrollW": 768,
+        "bodyScrollW": 768
+      },
+      "background": "rgb(242, 243, 245)",
+      "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "sizes": {
+        "13px": 1,
+        "14px": 4,
+        "12px": 3,
+        "12.5px": 17,
+        "10.5px": 1,
+        "11px": 23,
+        "30px": 1,
+        "16px": 12,
+        "24px": 3,
+        "13.5px": 1,
+        "20px": 1
+      },
+      "colors": {
+        "rgb(81, 86, 93)": 10,
+        "rgb(31, 35, 41)": 22,
+        "rgb(134, 144, 156)": 3,
+        "rgb(199, 0, 11)": 1,
+        "rgb(255, 255, 255)": 17,
+        "rgb(43, 164, 113)": 7,
+        "rgb(31, 94, 255)": 4,
+        "rgb(51, 51, 51)": 2,
+        "rgb(102, 102, 102)": 1
+      },
+      "radii": {
+        "8px": 1,
+        "0px 3px 3px 0px": 9,
+        "3px": 10,
+        "20px": 1,
+        "12px": 2
+      },
+      "shadows": {
+        "md-block is-added": "rgb(43, 164, 113) 3px 0px 0px 0px inset",
+        "nav-float": "rgba(0, 0, 0, 0.12) 0px 2px 8px 0px"
+      },
+      "topbar": {
+        "x": 0,
+        "y": 0,
+        "w": 768,
+        "h": 56,
+        "children": [
+          {
+            "id": "wbBack",
+            "x": 16,
+            "y": -29,
+            "w": 48,
+            "h": 116
+          },
+          {
+            "id": "wbNavToggle",
+            "x": 78,
+            "y": 13,
+            "w": 35,
+            "h": 32
+          },
+          {
+            "id": "wbPrTitle",
+            "x": 127,
+            "y": 18,
+            "w": 103,
+            "h": 22
+          },
+          {
+            "id": "wbStats",
+            "x": 244,
+            "y": 19,
+            "w": 191,
+            "h": 19
+          },
+          {
+            "id": "wb-modes",
+            "x": 457,
+            "y": -16,
+            "w": 181,
+            "h": 90
+          },
+          {
+            "id": "wb-marks",
+            "x": 660,
+            "y": -29,
+            "w": 36,
+            "h": 115
+          },
+          {
+            "id": "wbDrawerBtn",
+            "x": 710,
+            "y": -6,
+            "w": 42,
+            "h": 70
+          }
+        ],
+        "overflow": false
+      },
+      "list": {
+        "layout": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "detail": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "title": "Markdown 审批工作台",
+        "brandSubColor": "rgb(134, 144, 156)",
+        "itemSubColor": "rgb(134, 144, 156)"
+      },
+      "workbench": {
+        "nav": {
+          "x": 0,
+          "y": 56,
+          "w": 220,
+          "h": 844
+        },
+        "doc": {
+          "x": 220,
+          "y": 56,
+          "w": 548,
+          "h": 844
+        },
+        "content": {
+          "x": 252,
+          "y": 56,
+          "w": 484,
+          "h": 1612
+        },
+        "contentFont": "16px",
+        "contentLine": "29.6px",
+        "drawer": null,
+        "h1": {
+          "text": "项目工作记忆",
+          "x": 252,
+          "y": 144,
+          "w": 484,
+          "h": 42,
+          "font": "30px"
+        },
+        "paragraphs": [
+          {
+            "x": 252,
+            "y": 249,
+            "w": 484,
+            "h": 89,
+            "chars": 68,
+            "font": "16px"
+          }
+        ],
+        "modes": [
+          {
+            "text": "阅读改动",
+            "x": 457,
+            "y": -16,
+            "w": 39,
+            "h": 90
+          },
+          {
+            "text": "前后对照",
+            "x": 499,
+            "y": -16,
+            "w": 39,
+            "h": 90
+          },
+          {
+            "text": "统一 Diff",
+            "x": 542,
+            "y": -16,
+            "w": 46,
+            "h": 90
+          },
+          {
+            "text": "分栏 Diff",
+            "x": 592,
+            "y": -16,
+            "w": 46,
+            "h": 90
+          }
+        ]
+      }
+    },
+    "drawer": {
+      "viewport": {
+        "w": 768,
+        "h": 900
+      },
+      "overflow": {
+        "scrollW": 768,
+        "bodyScrollW": 768
+      },
+      "background": "rgb(242, 243, 245)",
+      "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "sizes": {
+        "13px": 2,
+        "14px": 4,
+        "12px": 3,
+        "12.5px": 18,
+        "10.5px": 1,
+        "11px": 23,
+        "30px": 1,
+        "16px": 12,
+        "24px": 3,
+        "13.5px": 1,
+        "20px": 1,
+        "13.3333px": 1,
+        "11.5px": 1
+      },
+      "colors": {
+        "rgb(81, 86, 93)": 10,
+        "rgb(31, 35, 41)": 23,
+        "rgb(134, 144, 156)": 6,
+        "rgb(199, 0, 11)": 1,
+        "rgb(255, 255, 255)": 17,
+        "rgb(43, 164, 113)": 7,
+        "rgb(31, 94, 255)": 4,
+        "rgb(51, 51, 51)": 2,
+        "rgb(102, 102, 102)": 1
+      },
+      "radii": {
+        "8px": 1,
+        "0px 3px 3px 0px": 9,
+        "3px": 10,
+        "20px": 1,
+        "12px": 2
+      },
+      "shadows": {
+        "md-block is-added": "rgb(43, 164, 113) 3px 0px 0px 0px inset",
+        "wb-drawer": "rgba(0, 0, 0, 0.1) -4px 0px 16px 0px",
+        "nav-float": "rgba(0, 0, 0, 0.12) 0px 2px 8px 0px"
+      },
+      "topbar": {
+        "x": 0,
+        "y": 0,
+        "w": 768,
+        "h": 56,
+        "children": [
+          {
+            "id": "wbBack",
+            "x": 16,
+            "y": -29,
+            "w": 48,
+            "h": 116
+          },
+          {
+            "id": "wbNavToggle",
+            "x": 78,
+            "y": 13,
+            "w": 35,
+            "h": 32
+          },
+          {
+            "id": "wbPrTitle",
+            "x": 127,
+            "y": 18,
+            "w": 103,
+            "h": 22
+          },
+          {
+            "id": "wbStats",
+            "x": 244,
+            "y": 19,
+            "w": 191,
+            "h": 19
+          },
+          {
+            "id": "wb-modes",
+            "x": 457,
+            "y": -16,
+            "w": 181,
+            "h": 90
+          },
+          {
+            "id": "wb-marks",
+            "x": 660,
+            "y": -29,
+            "w": 36,
+            "h": 115
+          },
+          {
+            "id": "wbDrawerBtn",
+            "x": 710,
+            "y": -6,
+            "w": 42,
+            "h": 70
+          }
+        ],
+        "overflow": false
+      },
+      "list": {
+        "layout": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "detail": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "title": "Markdown 审批工作台",
+        "brandSubColor": "rgb(134, 144, 156)",
+        "itemSubColor": "rgb(134, 144, 156)"
+      },
+      "workbench": {
+        "nav": {
+          "x": 0,
+          "y": 56,
+          "w": 1,
+          "h": 844
+        },
+        "doc": {
+          "x": 0,
+          "y": 56,
+          "w": 768,
+          "h": 844
+        },
+        "content": {
+          "x": 32,
+          "y": 56,
+          "w": 704,
+          "h": 1386
+        },
+        "contentFont": "16px",
+        "contentLine": "29.6px",
+        "drawer": {
+          "x": 408,
+          "y": 56,
+          "w": 360,
+          "h": 844
+        },
+        "h1": {
+          "text": "项目工作记忆",
+          "x": 32,
+          "y": 144,
+          "w": 704,
+          "h": 42,
+          "font": "30px"
+        },
+        "paragraphs": [
+          {
+            "x": 32,
+            "y": 249,
+            "w": 704,
+            "h": 59,
+            "chars": 68,
+            "font": "16px"
+          }
+        ],
+        "modes": [
+          {
+            "text": "阅读改动",
+            "x": 457,
+            "y": -16,
+            "w": 39,
+            "h": 90
+          },
+          {
+            "text": "前后对照",
+            "x": 499,
+            "y": -16,
+            "w": 39,
+            "h": 90
+          },
+          {
+            "text": "统一 Diff",
+            "x": 542,
+            "y": -16,
+            "w": 46,
+            "h": 90
+          },
+          {
+            "text": "分栏 Diff",
+            "x": 592,
+            "y": -16,
+            "w": 46,
+            "h": 90
+          }
+        ]
+      }
+    }
+  },
+  "mobile": {
+    "list": {
+      "viewport": {
+        "w": 564,
+        "h": 1221
+      },
+      "overflow": {
+        "scrollW": 564,
+        "bodyScrollW": 564
+      },
+      "background": "rgb(242, 243, 245)",
+      "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "sizes": {
+        "16px": 1,
+        "12px": 82,
+        "13px": 3,
+        "14px": 26,
+        "15px": 1
+      },
+      "colors": {
+        "rgb(31, 35, 41)": 25,
+        "rgb(134, 144, 156)": 55,
+        "rgb(199, 0, 11)": 20,
+        "rgb(81, 86, 93)": 5,
+        "rgb(43, 164, 113)": 5,
+        "rgb(51, 51, 51)": 2,
+        "rgb(102, 102, 102)": 1
+      },
+      "radii": {
+        "20px": 1,
+        "12px": 2
+      },
+      "shadows": {
+        "nav-float": "rgba(0, 0, 0, 0.12) 0px 2px 8px 0px"
+      },
+      "topbar": {
+        "x": 0,
+        "y": 0,
+        "w": 0,
+        "h": 0,
+        "children": [],
+        "overflow": false
+      },
+      "list": {
+        "layout": {
+          "x": 0,
+          "y": 56,
+          "w": 390,
+          "h": 2392
+        },
+        "sidebar": {
+          "x": 24,
+          "y": 72,
+          "w": 342,
+          "h": 1908
+        },
+        "detail": {
+          "x": 24,
+          "y": 1996,
+          "w": 342,
+          "h": 420
+        },
+        "title": "Markdown 审批工作台",
+        "brandSubColor": "rgb(134, 144, 156)",
+        "itemSubColor": "rgb(134, 144, 156)"
+      },
+      "workbench": null
+    },
+    "workbench": {
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "overflow": {
+        "scrollW": 390,
+        "bodyScrollW": 390
+      },
+      "background": "rgb(242, 243, 245)",
+      "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "sizes": {
+        "13px": 1,
+        "14px": 4,
+        "12px": 3,
+        "12.5px": 17,
+        "10.5px": 1,
+        "11px": 23,
+        "30px": 1,
+        "16px": 12,
+        "24px": 3,
+        "13.5px": 1,
+        "20px": 1
+      },
+      "colors": {
+        "rgb(81, 86, 93)": 10,
+        "rgb(31, 35, 41)": 22,
+        "rgb(134, 144, 156)": 3,
+        "rgb(199, 0, 11)": 1,
+        "rgb(255, 255, 255)": 17,
+        "rgb(43, 164, 113)": 7,
+        "rgb(31, 94, 255)": 4,
+        "rgb(51, 51, 51)": 2,
+        "rgb(102, 102, 102)": 1
+      },
+      "radii": {
+        "8px": 1,
+        "0px 3px 3px 0px": 9,
+        "3px": 10,
+        "20px": 1,
+        "12px": 2
+      },
+      "shadows": {
+        "md-block is-added": "rgb(43, 164, 113) 3px 0px 0px 0px inset",
+        "nav-float": "rgba(0, 0, 0, 0.12) 0px 2px 8px 0px"
+      },
+      "topbar": {
+        "x": 0,
+        "y": 0,
+        "w": 390,
+        "h": 56,
+        "children": [
+          {
+            "id": "wbBack",
+            "x": 16,
+            "y": -29,
+            "w": 39,
+            "h": 116
+          },
+          {
+            "id": "wbNavToggle",
+            "x": 69,
+            "y": 13,
+            "w": 35,
+            "h": 32
+          },
+          {
+            "id": "wbStats",
+            "x": 132,
+            "y": 19,
+            "w": 191,
+            "h": 19
+          },
+          {
+            "id": "wb-modes",
+            "x": 344,
+            "y": -16,
+            "w": 181,
+            "h": 90
+          },
+          {
+            "id": "wb-marks",
+            "x": 548,
+            "y": -29,
+            "w": 36,
+            "h": 115
+          },
+          {
+            "id": "wbDrawerBtn",
+            "x": 598,
+            "y": -6,
+            "w": 42,
+            "h": 70
+          }
+        ],
+        "overflow": true
+      },
+      "list": {
+        "layout": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "detail": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "title": "Markdown 审批工作台",
+        "brandSubColor": "rgb(134, 144, 156)",
+        "itemSubColor": "rgb(134, 144, 156)"
+      },
+      "workbench": {
+        "nav": {
+          "x": 0,
+          "y": 56,
+          "w": 220,
+          "h": 788
+        },
+        "doc": {
+          "x": 220,
+          "y": 56,
+          "w": 170,
+          "h": 788
+        },
+        "content": {
+          "x": 252,
+          "y": 56,
+          "w": 106,
+          "h": 4219
+        },
+        "contentFont": "16px",
+        "contentLine": "29.6px",
+        "drawer": null,
+        "h1": {
+          "text": "项目工作记忆",
+          "x": 252,
+          "y": 144,
+          "w": 106,
+          "h": 84,
+          "font": "30px"
+        },
+        "paragraphs": [
+          {
+            "x": 252,
+            "y": 291,
+            "w": 106,
+            "h": 355,
+            "chars": 68,
+            "font": "16px"
+          }
+        ],
+        "modes": [
+          {
+            "text": "阅读改动",
+            "x": 344,
+            "y": -16,
+            "w": 39,
+            "h": 90
+          },
+          {
+            "text": "前后对照",
+            "x": 387,
+            "y": -16,
+            "w": 39,
+            "h": 90
+          },
+          {
+            "text": "统一 Diff",
+            "x": 429,
+            "y": -16,
+            "w": 46,
+            "h": 90
+          },
+          {
+            "text": "分栏 Diff",
+            "x": 480,
+            "y": -16,
+            "w": 46,
+            "h": 90
+          }
+        ]
+      }
+    },
+    "drawer": {
+      "viewport": {
+        "w": 390,
+        "h": 844
+      },
+      "overflow": {
+        "scrollW": 390,
+        "bodyScrollW": 390
+      },
+      "background": "rgb(242, 243, 245)",
+      "font": "-apple-system, BlinkMacSystemFont, \"Segoe UI\", \"PingFang SC\", \"Microsoft YaHei\", sans-serif",
+      "sizes": {
+        "13px": 2,
+        "14px": 4,
+        "12px": 3,
+        "12.5px": 18,
+        "10.5px": 1,
+        "11px": 23,
+        "30px": 1,
+        "16px": 12,
+        "24px": 3,
+        "13.5px": 1,
+        "20px": 1,
+        "13.3333px": 1,
+        "11.5px": 1
+      },
+      "colors": {
+        "rgb(81, 86, 93)": 10,
+        "rgb(31, 35, 41)": 23,
+        "rgb(134, 144, 156)": 6,
+        "rgb(199, 0, 11)": 1,
+        "rgb(255, 255, 255)": 17,
+        "rgb(43, 164, 113)": 7,
+        "rgb(31, 94, 255)": 4,
+        "rgb(51, 51, 51)": 2,
+        "rgb(102, 102, 102)": 1
+      },
+      "radii": {
+        "8px": 1,
+        "0px 3px 3px 0px": 9,
+        "3px": 10,
+        "20px": 1,
+        "12px": 2
+      },
+      "shadows": {
+        "md-block is-added": "rgb(43, 164, 113) 3px 0px 0px 0px inset",
+        "wb-drawer": "rgba(0, 0, 0, 0.1) -4px 0px 16px 0px",
+        "nav-float": "rgba(0, 0, 0, 0.12) 0px 2px 8px 0px"
+      },
+      "topbar": {
+        "x": 0,
+        "y": 0,
+        "w": 390,
+        "h": 56,
+        "children": [
+          {
+            "id": "wbBack",
+            "x": 16,
+            "y": -29,
+            "w": 39,
+            "h": 116
+          },
+          {
+            "id": "wbNavToggle",
+            "x": 69,
+            "y": 13,
+            "w": 35,
+            "h": 32
+          },
+          {
+            "id": "wbStats",
+            "x": 132,
+            "y": 19,
+            "w": 191,
+            "h": 19
+          },
+          {
+            "id": "wb-modes",
+            "x": 344,
+            "y": -16,
+            "w": 181,
+            "h": 90
+          },
+          {
+            "id": "wb-marks",
+            "x": 548,
+            "y": -29,
+            "w": 36,
+            "h": 115
+          },
+          {
+            "id": "wbDrawerBtn",
+            "x": 598,
+            "y": -6,
+            "w": 42,
+            "h": 70
+          }
+        ],
+        "overflow": true
+      },
+      "list": {
+        "layout": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "sidebar": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "detail": {
+          "x": 0,
+          "y": 0,
+          "w": 0,
+          "h": 0
+        },
+        "title": "Markdown 审批工作台",
+        "brandSubColor": "rgb(134, 144, 156)",
+        "itemSubColor": "rgb(134, 144, 156)"
+      },
+      "workbench": {
+        "nav": {
+          "x": 0,
+          "y": 56,
+          "w": 1,
+          "h": 788
+        },
+        "doc": {
+          "x": 0,
+          "y": 56,
+          "w": 390,
+          "h": 788
+        },
+        "content": {
+          "x": 32,
+          "y": 56,
+          "w": 326,
+          "h": 1893
+        },
+        "contentFont": "16px",
+        "contentLine": "29.6px",
+        "drawer": {
+          "x": 39,
+          "y": 56,
+          "w": 351,
+          "h": 788
+        },
+        "h1": {
+          "text": "项目工作记忆",
+          "x": 32,
+          "y": 144,
+          "w": 326,
+          "h": 42,
+          "font": "30px"
+        },
+        "paragraphs": [
+          {
+            "x": 32,
+            "y": 249,
+            "w": 326,
+            "h": 118,
+            "chars": 68,
+            "font": "16px"
+          }
+        ],
+        "modes": [
+          {
+            "text": "阅读改动",
+            "x": 344,
+            "y": -16,
+            "w": 39,
+            "h": 90
+          },
+          {
+            "text": "前后对照",
+            "x": 387,
+            "y": -16,
+            "w": 39,
+            "h": 90
+          },
+          {
+            "text": "统一 Diff",
+            "x": 429,
+            "y": -16,
+            "w": 46,
+            "h": 90
+          },
+          {
+            "text": "分栏 Diff",
+            "x": 480,
+            "y": -16,
+            "w": 46,
+            "h": 90
+          }
+        ]
+      }
+    }
+  }
+}

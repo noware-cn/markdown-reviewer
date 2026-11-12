@@ -1,0 +1,1317 @@
+{
+ "url": "http://127.0.0.1:8788/pr/16/blob/docs/%E5%B8%82%E5%9C%BA%E8%B0%83%E6%9F%A5/%E5%8C%BA%E5%9F%9F%E9%93%B6%E8%A1%8C%E6%99%BA%E8%83%BD%E7%A0%94%E5%8F%91/README.md",
+ "at": "2026-11-09T22:16:43.870Z",
+ "allow": [],
+ "viewports": [
+  {
+   "width": 1440,
+   "height": 900,
+   "load": "load",
+   "screens": 1,
+   "filled": [
+    0.91
+   ],
+   "motion": {
+    "elements": 1,
+    "css": 1,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "page": {
+     "height": 900,
+     "screens": 1,
+     "words": 413,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 0,
+     "sections": 3,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [
+      "☰"
+     ],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "# 区域银行智能研发中标台账（2024-12 — 2026-11）",
+     "words": 4,
+     "chars": 33,
+     "lines": 1,
+     "size": 28,
+     "vw": 1.9,
+     "font": "PingFang SC",
+     "weight": 600,
+     "tracking": -0.01,
+     "leading": 1.35,
+     "top": 190,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": null,
+    "headings": [
+     {
+      "text": "#区域银行智能研发中标台账（2024-12 — 2026-11）",
+      "words": 3,
+      "chars": 32,
+      "lines": 1,
+      "size": 28,
+      "vw": 1.9,
+      "font": "PingFang SC",
+      "weight": 600,
+      "tracking": -0.01,
+      "leading": 1.35,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "right",
+      "widthRatio": 0.54,
+      "top": 190,
+      "tag": "h1",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 1,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": null,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "PingFang SC",
+       "share": 0.78,
+       "mono": false
+      },
+      {
+       "family": "ui-monospace",
+       "share": 0.22,
+       "mono": false
+      }
+     ],
+     "familyCount": 2,
+     "sizes": [
+      10,
+      11,
+      12,
+      13,
+      14,
+      16,
+      20,
+      28
+     ],
+     "sizeCount": 8,
+     "notLoaded": [],
+     "body": {
+      "font": "PingFang SC",
+      "size": 16,
+      "leading": 1.8,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 17.8
+     },
+     "measureChars": 98,
+     "max": {
+      "size": 28,
+      "vw": 1.9,
+      "font": "PingFang SC",
+      "text": "区域银行智能研发中标台账（2024-12 — 2026-11）"
+     },
+     "monoShare": 0.22,
+     "monoProseShare": 0.05,
+     "monoFamilies": [
+      "ui-monospace"
+     ],
+     "monoSamples": [
+      "github.com/noware-cn/workspace/pull/16",
+      "A",
+      "docs/市场调查/区域银行智能研发/",
+      "README.md",
+      "L1 +",
+      "L3 +"
+     ],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.06,
+     "centerShare": 0.02,
+     "smallText": 8
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#f6f7f8",
+     "bodyBgHsl": {
+      "h": 210,
+      "s": 0.12,
+      "l": 0.97
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#f6f7f8",
+       "top": 0,
+       "hsl": {
+        "h": 210,
+        "s": 0.12,
+        "l": 0.97
+       }
+      },
+      {
+       "color": "#ffffff",
+       "top": 52,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#16181a",
+       "share": 0.87
+      },
+      {
+       "color": "#5c6066",
+       "share": 0.08
+      },
+      {
+       "color": "#6b7280",
+       "share": 0.03
+      },
+      {
+       "color": "#1e7b4f",
+       "share": 0.02
+      },
+      {
+       "color": "#cdd1d5",
+       "share": 0
+      }
+     ],
+     "button": {
+      "bg": "#ffffff",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 1
+      },
+      "fg": "#16181a"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 2,
+     "inHero": 2,
+     "radius": 6,
+     "height": 30,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "← 返回列表",
+      "意见 0"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 2,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 0,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 10,
+     "hairlineSamples": [
+      "div.tnest 217px",
+      "div.added-note 780px",
+      "h2 780px",
+      "div.tbar 778px",
+      "h2 780px"
+     ],
+     "outlinedBoxes": 3,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 3,
+     "boxRadius": 10,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": false,
+     "height": 0,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "pageH": 900,
+    "margins": {
+     "left": 462,
+     "right": 643
+    },
+    "sections": [],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "#16 data: 区域银行智能研发中标台账（84 条 A 类，2024-12 至 2026-11）",
+      "size": 16,
+      "top": 15,
+      "firstScreen": true
+     },
+     {
+      "text": "#区域银行智能研发中标台账（2024-12 — 2026-11）",
+      "size": 28,
+      "top": 190,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [
+     {
+      "text": "变更文件",
+      "side": "left",
+      "px": 10
+     }
+    ],
+    "edges": [],
+    "leftBlocks": 0,
+    "bodySize": 16,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0.1,
+    "voidBox": {
+     "x": 1260,
+     "y": 120,
+     "w": 180,
+     "h": 720
+    }
+   },
+   "app": {
+    "viewport": {
+     "w": 1440,
+     "h": 900
+    },
+    "dark": false,
+    "ground": "#f6f7f8",
+    "sidebar": null,
+    "topbar": {
+     "h": 52
+    },
+    "canvas": {
+     "left": 23,
+     "right": 100
+    },
+    "hero": {
+     "text": "# 区域银行智能研发中标台账（2024-12 — 2026-11）",
+     "words": 4,
+     "chars": 33,
+     "lines": 1,
+     "size": 28,
+     "vw": 1.9,
+     "font": "PingFang SC",
+     "weight": 600,
+     "tracking": -0.01,
+     "leading": 1.35,
+     "top": 190,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 1,
+     "firstScreen": 1,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 3,
+     "radii": [
+      [
+       10,
+       2
+      ],
+      [
+       16,
+       1
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 11,
+     "tabularShare": 1,
+     "kpiMax": 11.5
+    },
+    "rows": {
+     "count": 24,
+     "median": 40
+    },
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.19,
+     "tiny": 0,
+     "tinySamples": [],
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      20,
+      22,
+      28
+     ]
+    },
+    "title": null,
+    "colourShare": 0
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 768,
+   "height": 1024,
+   "load": "load",
+   "screens": 1,
+   "filled": [
+    0.99
+   ],
+   "motion": {
+    "elements": 1,
+    "css": 1,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "page": {
+     "height": 1024,
+     "screens": 1,
+     "words": 335,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 0,
+     "sections": 3,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [
+      "☰"
+     ],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "# 区域银行智能研发中标台账（2024-12 — 2026-11）",
+     "words": 4,
+     "chars": 33,
+     "lines": 1,
+     "size": 28,
+     "vw": 3.6,
+     "font": "PingFang SC",
+     "weight": 600,
+     "tracking": -0.01,
+     "leading": 1.35,
+     "top": 217,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": null,
+    "headings": [
+     {
+      "text": "#区域银行智能研发中标台账（2024-12 — 2026-11）",
+      "words": 3,
+      "chars": 32,
+      "lines": 1,
+      "size": 28,
+      "vw": 3.6,
+      "font": "PingFang SC",
+      "weight": 600,
+      "tracking": -0.01,
+      "leading": 1.35,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.91,
+      "top": 217,
+      "tag": "h1",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 1,
+     "maxLines": 1,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": null,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "PingFang SC",
+       "share": 0.75,
+       "mono": false
+      },
+      {
+       "family": "ui-monospace",
+       "share": 0.25,
+       "mono": false
+      }
+     ],
+     "familyCount": 2,
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      16,
+      20,
+      28
+     ],
+     "sizeCount": 7,
+     "notLoaded": [],
+     "body": {
+      "font": "PingFang SC",
+      "size": 16,
+      "leading": 1.8,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 17.8
+     },
+     "measureChars": 88,
+     "max": {
+      "size": 28,
+      "vw": 3.6,
+      "font": "PingFang SC",
+      "text": "区域银行智能研发中标台账（2024-12 — 2026-11）"
+     },
+     "monoShare": 0.25,
+     "monoProseShare": 0.06,
+     "monoFamilies": [
+      "ui-monospace"
+     ],
+     "monoSamples": [
+      "github.com/noware-cn/workspace/pull/16",
+      "A",
+      "docs/市场调查/区域银行智能研发/",
+      "README.md",
+      "L1 +",
+      "L3 +"
+     ],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.07,
+     "centerShare": 0.02,
+     "smallText": 3
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#f6f7f8",
+     "bodyBgHsl": {
+      "h": 210,
+      "s": 0.12,
+      "l": 0.97
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#f6f7f8",
+       "top": 0,
+       "hsl": {
+        "h": 210,
+        "s": 0.12,
+        "l": 0.97
+       }
+      },
+      {
+       "color": "#ffffff",
+       "top": 79,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#16181a",
+       "share": 0.9
+      },
+      {
+       "color": "#5c6066",
+       "share": 0.08
+      },
+      {
+       "color": "#6b7280",
+       "share": 0.02
+      },
+      {
+       "color": "#cdd1d5",
+       "share": 0
+      },
+      {
+       "color": "#1e7b4f",
+       "share": 0
+      }
+     ],
+     "button": {
+      "bg": "#ffffff",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 1
+      },
+      "fg": "#16181a"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 1,
+     "inHero": 1,
+     "radius": 6,
+     "height": 30,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "意见 0"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 2,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 2,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 9,
+     "hairlineSamples": [
+      "div.added-note 702px",
+      "h2 702px",
+      "div.tbar 700px",
+      "h2 702px",
+      "div.tbar 700px"
+     ],
+     "outlinedBoxes": 3,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 3,
+     "boxRadius": 10,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": false,
+     "height": 0,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "pageH": 1024,
+    "margins": {
+     "left": 44,
+     "right": 403
+    },
+    "sections": [],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "#16 data: 区域银行智能研发中标台账（84 条 A 类，2024-12 至 2026-11）",
+      "size": 14,
+      "top": 13,
+      "firstScreen": true
+     },
+     {
+      "text": "#区域银行智能研发中标台账（2024-12 — 2026-11）",
+      "size": 28,
+      "top": 217,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [
+     {
+      "text": "阅读改动",
+      "side": "left",
+      "px": 12
+     }
+    ],
+    "edges": [],
+    "leftBlocks": 0,
+    "bodySize": 16,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": {
+    "viewport": {
+     "w": 768,
+     "h": 1024
+    },
+    "dark": false,
+    "ground": "#f6f7f8",
+    "sidebar": null,
+    "topbar": {
+     "h": 79
+    },
+    "canvas": {
+     "left": 33,
+     "right": 34
+    },
+    "hero": {
+     "text": "# 区域银行智能研发中标台账（2024-12 — 2026-11）",
+     "words": 4,
+     "chars": 33,
+     "lines": 1,
+     "size": 28,
+     "vw": 3.6,
+     "font": "PingFang SC",
+     "weight": 600,
+     "tracking": -0.01,
+     "leading": 1.35,
+     "top": 217,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 1,
+     "firstScreen": 1,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 3,
+     "radii": [
+      [
+       10,
+       2
+      ],
+      [
+       16,
+       1
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 0,
+     "tabularShare": null,
+     "kpiMax": null
+    },
+    "rows": {
+     "count": 24,
+     "median": 40
+    },
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.18,
+     "tiny": 2,
+     "tinySamples": [
+      "← 返回列表 0px",
+      "显示变更标记 0px"
+     ],
+     "sizes": [
+      0,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      20,
+      22,
+      28
+     ]
+    },
+    "title": null,
+    "colourShare": 0.001
+   },
+   "consoleErrors": []
+  },
+  {
+   "width": 390,
+   "height": 844,
+   "load": "load",
+   "screens": 1,
+   "filled": [
+    0.99
+   ],
+   "motion": {
+    "elements": 1,
+    "css": 1,
+    "transitions": 0,
+    "scripted": 0,
+    "videos": 0,
+    "playingVideos": 0
+   },
+   "metrics": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "page": {
+     "height": 844,
+     "screens": 1,
+     "words": 335,
+     "img": 0,
+     "video": 0,
+     "canvas": 0,
+     "svg": 0,
+     "sections": 3,
+     "horizontalOverflow": 0,
+     "overflowCulprits": [],
+     "uiFragments": 0,
+     "uiAbuse": false,
+     "realPictures": 0,
+     "videoCount": 0,
+     "uiPictures": 0,
+     "pictureSamples": [],
+     "blendText": 0,
+     "sideScrollers": 0,
+     "brokenImages": [],
+     "emoji": [
+      "☰"
+     ],
+     "videosNoPoster": 0
+    },
+    "hero": {
+     "text": "# 区域银行智能研发中标台账（2024-12 — 2026-11）",
+     "words": 4,
+     "chars": 33,
+     "lines": 2,
+     "size": 24,
+     "vw": 6.2,
+     "font": "PingFang SC",
+     "weight": 600,
+     "tracking": -0.01,
+     "leading": 1.35,
+     "top": 229,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "h1": null,
+    "headings": [
+     {
+      "text": "#区域银行智能研发中标台账（2024-12 — 2026-11）",
+      "words": 3,
+      "chars": 32,
+      "lines": 2,
+      "size": 24,
+      "vw": 6.2,
+      "font": "PingFang SC",
+      "weight": 600,
+      "tracking": -0.01,
+      "leading": 1.35,
+      "upper": false,
+      "italic": false,
+      "mono": false,
+      "align": "left",
+      "position": "center",
+      "widthRatio": 0.85,
+      "top": 229,
+      "tag": "h1",
+      "kind": "heading"
+     }
+    ],
+    "headingSummary": {
+     "count": 1,
+     "maxLines": 2,
+     "over2Lines": 0,
+     "statements": 0,
+     "centered": 0,
+     "medianWords": null,
+     "mixedFontHeadings": 0
+    },
+    "type": {
+     "families": [
+      {
+       "family": "PingFang SC",
+       "share": 0.75,
+       "mono": false
+      },
+      {
+       "family": "ui-monospace",
+       "share": 0.25,
+       "mono": false
+      }
+     ],
+     "familyCount": 2,
+     "sizes": [
+      11,
+      12,
+      13,
+      14,
+      16,
+      17,
+      19,
+      24
+     ],
+     "sizeCount": 8,
+     "notLoaded": [],
+     "body": {
+      "font": "PingFang SC",
+      "size": 16,
+      "leading": 1.8,
+      "weight": 400,
+      "tracking": 0,
+      "contrast": 17.8
+     },
+     "measureChars": 42,
+     "max": {
+      "size": 24,
+      "vw": 6.2,
+      "font": "PingFang SC",
+      "text": "区域银行智能研发中标台账（2024-12 — 2026-11）"
+     },
+     "monoShare": 0.25,
+     "monoProseShare": 0.06,
+     "monoFamilies": [
+      "ui-monospace"
+     ],
+     "monoSamples": [
+      "github.com/noware-cn/workspace/pull/16",
+      "A",
+      "docs/市场调查/区域银行智能研发/",
+      "README.md",
+      "L1 +",
+      "L3 +"
+     ],
+     "microLabels": 0,
+     "microLabelShare": 0,
+     "microSamples": [],
+     "upperShare": 0.07,
+     "centerShare": 0.02,
+     "smallText": 3
+    },
+    "eyebrows": [],
+    "numbered": [],
+    "color": {
+     "bodyBg": "#f6f7f8",
+     "bodyBgHsl": {
+      "h": 210,
+      "s": 0.12,
+      "l": 0.97
+     },
+     "dark": false,
+     "sectionBgs": [
+      {
+       "color": "#f6f7f8",
+       "top": 0,
+       "hsl": {
+        "h": 210,
+        "s": 0.12,
+        "l": 0.97
+       }
+      },
+      {
+       "color": "#ffffff",
+       "top": 84,
+       "hsl": {
+        "h": 0,
+        "s": 0,
+        "l": 1
+       }
+      }
+     ],
+     "textColors": [
+      {
+       "color": "#16181a",
+       "share": 0.9
+      },
+      {
+       "color": "#5c6066",
+       "share": 0.08
+      },
+      {
+       "color": "#6b7280",
+       "share": 0.02
+      },
+      {
+       "color": "#cdd1d5",
+       "share": 0
+      },
+      {
+       "color": "#1e7b4f",
+       "share": 0
+      }
+     ],
+     "button": {
+      "bg": "#ffffff",
+      "hsl": {
+       "h": 0,
+       "s": 0,
+       "l": 1
+      },
+      "fg": "#16181a"
+     },
+     "lowContrast": []
+    },
+    "buttons": {
+     "count": 1,
+     "inHero": 1,
+     "radius": 6,
+     "height": 30,
+     "withShadow": 0,
+     "withGradient": 0,
+     "mono": 0,
+     "upper": 0,
+     "heroLabels": [
+      "意见 0"
+     ]
+    },
+    "surfaces": {
+     "shadowStatic": 0,
+     "shadowOverlay": 2,
+     "shadowSamples": [],
+     "gradients": 0,
+     "scrims": 4,
+     "gradientSamples": [],
+     "gradientText": 0,
+     "hairlines": 9,
+     "hairlineSamples": [
+      "div.added-note 332px",
+      "h2 332px",
+      "div.tbar 330px",
+      "h2 332px",
+      "div.tbar 330px"
+     ],
+     "outlinedBoxes": 3,
+     "dashed": 0,
+     "blurred": 0,
+     "roundedBoxes": 3,
+     "boxRadius": 10,
+     "squareMedia": 0,
+     "roundedMedia": 0,
+     "mediaRadius": 0,
+     "textShadow": 0,
+     "cardRows": []
+    },
+    "heroMedia": [],
+    "nav": {
+     "links": 0,
+     "fixed": false,
+     "height": 0,
+     "floatingPill": false,
+     "blur": false
+    },
+    "fontsLoaded": []
+   },
+   "layout": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "pageH": 844,
+    "margins": {
+     "left": 40,
+     "right": 83
+    },
+    "sections": [],
+    "gaps": [],
+    "h1s": [
+     {
+      "text": "#16 data: 区域银行智能研发中标台账（84 条 A 类，2024-12 至 2026-11）",
+      "size": 14,
+      "top": 13,
+      "firstScreen": true
+     },
+     {
+      "text": "#区域银行智能研发中标台账（2024-12 — 2026-11）",
+      "size": 24,
+      "top": 229,
+      "firstScreen": true
+     }
+    ],
+    "edgeText": [],
+    "edges": [],
+    "leftBlocks": 0,
+    "bodySize": 16,
+    "stage": false,
+    "explains": false,
+    "slivers": [],
+    "voidShare": 0,
+    "voidBox": null
+   },
+   "app": {
+    "viewport": {
+     "w": 390,
+     "h": 844
+    },
+    "dark": false,
+    "ground": "#f6f7f8",
+    "sidebar": null,
+    "topbar": {
+     "h": 84
+    },
+    "canvas": {
+     "left": 29,
+     "right": 16
+    },
+    "hero": {
+     "text": "# 区域银行智能研发中标台账（2024-12 — 2026-11）",
+     "words": 4,
+     "chars": 33,
+     "lines": 2,
+     "size": 24,
+     "vw": 6.2,
+     "font": "PingFang SC",
+     "weight": 600,
+     "tracking": -0.01,
+     "leading": 1.35,
+     "top": 229,
+     "tag": "h1",
+     "kind": "heading",
+     "align": "left",
+     "position": "left"
+    },
+    "charts": 0,
+    "layout": {
+     "panels": 1,
+     "firstScreen": 1,
+     "ragged": [],
+     "voids": []
+    },
+    "tiles": 0,
+    "panels": {
+     "count": 3,
+     "radii": [
+      [
+       10,
+       2
+      ],
+      [
+       16,
+       1
+      ]
+     ],
+     "heavyBorders": 0,
+     "borderSamples": [],
+     "heavyShadows": 0,
+     "softShadows": 0,
+     "shadowSamples": [],
+     "glass": 0
+    },
+    "chips": {
+     "count": 0,
+     "hues": 0,
+     "samples": []
+    },
+    "numbers": {
+     "cells": 0,
+     "leftAligned": 0,
+     "figures": 0,
+     "tabularShare": null,
+     "kpiMax": null
+    },
+    "rows": {
+     "count": 24,
+     "median": 91
+    },
+    "chartHues": 0,
+    "placeholders": [],
+    "type": {
+     "under13": 0.18,
+     "tiny": 2,
+     "tinySamples": [
+      "← 返回列表 0px",
+      "显示变更标记 0px"
+     ],
+     "sizes": [
+      0,
+      11,
+      12,
+      13,
+      14,
+      16,
+      19,
+      20,
+      24
+     ]
+    },
+    "title": null,
+    "colourShare": 0.001
+   },
+   "consoleErrors": []
+  }
+ ],
+ "findings": [
+  {
+   "level": "FAIL",
+   "id": "emoji",
+   "width": 1440,
+   "message": "Emoji in the page: ☰",
+   "fix": "Remove. Use words or real imagery.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "WARN",
+   "id": "many-h1",
+   "width": 1440,
+   "message": "2 h1 elements.",
+   "fix": "One h1 per page; section titles are h2.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "edge-text",
+   "width": 1440,
+   "message": "1 text block(s) sit within 16px of the screen edge: \"变更文件\" (10px from the left)",
+   "fix": "Keep text inside the page margin (16–32px or more). Only display type deliberately bled past the edge may touch it.",
+   "alsoAt": [
+    768
+   ]
+  },
+  {
+   "level": "FAIL",
+   "id": "no-title",
+   "width": 1440,
+   "message": "The screen has no h1.",
+   "fix": "Name the screen in an h1 at the top of the canvas (18–28px): \"Overview\", \"Payouts\", the project's name.",
+   "alsoAt": [
+    768,
+    390
+   ]
+  }
+ ],
+ "images": [
+  {
+   "viewport": "desktop",
+   "width": 1440,
+   "fold": "/home/dsun/workspace/markdown-reviewer/.taste-skill/review/before-pr/desktop-fold.jpg",
+   "pages": [
+    "/home/dsun/workspace/markdown-reviewer/.taste-skill/review/before-pr/desktop-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "tablet",
+   "width": 768,
+   "fold": "/home/dsun/workspace/markdown-reviewer/.taste-skill/review/before-pr/tablet-fold.jpg",
+   "pages": [
+    "/home/dsun/workspace/markdown-reviewer/.taste-skill/review/before-pr/tablet-page-01.jpg"
+   ],
+   "film": []
+  },
+  {
+   "viewport": "mobile",
+   "width": 390,
+   "fold": "/home/dsun/workspace/markdown-reviewer/.taste-skill/review/before-pr/mobile-fold.jpg",
+   "pages": [
+    "/home/dsun/workspace/markdown-reviewer/.taste-skill/review/before-pr/mobile-page-01.jpg"
+   ],
+   "film": []
+  }
+ ]
+}

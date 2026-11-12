@@ -2486,41 +2486,18 @@ body.tbl-full-on { overflow: hidden; }
 /* =====================================================================
    变更密度尺：左沟槽上的改动投影，点一下跳到那个块
    ===================================================================== */
-.drail {
-  position: absolute;
-  left: -20px;
-  top: 0;
-  bottom: 0;
-  width: 14px;
-}
-.drail-t {
-  position: absolute;
-  left: 0;
-  width: 14px;
-  padding: 0;
-  border: 0;
-  background: none;
-  cursor: pointer;
-}
-.drail-t::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 3px;
-  border-radius: 2px;
-  background: var(--muted);
-}
-.drail-t.add::before { background: var(--mark-add); }
-.drail-t.mod::before { background: var(--mark-mod); }
-.drail-t.del::before { background: var(--mark-del); }
-.drail-t:hover::before { width: 5px; }
-.drail-t:focus-visible { outline: 1px solid var(--text); outline-offset: 1px; }
-.wb-doc.marks-off .drail { display: none; }
+
+
+
+
+
+
+
+
+.wb-doc.marks-off 
 
 @media (max-width: 900px) {
-  .drail { display: none; }
+  
 }
 
 /* =====================================================================
@@ -2593,7 +2570,7 @@ body.tbl-full-on { overflow: hidden; }
 .ctree .tlink:hover { text-decoration: underline; }
 
 /* 变更刻度尺右移，给评论窄条让位 */
-.drail { left: -24px; }
+
 
 @media (hover: none) {
   .md-block.has-comments:focus-within .cbubble { opacity: 1; pointer-events: auto; transition-delay: 0; }
@@ -2601,3 +2578,107 @@ body.tbl-full-on { overflow: hidden; }
 
 /* 「标记」关闭时，大纲里的改动微条也一起收掉（开关落在工作台骨架上，章节面板是它的兄弟节点） */
 .wb-body.marks-off .chapter .cbar { visibility: hidden; }
+
+/* =====================================================================
+   评论面板：收起后右缘留下的把手 + 折叠式回复
+   ===================================================================== */
+.wb-drawer-open {
+  position: fixed; right: 0; top: 46%; transform: translateY(-50%);
+  z-index: 9;
+  padding: 10px 4px;
+  border: 1px solid var(--border); border-right: 0;
+  border-radius: 8px 0 0 8px;
+  background: var(--sheet);
+  color: var(--muted);
+  font: inherit; font-size: var(--fs-meta); letter-spacing: 1px;
+  writing-mode: vertical-rl;
+  cursor: pointer;
+  box-shadow: -2px 0 10px rgba(20, 26, 32, 0.08);
+}
+.wb-drawer-open:hover { color: var(--text); border-color: var(--text); }
+.wb-drawer-open[hidden] { display: none; }
+
+/* 回复默认收起：一行链接，点开才出现输入框 */
+.treply { margin-top: 4px; }
+.treply-open {
+  padding: 0; border: 0; background: none; cursor: pointer;
+  color: var(--mod); font: inherit; font-size: 11px;
+}
+.treply-open:hover { text-decoration: underline; }
+.tcomposer { display: flex; gap: 6px; align-items: flex-end; margin-top: 6px; }
+.tcomposer[hidden] { display: none; }
+.tcomposer .trta {
+  flex: 1; min-height: 30px; padding: 4px 7px; resize: vertical;
+  border: 1px solid var(--border); border-radius: 6px; background: var(--ground);
+  color: var(--text); font: inherit; font-size: 11px; line-height: 1.6;
+}
+.tcomposer .btn { padding: 3px 9px; font-size: 11px; }
+
+/* 气泡最多占屏幕一半，不再压住下面的正文 */
+.cbubble { max-height: min(58vh, 440px); overflow: auto; }
+
+/* 本地草稿：页边一道虚线，与已发出评论的实线窄条区分 */
+.md-block.has-drafts:hover,
+.md-block.has-drafts:focus-within { z-index: 5; }
+.dstripe {
+  position: absolute; left: -3px; top: 3px; bottom: 3px; width: 3px;
+  border-radius: 2px;
+  background: repeating-linear-gradient(180deg, var(--warning) 0 4px, transparent 4px 7px);
+  opacity: 0.55;
+  transition: opacity 0.12s;
+}
+.md-block.has-drafts:hover .dstripe { opacity: 1; }
+.md-block.has-drafts .cbubble { opacity: 0; }
+.md-block.has-drafts:hover .cbubble,
+.md-block.has-drafts:focus-within .cbubble {
+  opacity: 1; pointer-events: auto; transition-delay: 0.18s;
+}
+.cbubble .thr.is-draft b { color: var(--warning); }
+.cbubble .thr.is-draft .tmsg { color: var(--text); font-style: italic; }
+
+/* ---------- 语义 diff：行内插入、代码行、mermaid ---------- */
+.md-ins {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 3px;
+  text-decoration-color: var(--mark-add);
+  background: rgba(46, 160, 67, 0.10);
+}
+.wb-doc.marks-off .md-ins { text-decoration: none; background: none; }
+
+.code-line { display: block; }
+.code-line.is-add { background: rgba(46, 160, 67, 0.14); }
+.code-line.is-add::before {
+  content: attr(data-gutter);
+  display: inline-block;
+  width: 1.1em;
+  margin-left: -1.1em;
+  color: var(--mark-add);
+  font-weight: 700;
+}
+
+.mm-block {
+  position: relative;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 14px 16px;
+  margin: 10px 0 16px;
+  background: var(--surface);
+  overflow-x: auto;
+}
+.mm-block .mm-host { display: flex; justify-content: center; }
+.mm-block .mm-host svg { max-width: 100%; height: auto; }
+.mm-badge {
+  position: absolute;
+  top: -9px;
+  right: 12px;
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--mark-mod);
+  color: #fff;
+}
+.mm-fail { color: var(--danger, #b42318); font-size: 13px; }
+.mm-fail-head { font-weight: 600; margin-bottom: 4px; }
+.mm-fail-msg { font-family: var(--mono, monospace); font-size: 12px; word-break: break-word; }
+.mm-src { margin: 8px 0 0; font-size: 12px; max-height: 220px; overflow: auto; }

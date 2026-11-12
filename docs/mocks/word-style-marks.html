@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · 仿 Word 修订的四种标记</title>
+<link rel="stylesheet" href="../../public/styles.css?v=324">
+<style>
+  body { margin: 0; background: var(--ground); }
+  .board { width: min(100% - 32px, 1080px); margin: 28px auto 80px; }
+  .board > h1 { font-size: 20px; margin: 0 0 4px; }
+  .board > p.lead { color: var(--muted); font-size: 12px; margin: 0 0 26px; }
+  .v { margin: 0 0 34px; }
+  .vhead {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    padding: 0 0 8px; border-bottom: 1px solid var(--border); margin-bottom: 12px;
+  }
+  .vhead b { font-size: 13px; }
+  .vhead span { color: var(--muted); font-size: 11px; }
+  .doc { background: var(--sheet); border: 1px solid var(--border); border-radius: 10px; padding: 20px 26px; }
+
+  /* Word 行内修订：插入下划线、删除删除线，文字都不消失 */
+  .ins { text-decoration: underline; text-decoration-color: var(--mark-add); text-underline-offset: 3px; text-decoration-thickness: 1.5px; }
+  .del { text-decoration: line-through; text-decoration-color: var(--mark-del); color: var(--muted); }
+  .revbar { border-left: 3px solid var(--mark-mod); padding-left: 12px; }
+
+  /* 简单标记：只有页边一道线 */
+  .simple { border-left: 3px solid var(--mark-mod); padding-left: 12px; position: relative; }
+  .simple .hint { font-size: 10px; color: var(--faint); margin-left: 8px; }
+
+  /* 批注框（balloons）：右栏贴着段落 */
+  .with-margin { display: grid; grid-template-columns: 1fr 200px; column-gap: 22px; }
+  .with-margin > * { grid-column: 1; }
+  .balloon {
+    grid-column: 2; align-self: start;
+    padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--raised); font-size: 11px; line-height: 1.6;
+  }
+  .balloon .who { font-weight: 600; color: var(--text); }
+  .balloon .why { color: var(--muted); }
+  .balloon .tag { font-size: 10px; color: var(--mark-del); }
+
+  /* 审阅窗格 */
+  .pane { border-top: 1px solid var(--border); background: var(--raised); }
+  .pane .phead {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; font-size: 11px; color: var(--muted);
+  }
+  .pane .pbody { max-height: 132px; overflow: auto; padding: 0 12px 10px; }
+  .prow { display: grid; grid-template-columns: 20px 56px 1fr; gap: 8px; padding: 4px 0; font-size: 11px; }
+  .prow .k { font-family: var(--mono); text-align: center; }
+  .prow.add .k { color: var(--mark-add); }
+  .prow.mod .k { color: var(--mark-mod); }
+  .prow.del .k { color: var(--mark-del); }
+  .prow .l { color: var(--faint); font-family: var(--mono); }
+  .prow .t { color: var(--text); }
+</style>
+</head>
+<body>
+<main class="board">
+  <h1>仿 Word 修订状态的四种标记</h1>
+  <p class="lead">Word 的关键取舍：标记长在文字上（行内），或长在段落右侧（批注框），都不需要一条独立的坐标尺。</p>
+
+  <section class="v">
+    <div class="vhead"><b>W1 · 所有标记（行内修订）</b><span>插入下划线、删除删除线，原文不折叠进「原文」块</span></div>
+    <div class="doc">
+      <p>2024 年区域银行智能研发投入 <span class="del">同比增长 12.3%</span> <span class="ins">同比增长 18.6%</span>，其中股份制银行占 42%。</p>
+      <p class="revbar">样本覆盖 <span class="ins">84 家（新增 6 家城商行）</span> 机构，口径与去年一致。</p>
+      <p><span class="del">以上数据来源于各行年报。</span></p>
+      <p><span class="ins">以上数据来源于各行年报与公开中标公告。</span></p>
+    </div>
+  </section>
+
+  <section class="v">
+    <div class="vhead"><b>W2 · 简单标记（默认）</b><span>只画页边竖线，点一下展开成 W1</span></div>
+    <div class="doc">
+      <p class="simple">2024 年区域银行智能研发投入同比增长 18.6%，其中股份制银行占 42%。<span class="hint">修改 · 点击展开</span></p>
+      <p>样本覆盖 84 家机构，口径与去年一致。</p>
+      <p class="simple">新增：2025 年上半年已披露中标金额 12.4 亿元。<span class="hint">新增 · 点击展开</span></p>
+    </div>
+  </section>
+
+  <section class="v">
+    <div class="vhead"><b>W3 · 批注框（balloons）</b><span>删除内容与评论都放右栏，正文只留一小块标记</span></div>
+    <div class="doc with-margin">
+      <p class="revbar">2024 年区域银行智能研发投入同比增长 18.6%，其中股份制银行占 42%。</p>
+      <div class="balloon">
+        <div class="who">李静</div>
+        <div class="tag">删除：同比增长 12.3%</div>
+        <div class="why">口径已按新统计范围更新，请确认是否影响同比结论。</div>
+      </div>
+
+      <p class="revbar">样本覆盖 84 家机构，口径与去年一致。</p>
+      <div class="balloon">
+        <div class="who">王磊</div>
+        <div class="why">建议补一句样本来源。</div>
+      </div>
+
+      <p>以上数据来源于各行年报与公开中标公告。</p>
+    </div>
+  </section>
+
+  <section class="v">
+    <div class="vhead"><b>W4 · 审阅窗格</b><span>底部可折叠列表，逐条过；正文标记可同时保留</span></div>
+    <div class="doc" style="padding-bottom:0;">
+      <p class="revbar">2024 年区域银行智能研发投入同比增长 18.6%，其中股份制银行占 42%。</p>
+      <p>样本覆盖 84 家机构，口径与去年一致。</p>
+      <p class="revbar">新增：2025 年上半年已披露中标金额 12.4 亿元。</p>
+      <div class="pane">
+        <div class="phead"><span>审阅窗格 · 2 处修订 · 1 条批注</span><span>收起 ▾</span></div>
+        <div class="pbody">
+          <div class="prow mod"><span class="k">~</span><span class="l">L 12</span><span class="t">2024 年…投入同比增长 18.6%（原 12.3%）</span></div>
+          <div class="prow add"><span class="k">+</span><span class="l">L 26</span><span class="t">新增：2025 年上半年已披露中标金额 12.4 亿元</span></div>
+          <div class="prow mod"><span class="k">💬</span><span class="l">L 18</span><span class="t">王磊：建议补一句样本来源</span></div>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+</body>
+</html>
