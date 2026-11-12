@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Markdown 文档审批工作台 · noware-cn/workspace</title>
-<link rel="stylesheet" href="/styles.css?v=340">
+<link rel="stylesheet" href="/styles.css?v=344">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -64,6 +64,7 @@
   <header class="wb-topbar">
     <button class="wb-back" id="wbBack" type="button" title="返回任务列表" aria-label="返回任务列表">← 返回列表</button>
     <button class="wb-nav-toggle" id="wbNavToggle" type="button" title="切换文件导航" aria-label="切换文件导航"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1.5 3.5h11M1.5 7h11M1.5 10.5h11"/></svg></button>
+    <button class="wb-nav-toggle" id="wbOutlineToggle" type="button" title="显示/隐藏文档大纲" aria-label="显示/隐藏文档大纲" aria-expanded="true"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M2 3.5h4M2 7h4M2 10.5h4M8 3.5h4M8 7h4M8 10.5h4"/></svg></button>
     <span class="wb-brand">
       <span class="brand-mark" aria-hidden="true"></span>
       <span class="wb-brand-text">审批工作台</span>
@@ -76,6 +77,7 @@
       <label class="wb-commit-label" for="wbCommitSelect">版本</label>
       <select class="wb-commit-select" id="wbCommitSelect" aria-label="选择查看的提交版本"></select>
     </span>
+    <button class="wb-refresh" id="wbRefresh" type="button" title="刷新 PR 数据（文件与评论）" aria-label="刷新 PR 数据">↻</button>
     <span class="wb-sep" aria-hidden="true"></span>
     <div class="wb-viewstate" role="group" aria-label="显示">
       <button type="button" data-view-state="markup" aria-pressed="true" title="显示改动记号与评论">改动与评论</button>
@@ -132,25 +134,26 @@
       <div class="wb-nav-head">
         <span class="wb-nav-title">变更文件</span>
         <span class="wb-progress" id="wbProgress"></span>
-        <span class="wb-panelctl" role="group" aria-label="左栏布局">
-          <button type="button" data-panel="left" data-layout="docked" title="停靠" aria-pressed="true">▥</button>
-          <button type="button" data-panel="left" data-layout="floating" title="悬浮" aria-pressed="false">⧉</button>
-        </span>
         <button class="wb-nav-fold" id="wbNavFold" type="button" title="隐藏导航" aria-label="隐藏导航">◀</button>
-      </div>
-      <div class="wb-nav-tools">
-        <input class="wb-filter" id="wbFilter" type="search" placeholder="筛选文件路径" autocomplete="off">
-        <div class="wb-viewseg" role="group" aria-label="文件列表视图">
-          <button type="button" data-view="tree" aria-pressed="true" title="树状视图（目录结构）">树状</button>
-          <button type="button" data-view="flat" aria-pressed="false" title="平铺视图（单层列表）">平铺</button>
-        </div>
       </div>
       <section class="wb-view wb-view-files" id="wbFilesView">
         <button class="wb-view-head" id="wbFilesHead" type="button" aria-expanded="true" aria-controls="wbFiles">
           <span class="chev" aria-hidden="true"></span><span class="wb-view-label">文件</span>
           <span class="wb-view-meta" id="wbFilesMeta"></span>
         </button>
-        <div class="wb-files" id="wbFiles" role="tree" tabindex="0" aria-label="变更文件"></div>
+      <div class="wb-view-ctl" role="group" aria-label="文件面板布局">
+        <button type="button" data-panel="files" data-layout="docked" title="停靠" aria-pressed="true">▥</button>
+        <button type="button" data-panel="files" data-layout="floating" title="悬浮" aria-pressed="false">⧉</button>
+        <button type="button" data-panel="files" data-layout="hidden" title="隐藏" aria-pressed="false">✕</button>
+      </div>
+        <div class="wb-nav-tools">
+        <input class="wb-filter" id="wbFilter" type="search" placeholder="筛选文件路径" autocomplete="off">
+        <div class="wb-viewseg" role="group" aria-label="文件列表视图">
+          <button type="button" data-view="tree" aria-pressed="true" title="树状视图（目录结构）">树状</button>
+          <button type="button" data-view="flat" aria-pressed="false" title="平铺视图（单层列表）">平铺</button>
+        </div>
+      </div>
+      <div class="wb-files" id="wbFiles" role="tree" tabindex="0" aria-label="变更文件"></div>
       </section>
       <div class="wb-sash" id="wbSashY" role="separator" aria-orientation="horizontal" tabindex="0"
         title="拖动调整上下高度（双击复位）"></div>
@@ -159,6 +162,11 @@
           <span class="chev" aria-hidden="true"></span><span class="wb-view-label">大纲</span>
           <span class="wb-view-meta" id="wbChaptersMeta"></span>
         </button>
+      <div class="wb-view-ctl" role="group" aria-label="大纲面板布局">
+        <button type="button" data-panel="outline" data-layout="docked" title="停靠" aria-pressed="true">▥</button>
+        <button type="button" data-panel="outline" data-layout="floating" title="悬浮" aria-pressed="false">⧉</button>
+        <button type="button" data-panel="outline" data-layout="hidden" title="隐藏" aria-pressed="false">✕</button>
+      </div>
         <div class="wb-chapters" id="wbChapters"></div>
       </section>
     </aside>
@@ -233,7 +241,7 @@ window.DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 <script src="/diff-model.js?v=211"></script>
 <script src="/highlight.min.js?v=1"></script>
 <script src="/semdiff.js?v=2"></script>
-<script src="/diff.js?v=262"></script>
+<script src="/diff.js?v=267"></script>
 <script src="/app.js?v=220"></script>
 </body>
 </html>

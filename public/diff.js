@@ -178,9 +178,12 @@
     focus: "wb.doc.focus",
     outline: "wb.doc.outline",
     reviewed: "wb.doc.reviewed",
-    layoutLeft: "wb.layout.left",
+    layoutFiles: "wb.layout.files",
+    layoutOutline: "wb.layout.outline",
     layoutRight: "wb.layout.right",
-    lastLeft: "wb.layout.last.left",
+    layoutLeft: "wb.layout.left",
+    lastFiles: "wb.layout.last.files",
+    lastOutline: "wb.layout.last.outline",
     lastRight: "wb.layout.last.right",
   };
   const readPref = (key, fallback) => {
@@ -486,19 +489,30 @@
   const dockLimit = (side) => (side === "left" ? 900 : 1100);
   const isNarrow = (side) => Number(window.innerWidth) <= dockLimit(side);
 
+  const LEFT_PANELS = ["files", "outline"];
+
   function effectiveLayout() {
-    const lay = D.layout || (D.layout = { left: "docked", right: "hidden" });
-    const eff = { left: lay.left, right: lay.right };
-    for (const side of ["left", "right"]) {
-      if (eff[side] === "docked" && isNarrow(side)) eff[side] = "floating";
+    const lay = D.layout || (D.layout = { files: "docked", outline: "docked", right: "hidden" });
+    const eff = { files: lay.files, outline: lay.outline, right: lay.right };
+    const narrowLeft = isNarrow("left");
+    for (const id of LEFT_PANELS) if (eff[id] === "docked" && narrowLeft) eff[id] = "floating";
+    // 窄屏放不下两块浮层：只留一块，另一块按隐藏渲染（不改用户偏好）
+    if (narrowLeft && eff.files === "floating" && eff.outline === "floating") {
+      eff[D.keepFloat === "outline" ? "files" : "outline"] = "hidden";
     }
-    // 全屏只留正文与左侧大纲：右栏即使选了停靠也按浮层渲染（沿用既有行为）
-    if (D.focus && eff.right === "docked") eff.right = "floating";
+    if (eff.right === "docked" && isNarrow("right")) eff.right = "floating";
+    // 全屏归位：文件树让位给大纲，右栏按浮层渲染
+    if (D.focus) {
+      if (eff.files === "docked") eff.files = "hidden";
+      if (eff.right === "docked") eff.right = "floating";
+    }
     return eff;
   }
 
-  function panelOf(side) {
-    return document.getElementById(side === "left" ? "wbNav" : "wbDrawer");
+  function panelOf(id) {
+    if (id === "files") return document.getElementById("wbFilesView");
+    if (id === "outline") return document.getElementById("wbChaptersView");
+    return document.getElementById("wbDrawer");
   }
 
   /* 唯一改 DOM 的地方：类名、网格列、浮层位置、控件状态都在这里同步 */
@@ -506,74 +520,113 @@
     const wb = document.getElementById("wbBody");
     if (!wb || !D.layout) return;
     const eff = effectiveLayout();
+    const nav = document.getElementById("wbNav");
+    const dockedLeft = LEFT_PANELS.filter((id) => eff[id] === "docked");
     const cols = [];
-    if (eff.left === "docked") {
+    if (dockedLeft.length) {
       cols.push(D.focus ? "var(--focus-nav-w, 224px)" : "var(--nav-w)");
       if (!D.focus) cols.push("7px");
     }
     cols.push("minmax(0, 1fr)");
     if (eff.right === "docked") cols.push("var(--drawer-w)");
     wb.style.gridTemplateColumns = cols.join(" ");
+    wb.classList.toggle("left-docked", dockedLeft.length > 0);
+    if (nav) {
+      nav.classList.toggle("has-docked", dockedLeft.length > 0);
+      nav.classList.toggle("is-single", dockedLeft.length === 1);
+    }
 
-    for (const side of ["left", "right"]) {
-      wb.classList.toggle(`${side}-docked`, eff[side] === "docked");
-      wb.classList.toggle(`${side}-floating`, eff[side] === "floating");
-      wb.classList.toggle(`${side}-hidden`, eff[side] === "hidden");
-      const el = panelOf(side);
+    for (const id of ["files", "outline", "right"]) {
+      wb.classList.toggle(`${id}-docked`, eff[id] === "docked");
+      wb.classList.toggle(`${id}-floating`, eff[id] === "floating");
+      wb.classList.toggle(`${id}-hidden`, eff[id] === "hidden");
+      const el = panelOf(id);
       if (!el) continue;
-      el.classList.toggle("is-floating", eff[side] === "floating");
-      if (eff[side] === "floating") placeFloating(side, el);
+      el.classList.toggle("is-floating", eff[id] === "floating");
+      el.classList.toggle("is-hidden", eff[id] === "hidden");
+      el.classList.toggle("is-docked", eff[id] === "docked");
+      if (eff[id] === "floating") placeFloating(id, el, eff);
       else {
         el.style.left = "";
         el.style.right = "";
         el.style.top = "";
       }
-      if (el.setAttribute) el.setAttribute("aria-hidden", String(eff[side] === "hidden"));
+      if (el.setAttribute) el.setAttribute("aria-hidden", String(eff[id] === "hidden"));
     }
-    document.body.classList.toggle("outline-off", D.layout.left === "hidden");
     const fo = document.getElementById("focusOutline");
-    if (fo) fo.setAttribute("aria-pressed", String(D.layout.left !== "hidden"));
+    if (fo) fo.setAttribute("aria-pressed", String(eff.outline !== "hidden"));
+    const navBtn = document.getElementById("wbNavToggle");
+    if (navBtn) navBtn.setAttribute("aria-expanded", String(eff.files !== "hidden"));
+    const olBtn = document.getElementById("wbOutlineToggle");
+    if (olBtn) olBtn.setAttribute("aria-expanded", String(eff.outline !== "hidden"));
     syncPanelCtl(eff);
     syncDrawerHandle();
   }
 
-  function placeFloating(side, el) {
-    const pos = D.floatPos && D.floatPos[side];
-    if (!pos) return;
+  /* 浮层的默认落点：避开仍停靠的左列，两块同时浮起时左右错开 */
+  function defaultFloatPos(id, eff) {
+    if (id === "right") return { x: Math.max(12, Number(window.innerWidth) - 412), y: 60 };
+    const nav = document.getElementById("wbNav");
+    const docked = !!(nav && nav.classList && nav.classList.contains("has-docked"));
+    const colRight = docked && nav.getBoundingClientRect ? Math.round(nav.getBoundingClientRect().right) : 0;
+    let x = docked ? colRight + 12 : 12;
+    if (id !== "files" && eff && eff.files === "floating") x += 312;
+    // 视口放不下就压回可视范围，避免浮层跑到屏幕外
+    x = Math.min(x, Math.max(4, Number(window.innerWidth) - 316));
+    return { x, y: 60 };
+  }
+
+  function placeFloating(id, el, eff) {
+    const pos = (D.floatPos && D.floatPos[id]) || defaultFloatPos(id, eff);
     el.style.left = `${pos.x}px`;
     el.style.top = `${pos.y}px`;
     el.style.right = "auto";
   }
 
+  const prefName = (prefix, id) => `${prefix}${id[0].toUpperCase()}${id.slice(1)}`;
+
   function syncPanelCtl(eff) {
     document.querySelectorAll("[data-panel][data-layout]").forEach((btn) => {
-      const side = btn.dataset.panel;
-      const on = side === "left" ? D.layout.left : D.layout.right;
-      btn.setAttribute("aria-pressed", String(btn.dataset.layout === on));
+      const id = btn.dataset.panel;
+      btn.setAttribute("aria-pressed", String(btn.dataset.layout === (D.layout && D.layout[id])));
     });
-    const navBtn = document.getElementById("wbNavToggle");
-    if (navBtn) navBtn.setAttribute("aria-expanded", String(eff.left !== "hidden"));
     const dBtn = document.getElementById("wbDrawerBtn");
     if (dBtn) dBtn.setAttribute("aria-expanded", String(eff.right !== "hidden"));
   }
 
-  function setLayout(side, state) {
-    if (!LAYOUTS.includes(state) || !D.layout) return;
-    if (!D.lastLayout) D.lastLayout = { left: "docked", right: "docked" };
-    D.layout[side] = state;
-    if (state !== "hidden") {
-      D.lastLayout[side] = state;
-      writePref(side === "left" ? PREF.lastLeft : PREF.lastRight, state);
+  function setLayout(id, state) {
+    if (!LAYOUTS.includes(state) || !D.layout || !(id in D.layout)) return;
+    if (state !== "hidden" && LEFT_PANELS.includes(id)) D.keepFloat = id;
+    // 窄屏放不下两块浮层：打开一块就把另一块收起
+    if (state !== "hidden" && LEFT_PANELS.includes(id) && isNarrow("left")) {
+      const other = LEFT_PANELS.find((p) => p !== id);
+      if (other && D.layout[other] !== "hidden") {
+        D.layout[other] = "hidden";
+        writePref(PREF[prefName("layout", other)], "hidden");
+        if (other === "outline") {
+          D.outline = false;
+          writePref(PREF.outline, false);
+        }
+      }
     }
-    writePref(side === "left" ? PREF.layoutLeft : PREF.layoutRight, state);
-    if (side === "left") D.outline = state !== "hidden";
+    if (!D.lastLayout) D.lastLayout = {};
+    D.layout[id] = state;
+    if (state !== "hidden") {
+      D.lastLayout[id] = state;
+      writePref(PREF[prefName("last", id)], state);
+    }
+    writePref(PREF[prefName("layout", id)], state);
+    if (id === "outline") {
+      D.outline = state !== "hidden";
+      writePref(PREF.outline, D.outline);
+    }
     applyLayout();
   }
 
-  function toggleLayout(side) {
+  function toggleLayout(id) {
     const eff = effectiveLayout();
-    if (eff[side] !== "hidden") setLayout(side, "hidden");
-    else setLayout(side, D.lastLayout[side] === "hidden" ? "docked" : (D.lastLayout[side] || "docked"));
+    if (eff[id] !== "hidden") setLayout(id, "hidden");
+    else setLayout(id, D.lastLayout[id] === "hidden" ? "docked" : (D.lastLayout[id] || "docked"));
   }
 
   /** 打开抽屉：所有入口共用，保证右缘把手与面板状态一致 */
@@ -734,6 +787,7 @@
       const head = document.getElementById(id);
       if (!head) return;
       head.addEventListener("click", () => {
+        if (D.suppressFold && Date.now() < D.suppressFold) return;
         setSection(name, head.getAttribute("aria-expanded") !== "true");
       });
       head.addEventListener("keydown", (e) => {
@@ -1054,14 +1108,6 @@
     applyZoom();
   }
   /* 全屏阅读的左侧大纲：可隐藏，状态记忆 */
-  function setOutline(on) {
-    const want = Boolean(on);
-    if (!D.layout) return;
-    if (want && D.layout.left === "hidden") setLayout("left", "docked");
-    else if (!want && D.layout.left !== "hidden") setLayout("left", "hidden");
-    else applyLayout();
-  }
-
   function setFocus(on) {
     D.focus = Boolean(on);
     writePref(PREF.focus, D.focus);
@@ -1069,7 +1115,7 @@
     // 全屏会改网格列模板（导航列变窄），交给布局模型重算
     applyLayout();
     // 窄屏进全屏时先把大纲收起（浮层会盖住正文），用户可再点「大纲」打开
-    if (D.focus && window.innerWidth <= 899 && D.layout.left !== "hidden") setLayout("left", "hidden");
+    if (D.focus && window.innerWidth <= 899 && D.layout.outline !== "hidden") setLayout("outline", "hidden");
     const bar = document.getElementById("focusBar");
     if (bar) bar.hidden = !D.focus;
     const btn = document.getElementById("wbFocusBtn");
@@ -2916,13 +2962,15 @@
         if (panel) { panel.hidden = true; return; }
         // Esc 收起浮层面板（停靠的不用 Esc 收，避免误伤）
         const eff = effectiveLayout();
-        if (eff.right === "floating") { setLayout("right", "hidden"); return; }
-        if (eff.left === "floating") { setLayout("left", "hidden"); return; }
+        for (const id of ["outline", "files", "right"]) {
+          if (eff[id] === "floating") { setLayout(id, "hidden"); return; }
+        }
         return;
       }
       if (e.key === "n") { e.preventDefault(); gotoChange(1); }
       else if (e.key === "p") { e.preventDefault(); gotoChange(-1); }
-      else if (e.key === "[") { e.preventDefault(); toggleLayout("left"); }
+      else if (e.key === "[") { e.preventDefault(); toggleLayout("files"); }
+      else if (e.key === "\\") { e.preventDefault(); toggleLayout("outline"); }
       else if (e.key === "]") { e.preventDefault(); toggleLayout("right"); }
     });
     document.getElementById("dselchip").addEventListener("click", () => {
@@ -3407,6 +3455,7 @@
         || null;
       D.pendingFile = null;
       render();
+      if (opts.onRendered) opts.onRendered();
       loadMergeOptions();
       /* 提交列表与正文并行拉取：列表慢只影响提交选择器，不该挡住默认阅读视图 */
       const commitsReady = ensureCommits(force || headChanged);
@@ -3492,7 +3541,7 @@
     document.getElementById("wbFocusBtn").addEventListener("click", () => setFocus(!D.focus));
     document.getElementById("focusExit").addEventListener("click", () => setFocus(false));
     const fo = document.getElementById("focusOutline");
-    if (fo) fo.addEventListener("click", () => setOutline(!D.outline));
+    if (fo) fo.addEventListener("click", () => toggleLayout("outline"));
     document.getElementById("focusZoomIn").addEventListener("click", () => stepZoom(1));
     document.getElementById("focusZoomOut").addEventListener("click", () => stepZoom(-1));
     document.getElementById("focusDrawer").addEventListener("click", () => toggleLayout("right"));
@@ -3547,23 +3596,59 @@
       openDrawer();
       syncDrawerHandle();
     });
-    document.getElementById("wbNavFold").addEventListener("click", () => setLayout("left", "hidden"));
-    document.getElementById("wbNavToggle").addEventListener("click", () => toggleLayout("left"));
+    /* 列头 ◀：一次收起/召回文件树与大纲两块面板 */
+    document.getElementById("wbNavFold").addEventListener("click", () => {
+      const eff = effectiveLayout();
+      if (eff.files !== "hidden" || eff.outline !== "hidden") {
+        setLayout("files", "hidden");
+        setLayout("outline", "hidden");
+      } else {
+        toggleLayout("files");
+        toggleLayout("outline");
+      }
+    });
+    document.getElementById("wbNavToggle").addEventListener("click", () => toggleLayout("files"));
+    const olToggle = document.getElementById("wbOutlineToggle");
+    if (olToggle) olToggle.addEventListener("click", () => toggleLayout("outline"));
+    const refreshBtn = document.getElementById("wbRefresh");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", async () => {
+        if (!D.n || refreshBtn.disabled) return;
+        // 刷新会重渲染正文，输入框里的字会被冲掉：先让用户处理掉
+        const pending = Array.from(document.querySelectorAll("#wbDoc .composer textarea, #wbDrawerBody textarea"))
+          .some((el) => el.offsetParent && el.value.trim());
+        if (pending) { toast("有未提交的回复，先发送或取消再刷新"); return; }
+        refreshBtn.disabled = true;
+        const doc = document.getElementById("wbDoc");
+        const stop = doc ? doc.scrollTop : 0;
+        const fileAtClick = D.file;
+        const opts = { onRendered: () => {
+          // 只在本文件仍是同一份时回到原位置，避免把切换后的视图拽回去
+          if (doc && D.file === fileAtClick) doc.scrollTop = stop;
+        } };
+        // 历史提交视图刷新后仍停在那个提交，不要被切回「全部改动」
+        if (isCommitView()) opts.commit = D.rev.sha;
+        try { await load(D.n, true, true, opts); } finally { refreshBtn.disabled = false; }
+      });
+    }
     /* 面板头部的停靠 / 悬浮三态控件 */
     document.querySelectorAll("[data-panel][data-layout]").forEach((btn) => {
       btn.addEventListener("click", () => setLayout(btn.dataset.panel, btn.dataset.layout));
     });
     /* 浮层面板：按住头部拖动，位置只在本次会话内保留 */
-    for (const side of ["left", "right"]) {
-      const el = panelOf(side);
+    for (const id of ["files", "outline", "right"]) {
+      const el = panelOf(id);
       if (!el) continue;
       el.addEventListener("pointerdown", (e) => {
         if (!el.classList.contains("is-floating")) return;
         if (e.button !== undefined && e.button !== 0) return;
-        if (!e.target.closest(".wb-nav-head, .wb-drawer-head")) return;
-        if (e.target.closest("button, input, select, a")) return;
+        if (!e.target.closest(id === "right" ? ".wb-drawer-head" : ".wb-view-head")) return;
+        if (e.target.closest("[data-panel][data-layout], input, select, a")) return;
         const r = el.getBoundingClientRect();
-        D.drag = { side, el, dx: e.clientX - r.left, dy: e.clientY - r.top };
+        D.drag = {
+          side: id, el, dx: e.clientX - r.left, dy: e.clientY - r.top,
+          sx: e.clientX, sy: e.clientY, moved: 0,
+        };
         el.classList.add("is-dragging");
         el.style.right = "auto";
         el.style.left = `${r.left}px`;
@@ -3581,6 +3666,7 @@
       const y = Math.min(maxY, Math.max(4, e.clientY - d.dy));
       d.el.style.left = `${x}px`;
       d.el.style.top = `${y}px`;
+      d.moved = Math.max(d.moved || 0, Math.abs(e.clientX - d.sx) + Math.abs(e.clientY - d.sy));
       if (!D.floatPos) D.floatPos = {};
       D.floatPos[d.side] = { x, y };
     });
@@ -3588,6 +3674,7 @@
       const d = D.drag;
       if (!d) return;
       d.el.classList.remove("is-dragging");
+      if (d.moved > 4) D.suppressFold = Date.now() + 250;
       D.drag = null;
     });
     /* 跨断点切换时 dock/floating 的判定会变，需重算 */
@@ -3645,15 +3732,22 @@
       const v = readPref(key, null);
       return LAYOUTS.includes(v) ? v : fallback;
     };
+    /* 旧版本只有一个「左栏」状态：迁移到文件树与大纲两块面板 */
+    const legacyLeft = pick(PREF.layoutLeft, null);
+    const narrowNow = Number(window.innerWidth) <= 900;
+    const leftFallback = legacyLeft || (narrowNow ? "hidden" : "docked");
     D.layout = {
-      left: pick(PREF.layoutLeft, Number(window.innerWidth) <= 900 ? "hidden" : "docked"),
+      files: pick(PREF.layoutFiles, leftFallback),
+      outline: pick(PREF.layoutOutline, leftFallback),
       right: pick(PREF.layoutRight, "hidden"),
     };
+    const legacyLast = pick(PREF.lastLeft, null);
     D.lastLayout = {
-      left: pick(PREF.lastLeft, "docked"),
+      files: pick(PREF.lastFiles, legacyLast || "docked"),
+      outline: pick(PREF.lastOutline, legacyLast || "docked"),
       right: pick(PREF.lastRight, "docked"),
     };
-    D.outline = D.layout.left !== "hidden";
+    D.outline = D.layout.outline !== "hidden";
     applyLayout();
     if (D.focus) setFocus(true);
     const rv = readPref(PREF.reviewed, {});
