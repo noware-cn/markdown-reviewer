@@ -512,14 +512,13 @@ body.wb-mode-on .layout { display: none; }
 .wb-body {
   flex: 1;
   min-height: 0;
+  position: relative;
   display: grid;
   grid-template-columns: var(--nav-w) 7px minmax(0, 1fr);
   column-gap: 3px;
   padding: 0 8px 8px;
 }
 /* 列模板由 applyLayout() 写入：停靠面板才占列 */
-.wb-body.left-hidden .wb-nav,
-.wb-body.left-hidden .wb-sash-col,
 .wb-body.right-hidden .wb-drawer { display: none; }
 
 /* ===== 左侧：变更文件与章节（留在地面上，不套卡片） ===== */
@@ -1042,6 +1041,8 @@ body.wb-mode-on .layout { display: none; }
   resize: vertical;
   outline: none;
 }
+.composer textarea { color: var(--text); caret-color: var(--text); }
+.composer textarea::placeholder { color: var(--muted); }
 .composer textarea:focus { border-color: var(--text); }
 .crow { display: flex; gap: 8px; margin-top: 8px; }
 .crow .btn {
@@ -1423,19 +1424,6 @@ body.wb-mode-on .layout { display: none; }
   .badge { grid-area: badge; grid-column: auto; }
 
   .wb-body { grid-template-columns: minmax(0, 1fr) !important; column-gap: 0; }
-  .wb-nav {
-    position: fixed;
-    top: 8px;
-    left: 8px;
-    bottom: 8px;
-    width: min(280px, 86vw);
-    padding: 10px;
-    border: 1px solid var(--border);
-    border-radius: 16px;
-    background: var(--sheet);
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
-    z-index: 55;
-  }
 }
 
 @media (max-width: 700px) {
@@ -1532,7 +1520,8 @@ body.wb-mode-on .layout { display: none; }
 .tscroll {
   max-height: min(68vh, 620px);
   overflow: auto;
-  overscroll-behavior: contain;
+  /* 到边后把滚动交回页面：鼠标停在表格上也别再"卡住"整页 */
+  overscroll-behavior: auto;
   scrollbar-width: thin;
   scrollbar-color: var(--control) transparent;
 }
@@ -2345,6 +2334,7 @@ body.tbl-full-on { overflow: hidden; }
 }
 #workbench[data-theme="night"] {
   color-scheme: dark;
+  color: var(--text);
   --sheet: #17191c;
   --ground: #101214;
   --raised: #1d2126;
@@ -2779,7 +2769,6 @@ body.tbl-full-on { overflow: hidden; }
 .wb-doc[data-kind="csv"] .wb-filepath { width: 100%; }
 
 /* 宽屏只留左栏的收起按钮，顶栏这条在窄屏才需要 */
-@media (min-width: 1024px) { .wb-nav-toggle { display: none; } }
 
 /* ---------- 文档缩放（只作用于正文） ---------- */
 .wb-content { zoom: var(--doc-zoom, 1); }
@@ -2851,21 +2840,13 @@ body.reading-focus .wb-nav-head::before {
   content: "大纲"; font-size: var(--fs-label); color: var(--muted); font-weight: 600;
 }
 body.reading-focus .wb-view-chapters { flex: 1; min-height: 0; }
-body.reading-focus.outline-off .wb-body { grid-template-columns: minmax(0, 1fr) !important; }
-body.reading-focus.outline-off .wb-nav { display: none; }
 body.reading-focus .wb-nav { padding-inline: 2px 10px; }
 
 /* 全屏大纲要能压过「左栏已收起」的记忆状态 */
 
-/* 窄屏：大纲改为浮层，不挤压正文 */
+/* 窄屏：抽屉压在浮层之上 */
 @media (max-width: 899px) {
-  /* 抽屉优先：打开意见时把大纲浮层让开，且抽屉在更上层 */
   body.reading-focus .wb-drawer.is-floating { z-index: 90; }
-  body.reading-focus:not(.outline-off) .wb-nav {
-    position: fixed; left: 0; top: 0; bottom: 0; width: 264px; z-index: 75;
-    background: var(--sheet); border-right: 1px solid var(--border);
-    box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.16);
-  }
 }
 
 /* ---------- 面板三态：停靠 / 悬浮 / 隐藏 ---------- */
@@ -2890,8 +2871,7 @@ body.reading-focus .wb-nav { padding-inline: 2px 10px; }
 .wb-panelctl button[aria-pressed="true"] { color: var(--text); background: var(--raised); }
 .wb-nav-head .wb-panelctl + .wb-nav-fold { margin-left: 2px; }
 
-/* 浮层：脱离网格，贴边卡片，可拖动 */
-.wb-body.left-floating .wb-nav,
+/* 浮层：脱离网格，贴边卡片，可拖动（右栏） */
 .wb-body.right-floating .wb-drawer {
   position: fixed;
   z-index: 78;
@@ -2903,23 +2883,89 @@ body.reading-focus .wb-nav { padding-inline: 2px 10px; }
   height: min(72vh, 680px);
   overflow: auto;
 }
-.wb-body.left-floating .wb-nav {
-  left: 12px;
-  top: 60px;
-  width: 300px;
-}
 .wb-body.right-floating .wb-drawer {
   right: 12px;
   top: 60px;
   width: min(400px, 92vw);
 }
-.wb-body.left-floating .wb-nav-head,
 .wb-body.right-floating .wb-drawer-head {
   cursor: grab;
   user-select: none;
 }
-.wb-body.is-dragging .wb-nav,
 .wb-body.is-dragging .wb-drawer { cursor: grabbing; }
-.wb-nav.is-dragging,
 .wb-drawer.is-dragging { opacity: 0.94; }
-.wb-body.left-floating .wb-sash-col { display: none; }
+
+/* ---------- 文件树与大纲是两块独立面板：停靠 / 悬浮 / 隐藏 ---------- */
+.wb-view { position: relative; }
+.wb-view-ctl {
+  position: absolute;
+  top: 5px;
+  right: 4px;
+  display: flex;
+  gap: 2px;
+  opacity: 0.45;
+  transition: opacity 0.12s;
+}
+.wb-view:hover > .wb-view-ctl,
+.wb-view-ctl:focus-within { opacity: 1; }
+.wb-view-ctl button {
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: none;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1;
+  cursor: pointer;
+}
+.wb-view-ctl button:hover { background: var(--active); color: var(--text); }
+.wb-view-ctl button[aria-pressed="true"] { background: var(--raised); border-color: var(--border); color: var(--text); }
+.wb-view > .wb-view-head { padding-right: 66px; }
+
+/* 隐藏：只藏对应那一段，另一段自动占满整列 */
+.wb-body.files-hidden #wbFilesView,
+.wb-body.outline-hidden #wbChaptersView { display: none; }
+.wb-nav.is-single > .wb-sash { display: none; }
+.wb-nav.is-single > .wb-view { flex: 1 1 auto; }
+/* 两块都不停靠时，列头与工具条也一起让位；浮层仍留在 DOM 里 */
+.wb-nav:not(.has-docked) > .wb-nav-head,
+.wb-nav:not(.has-docked) > .wb-nav-tools,
+.wb-nav:not(.has-docked) > .wb-sash { display: none; }
+.wb-nav:not(.has-docked) {
+  padding-inline: 0;
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 0;
+  height: 0;
+  overflow: visible;
+}
+.wb-body:not(.left-docked) > .wb-sash-col { display: none; }
+
+/* 悬浮：脱离左列，独立卡片，可拖动 */
+.wb-body.files-floating #wbFilesView,
+.wb-body.outline-floating #wbChaptersView {
+  position: fixed;
+  z-index: 78;
+  width: 300px;
+  height: min(70vh, 560px);
+  padding: 6px 8px;
+  background: var(--sheet);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+  overflow: auto;
+}
+.wb-body.files-floating #wbFilesView { left: 12px; top: 60px; }
+.wb-body.outline-floating #wbChaptersView { left: 12px; top: 60px; }
+/* 两块同时浮起时错开，避免叠在一起 */
+.wb-body.files-floating.outline-floating #wbChaptersView { left: 324px; }
+.wb-body.files-floating #wbFilesView > .wb-view-head,
+.wb-body.outline-floating #wbChaptersView > .wb-view-head { cursor: grab; user-select: none; }
+.wb-body.is-dragging .wb-view-head { cursor: grabbing; }
+.wb-view.is-dragging { opacity: 0.94; }

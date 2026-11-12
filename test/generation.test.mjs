@@ -1149,7 +1149,7 @@ test('改动清单折叠状态在标已阅后保持展开', async () => {
   assert.ok(app.els.get('wbDrawerBody').innerHTML.includes('chg-fold" open'), '展开状态写进 DOM');
 });
 
-test('面板布局：停靠 / 悬浮 / 隐藏三态，窄屏把停靠降级为浮层', async () => {
+test('面板布局：文件树与大纲各自停靠 / 悬浮 / 隐藏，窄屏把停靠降级为浮层', async () => {
   const world = makeWorld();
   world.texts = { 'a.md': '# 标题\n\n正文。\n' };
   const app = mountApp(world);
@@ -1157,38 +1157,52 @@ test('面板布局：停靠 / 悬浮 / 隐藏三态，窄屏把停靠降级为�
   const w = app.ctx.window;
   const body = app.els.get('wbBody');
   const nav = app.els.get('wbNav');
-  const drawer = app.els.get('wbDrawer');
 
-  // 默认：左栏停靠、右栏隐藏（保留右缘把手）
-  assert.ok(body.classList.contains('left-docked'), '默认左栏停靠');
-  assert.ok(body.classList.contains('right-hidden'), '默认右栏隐藏');
+  // 默认：两块面板都停靠，占一列并留分隔列；右栏隐藏并留把手
+  assert.ok(body.classList.contains('files-docked'), '文件树默认停靠');
+  assert.ok(body.classList.contains('outline-docked'), '大纲默认停靠');
+  assert.ok(body.classList.contains('right-hidden'), '右栏默认隐藏');
+  assert.ok(nav.classList.contains('has-docked'));
+  assert.ok(!nav.classList.contains('is-single'), '两块都停靠时保留分隔条');
   assert.ok(body.style.gridTemplateColumns.includes('7px'), '停靠时留分隔列');
   assert.equal(app.els.get('wbDrawerOpen').hidden, false, '右栏隐藏时留把手');
 
-  // 左栏改悬浮：不再占列，元素变浮层
-  w.__setLayout('left', 'floating');
-  assert.ok(body.classList.contains('left-floating'));
-  assert.ok(!body.classList.contains('left-docked'));
-  assert.ok(nav.classList.contains('is-floating'));
-  assert.ok(!body.style.gridTemplateColumns.includes('7px'), '悬浮不占列');
+  // 只隐藏大纲：文件树仍停靠，且变成单块占满整列
+  w.__setLayout('outline', 'hidden');
+  assert.ok(body.classList.contains('outline-hidden'));
+  assert.ok(body.classList.contains('files-docked'));
+  assert.ok(nav.classList.contains('is-single'), '只剩一块时不显示分隔条');
 
-  // 右栏改停靠：网格末列出现抽屉宽度
+  // 文件树改悬浮：两块都不占列，左列让位但浮层仍在
+  w.__setLayout('files', 'floating');
+  assert.ok(body.classList.contains('files-floating'));
+  assert.ok(!nav.classList.contains('has-docked'));
+  assert.ok(!body.style.gridTemplateColumns.includes('var(--nav-w)'), '无停靠面板时不占列');
+
+  // 两块都改回停靠：左列与分隔列一起回来
+  w.__setLayout('outline', 'docked');
+  w.__setLayout('files', 'docked');
+  assert.ok(body.classList.contains('files-docked'));
+  assert.ok(body.classList.contains('outline-docked'));
+  assert.ok(body.style.gridTemplateColumns.includes('7px'));
+
+  // 右栏：停靠占末列，隐藏回到把手
   w.__setLayout('right', 'docked');
-  assert.ok(body.classList.contains('right-docked'));
   assert.ok(body.style.gridTemplateColumns.trim().endsWith('var(--drawer-w)'));
   assert.equal(app.els.get('wbDrawerOpen').hidden, true, '面板可见时不显示把手');
-  assert.ok(drawer.classList.contains('is-floating') === false);
-
-  // 记住上次状态：隐藏后再打开回到停靠，而不是默认值
   w.__setLayout('right', 'hidden');
   assert.equal(app.els.get('wbDrawerOpen').hidden, false);
   w.__setLayout('right', 'docked');
-  assert.ok(body.classList.contains('right-docked'));
+  assert.ok(body.classList.contains('right-docked'), '重新打开回到上次的停靠状态');
 
-  // 窄屏：dock 降级为浮层，不再挤压正文
+  // 窄屏：停靠降级为浮层，不再挤压正文
   app.ctx.window.innerWidth = 820;
-  w.__setLayout('left', 'docked');
-  assert.equal(w.__effLayout().left, 'floating');
-  assert.ok(body.classList.contains('left-floating'));
-  assert.ok(nav.classList.contains('is-floating'));
+  w.__setLayout('files', 'docked');
+  assert.equal(w.__effLayout().files, 'floating');
+  assert.ok(body.classList.contains('files-floating'));
+  assert.ok(!nav.classList.contains('has-docked'));
+  // 窄屏一次只浮一块：打开大纲把文件树收起，两块卡片不会互相压住
+  w.__setLayout('outline', 'docked');
+  assert.equal(w.__effLayout().outline, 'floating');
+  assert.equal(w.__effLayout().files, 'hidden');
 });
