@@ -3628,7 +3628,11 @@
         } };
         // 历史提交视图刷新后仍停在那个提交，不要被切回「全部改动」
         if (isCommitView()) opts.commit = D.rev.sha;
-        try { await load(D.n, true, true, opts); } finally { refreshBtn.disabled = false; }
+        try {
+          await load(D.n, true, true, opts);
+          // 合并条件也和 PR 状态有关（别人刚合并、冲突刚出现）：刷新时一并强制拉
+          await loadMergeOptions(true);
+        } finally { refreshBtn.disabled = false; }
       });
     }
     /* 面板头部的停靠 / 悬浮三态控件 */
