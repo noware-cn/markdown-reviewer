@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Markdown 文档审批工作台 · noware-cn/workspace</title>
-<link rel="stylesheet" href="/styles.css?v=345">
+<link rel="stylesheet" href="/styles.css?v=346">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -204,15 +204,15 @@
       <div class="wb-drawer-body" id="wbDrawerBody"></div>
     </aside>
   </div>
+    <button class="wb-drawer-open" id="wbDrawerOpen" type="button" title="打开意见面板" hidden>意见</button>
+    <button class="selchip" id="dselchip" type="button" hidden>评论所选</button>
+    <div class="nav-float" id="navFloat" hidden>
+      <button type="button" id="navPrev" title="上一处变更 (p)">↑</button>
+      <span id="navCount">0/0</span>
+      <button type="button" id="navNext" title="下一处变更 (n)">↓</button>
+    </div>
 </div>
 
-<button class="wb-drawer-open" id="wbDrawerOpen" type="button" title="打开意见面板" hidden>意见</button>
-<button class="selchip" id="dselchip" type="button" hidden>评论所选</button>
-<div class="nav-float" id="navFloat" hidden>
-  <button type="button" id="navPrev" title="上一处变更 (p)">↑</button>
-  <span id="navCount">0/0</span>
-  <button type="button" id="navNext" title="下一处变更 (n)">↓</button>
-</div>
 <div class="focusbar" id="focusBar" hidden>
   <button type="button" id="focusZoomOut" title="缩小">−</button>
   <span class="focusbar-zoom" id="focusZoomLabel">100%</span>
