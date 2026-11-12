@@ -2808,7 +2808,16 @@ body.tbl-full-on { overflow: hidden; }
 body.reading-focus .wb-topbar,
 body.reading-focus .wb-nav,
 body.reading-focus #navFloat { display: none !important; }
-body.reading-focus .wb-body { padding: 0; }
+/* 网格列模板必须一起收掉：只隐藏左栏会留下 nav-w + 7px 两条空列，正文被挤到右侧 */
+body.reading-focus .wb-body {
+  grid-template-columns: minmax(0, 1fr) !important;
+  column-gap: 0;
+  padding: 0;
+}
+body.reading-focus .wb-body .wb-sash-col { display: none; }
+body.reading-focus .wb-doc { width: 100%; }
+/* 文末留出浮动条的高度，最后几行不会被压住 */
+body.reading-focus .wb-content { padding-bottom: 72px; }
 body.reading-focus .wb-doc { border: 0; border-radius: 0; }
 body.reading-focus .wb-filepath { padding-left: 28px; }
 /* 全屏时意见面板改为浮层，不再挤压正文 */
