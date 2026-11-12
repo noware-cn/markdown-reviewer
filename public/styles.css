@@ -2736,3 +2736,60 @@ body.tbl-full-on { overflow: hidden; }
 
 /* 大图：横向超宽时可滚动，纵向限高 */
 .mm-block .mm-host svg { max-height: 78vh; }
+
+/* ---------- 顶栏治理：分组、分隔、分组标签、窄屏降级 ---------- */
+.wb-topbar { gap: 8px; }
+.wb-sep {
+  align-self: stretch; width: 1px; margin: 10px 2px;
+  background: var(--border); opacity: .55; flex: none;
+}
+.wb-commit-pick { display: inline-flex; align-items: center; gap: 6px; min-width: 168px; }
+.wb-commit-label { font-size: 12px; color: var(--muted); }
+.wb-commit-select { min-width: 132px; }
+.wb-rvcount {
+  font-size: 12px; color: var(--muted);
+  border: 1px solid var(--border); background: transparent;
+  border-radius: 999px; padding: 3px 10px; cursor: pointer;
+}
+.wb-rvcount:hover { color: var(--text); background: var(--raised); }
+.wb-rvcount[hidden] { display: none; }
+.wb-drawer-btn .wb-badge.draft { background: var(--warning, #b7791f); color: #fff; margin-left: 4px; }
+
+@media (max-width: 1279px) {
+  .wb-brand-text { display: none; }
+}
+@media (max-width: 1023px) {
+  .wb-orig-wrap, .wb-commit-label { display: none; }
+  .wb-commit-pick { min-width: 0; }
+  .wb-viewstate button { padding: 3px 7px; }
+}
+@media (max-width: 720px) {
+  .wb-topbar { flex-wrap: wrap; gap: 6px; }
+  .wb-sep { display: none; }
+  .wb-back { padding-right: 6px; }
+}
+
+/* ---------- 文件路径条：不再压住正文 ---------- */
+.wb-filepath {
+  width: 100%;
+  margin: 0;
+  padding: 8px 22px;
+  background: var(--sheet);
+  border-bottom: 1px solid var(--rule);
+  box-shadow: none;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: var(--fs-label);
+}
+.wb-filepath .fp-dir { overflow: hidden; text-overflow: ellipsis; }
+.wb-filepath .fp-name { flex: none; }
+/* 锚点跳转时给吸顶条留出高度，标题不会被盖住 */
+.md-block, .md-block h1, .md-block h2, .md-block h3, .md-block h4 { scroll-margin-top: 52px; }
+.wb-doc[data-mode="sidebyside"] .wb-filepath,
+.wb-doc[data-mode="unified"] .wb-filepath,
+.wb-doc[data-mode="split"] .wb-filepath,
+.wb-doc[data-kind="csv"] .wb-filepath { width: 100%; }
+
+/* 宽屏只留左栏的收起按钮，顶栏这条在窄屏才需要 */
+@media (min-width: 1024px) { .wb-nav-toggle { display: none; } }

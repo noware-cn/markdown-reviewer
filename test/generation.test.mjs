@@ -106,7 +106,8 @@ function makeWorld() {
       const body = (isBase && world.texts && world.texts[`${p}@base`])
         || (world.texts && world.texts[p])
         || `# ${p} @ ${ref}\n\n- 项目\n`;
-      return { status: 200, ok: true, json: async () => ({ text: body, truncated: false }) };
+      const trunc = isBase ? world.baseTruncated : world.truncated;
+      return { status: 200, ok: true, json: async () => ({ text: body, truncated: Boolean(trunc) }) };
     }
     return { status: world.post.status, ok: world.post.status === 200, json: async () => world.post.data };
   };
@@ -182,7 +183,7 @@ function mountApp(world) {
   ctx.window.DiffModel = modelCtx.window.DiffModel;
 
   const ANCHOR = '  let bound = false;';
-  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__docTarget = docLinkTarget; window.__render = render; window.__clickReview = (line) => { const f = curFile(); setReviewed(f, Number(line), !isReviewed(f, Number(line))); render(); }; window.__docLink = handleDocLink; window.__resolve = resolveBlockUrls; window.__reply = sendReply;\n${ANCHOR}`);
+  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__docTarget = docLinkTarget; window.__render = render; window.__clickReview = (line, side) => { const f = curFile(); setReviewed(f, Number(line), side || "head", !isReviewed(f, Number(line), side || "head")); render(); }; window.__docLink = handleDocLink; window.__resolve = resolveBlockUrls; window.__reply = sendReply;\n${ANCHOR}`);
   const semCtx = { window: { marked: modelCtx.window.marked }, console };
   semCtx.window.window = semCtx.window;
   semCtx.globalThis = semCtx;
@@ -1030,4 +1031,60 @@ test('改动清单：抽屉顶部列出改动块，与引擎状态一致', async
   assert.ok(drawer.includes('chg-list'), '抽屉里有改动清单');
   assert.ok(drawer.includes('chg-chip modified') || drawer.includes('chg-chip added'), '条目带状态标签');
   assert.ok(drawer.includes('data-review'), '条目可以标已阅');
+});
+
+
+test('删除块也能标已阅：清单条目有行号，计数能到满', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n甲段保留。\n\n乙段保留。\n', 'a.md@base': '# 标题\n\n甲段保留。\n\n乙段保留。\n\n被删掉的一段。\n' };
+  world.patches = { 'a.md': '@@ -1,5 +1,5 @@\n # 标题\n \n 甲段保留。\n \n 乙段保留。\n-\n-被删掉的一段。\n' };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const drawer = app.els.get('wbDrawerBody').innerHTML;
+  assert.ok(drawer.includes('chg-chip removed'), '清单里有删除条目');
+  assert.ok(!/data-review="null"/.test(drawer), '删除条目不再拿到 null 行号');
+  assert.ok(/data-review="7"[^>]*data-review-side="base"/.test(drawer), '删除条目带 base 行号与侧别');
+
+  // 标掉这一条，计数应等于总数
+  app.ctx.window.__clickReview('7', 'base');
+  const count = app.els.get('wbReviewCount').textContent;
+  const [done, total] = count.match(/(\d+)\/(\d+)/).slice(1).map(Number);
+  assert.equal(done, total, '所有改动条目都能被标完');
+});
+
+test('截断文件在最终/原始视图也给提示，不当成全文', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n正文。\n', 'a.md@base': '# 标题\n\n改前正文。\n' };
+  world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n-改前正文。\n+正文。\n' };
+  world.truncated = true;
+  world.baseTruncated = false;
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const D = app.ctx.window.__D;
+  D.docView = 'final';
+  app.ctx.window.__render();
+  assert.ok(app.els.get('wbContent').innerHTML.includes('超过读取上限'), '最终态拦住 head 截断');
+  D.docView = 'original';
+  app.ctx.window.__render();
+  assert.ok(!app.els.get('wbContent').innerHTML.includes('超过读取上限'), 'base 未截断时不误报');
+  D.docView = 'markup';
+});
+
+
+test('截断分侧判断：只有 base 截断时，原始态拦住、最终态不误报', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n正文。\n', 'a.md@base': '# 标题\n\n改前正文。\n' };
+  world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n-改前正文。\n+正文。\n' };
+  world.truncated = false;
+  world.baseTruncated = true;
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const D = app.ctx.window.__D;
+  D.docView = 'original';
+  app.ctx.window.__render();
+  assert.ok(app.els.get('wbContent').innerHTML.includes('超过读取上限'), '原始态拦住 base 截断');
+  D.docView = 'final';
+  app.ctx.window.__render();
+  assert.ok(!app.els.get('wbContent').innerHTML.includes('超过读取上限'), 'head 完整时不误报');
+  D.docView = 'markup';
 });
