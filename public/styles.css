@@ -1391,16 +1391,7 @@ body.wb-mode-on .layout { display: none; }
   .wb-look { order: 6; }
   .wb-look-pop { right: -4px; }
   .wb-modes { order: 9; flex: 1 1 100%; margin-left: 0; padding-bottom: 4px; overflow-x: auto; }
-  .wb-drawer {
-    position: fixed;
-    top: 8px;
-    right: 8px;
-    bottom: 8px;
-    width: min(360px, 92vw);
-    z-index: 60;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
-  }
-  .wb-body { grid-template-columns: minmax(0, 1fr) !important; }
+  /* 抽屉的浮层定位与列模板由 applyLayout() 按状态决定（右栏 ≤1100 降级为浮层） */
 }
 
 @media (max-width: 1000px) {
@@ -2803,9 +2794,8 @@ body.tbl-full-on { overflow: hidden; }
 /* ---------- 全屏阅读：只留正文与浮动控制 ---------- */
 body.reading-focus .wb-topbar,
 body.reading-focus #navFloat { display: none !important; }
-/* 网格列模板必须一起收掉：只隐藏左栏会留下 nav-w + 7px 两条空列，正文被挤到右侧 */
+/* 列模板由 applyLayout() 计算（全屏左栏 224px、不占分隔列），这里只收内边距与间距 */
 body.reading-focus .wb-body {
-  grid-template-columns: minmax(0, 1fr) !important;
   column-gap: 0;
   padding: 0;
 }
@@ -2815,11 +2805,13 @@ body.reading-focus .wb-doc { width: 100%; }
 body.reading-focus .wb-content { padding-bottom: 72px; }
 body.reading-focus .wb-doc { border: 0; border-radius: 0; }
 body.reading-focus .wb-filepath { padding-left: 28px; }
-/* 全屏时意见面板改为浮层，不再挤压正文 */
-body.reading-focus .wb-drawer {
-  position: fixed; right: 12px; top: 12px; bottom: 12px; z-index: 70;
+/* 全屏时意见面板一律浮层（布局模型在 focus 下不会给出停靠列） */
+body.reading-focus .wb-body.right-floating .wb-drawer {
+  top: 12px;
+  bottom: 12px;
+  height: auto;
   width: min(430px, 92vw);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  z-index: 86;
 }
 .focusbar {
   position: fixed; right: 18px; bottom: 18px; z-index: 80;
@@ -2849,7 +2841,6 @@ body.reading-focus .wb-drawer {
 .chg-fold[open] > summary { margin-bottom: 8px; color: var(--text); }
 
 /* ---------- 全屏阅读：左侧大纲 ---------- */
-body.reading-focus .wb-body { grid-template-columns: var(--focus-nav-w, 224px) minmax(0, 1fr) !important; }
 body.reading-focus .wb-view-files,
 body.reading-focus .wb-nav-tools,
 body.reading-focus .wb-nav-head .wb-nav-title,
@@ -2865,12 +2856,10 @@ body.reading-focus.outline-off .wb-nav { display: none; }
 body.reading-focus .wb-nav { padding-inline: 2px 10px; }
 
 /* 全屏大纲要能压过「左栏已收起」的记忆状态 */
-body.reading-focus .wb-body.left-docked .wb-nav { display: flex; }
 
 /* 窄屏：大纲改为浮层，不挤压正文 */
 @media (max-width: 899px) {
   /* 抽屉优先：打开意见时把大纲浮层让开，且抽屉在更上层 */
-  body.reading-focus .wb-body { grid-template-columns: minmax(0, 1fr) !important; }
   body.reading-focus .wb-drawer.is-floating { z-index: 90; }
   body.reading-focus:not(.outline-off) .wb-nav {
     position: fixed; left: 0; top: 0; bottom: 0; width: 264px; z-index: 75;

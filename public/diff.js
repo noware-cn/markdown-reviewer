@@ -482,15 +482,18 @@
 
   /* ---------- 面板布局：停靠 / 悬浮 / 隐藏 ---------- */
   /* 窄屏没有停靠的空间，dock 一律降级为浮层 */
-  const isNarrow = () => Number(window.innerWidth) <= 899;
+  /* 断点：左栏 900px 以下没有并排空间，右栏 1100px 以下同理（与旧版抽屉浮层行为一致） */
+  const dockLimit = (side) => (side === "left" ? 900 : 1100);
+  const isNarrow = (side) => Number(window.innerWidth) <= dockLimit(side);
 
   function effectiveLayout() {
     const lay = D.layout || (D.layout = { left: "docked", right: "hidden" });
     const eff = { left: lay.left, right: lay.right };
-    if (isNarrow()) {
-      if (eff.left === "docked") eff.left = "floating";
-      if (eff.right === "docked") eff.right = "floating";
+    for (const side of ["left", "right"]) {
+      if (eff[side] === "docked" && isNarrow(side)) eff[side] = "floating";
     }
+    // 全屏只留正文与左侧大纲：右栏即使选了停靠也按浮层渲染（沿用既有行为）
+    if (D.focus && eff.right === "docked") eff.right = "floating";
     return eff;
   }
 
@@ -3643,7 +3646,7 @@
       return LAYOUTS.includes(v) ? v : fallback;
     };
     D.layout = {
-      left: pick(PREF.layoutLeft, window.innerWidth <= 900 ? "hidden" : "docked"),
+      left: pick(PREF.layoutLeft, Number(window.innerWidth) <= 900 ? "hidden" : "docked"),
       right: pick(PREF.layoutRight, "hidden"),
     };
     D.lastLayout = {
