@@ -47,6 +47,8 @@
   const TBL_STYLES = ["grid", "zebra", "plain"];
   const READ_WIDTHS = ["narrow", "standard", "wide"];
   const MODES = ["reading"];
+  /* 面板布局：停靠占列 / 悬浮覆盖 / 隐藏 */
+  const LAYOUTS = ["docked", "floating", "hidden"];
 
   const esc = window.DiffModel.esc;
   const isCsv = (path) => window.DiffModel.isCsvPath(path);
@@ -176,6 +178,10 @@
     focus: "wb.doc.focus",
     outline: "wb.doc.outline",
     reviewed: "wb.doc.reviewed",
+    layoutLeft: "wb.layout.left",
+    layoutRight: "wb.layout.right",
+    lastLeft: "wb.layout.last.left",
+    lastRight: "wb.layout.last.right",
   };
   const readPref = (key, fallback) => {
     try {
@@ -474,25 +480,118 @@
     return { html, hits: shown.length };
   }
 
-  /** 抽屉收起后在右缘留一个把手，避免「点掉箭头就再也打不开」。 */
+  /* ---------- 面板布局：停靠 / 悬浮 / 隐藏 ---------- */
+  /* 窄屏没有停靠的空间，dock 一律降级为浮层 */
+  const isNarrow = () => Number(window.innerWidth) <= 899;
+
+  function effectiveLayout() {
+    const lay = D.layout || (D.layout = { left: "docked", right: "hidden" });
+    const eff = { left: lay.left, right: lay.right };
+    if (isNarrow()) {
+      if (eff.left === "docked") eff.left = "floating";
+      if (eff.right === "docked") eff.right = "floating";
+    }
+    return eff;
+  }
+
+  function panelOf(side) {
+    return document.getElementById(side === "left" ? "wbNav" : "wbDrawer");
+  }
+
+  /* 唯一改 DOM 的地方：类名、网格列、浮层位置、控件状态都在这里同步 */
+  function applyLayout() {
+    const wb = document.getElementById("wbBody");
+    if (!wb || !D.layout) return;
+    const eff = effectiveLayout();
+    const cols = [];
+    if (eff.left === "docked") {
+      cols.push(D.focus ? "var(--focus-nav-w, 224px)" : "var(--nav-w)");
+      if (!D.focus) cols.push("7px");
+    }
+    cols.push("minmax(0, 1fr)");
+    if (eff.right === "docked") cols.push("var(--drawer-w)");
+    wb.style.gridTemplateColumns = cols.join(" ");
+
+    for (const side of ["left", "right"]) {
+      wb.classList.toggle(`${side}-docked`, eff[side] === "docked");
+      wb.classList.toggle(`${side}-floating`, eff[side] === "floating");
+      wb.classList.toggle(`${side}-hidden`, eff[side] === "hidden");
+      const el = panelOf(side);
+      if (!el) continue;
+      el.classList.toggle("is-floating", eff[side] === "floating");
+      if (eff[side] === "floating") placeFloating(side, el);
+      else {
+        el.style.left = "";
+        el.style.right = "";
+        el.style.top = "";
+      }
+      if (el.setAttribute) el.setAttribute("aria-hidden", String(eff[side] === "hidden"));
+    }
+    document.body.classList.toggle("outline-off", D.layout.left === "hidden");
+    const fo = document.getElementById("focusOutline");
+    if (fo) fo.setAttribute("aria-pressed", String(D.layout.left !== "hidden"));
+    syncPanelCtl(eff);
+    syncDrawerHandle();
+  }
+
+  function placeFloating(side, el) {
+    const pos = D.floatPos && D.floatPos[side];
+    if (!pos) return;
+    el.style.left = `${pos.x}px`;
+    el.style.top = `${pos.y}px`;
+    el.style.right = "auto";
+  }
+
+  function syncPanelCtl(eff) {
+    document.querySelectorAll("[data-panel][data-layout]").forEach((btn) => {
+      const side = btn.dataset.panel;
+      const on = side === "left" ? D.layout.left : D.layout.right;
+      btn.setAttribute("aria-pressed", String(btn.dataset.layout === on));
+    });
+    const navBtn = document.getElementById("wbNavToggle");
+    if (navBtn) navBtn.setAttribute("aria-expanded", String(eff.left !== "hidden"));
+    const dBtn = document.getElementById("wbDrawerBtn");
+    if (dBtn) dBtn.setAttribute("aria-expanded", String(eff.right !== "hidden"));
+  }
+
+  function setLayout(side, state) {
+    if (!LAYOUTS.includes(state) || !D.layout) return;
+    if (!D.lastLayout) D.lastLayout = { left: "docked", right: "docked" };
+    D.layout[side] = state;
+    if (state !== "hidden") {
+      D.lastLayout[side] = state;
+      writePref(side === "left" ? PREF.lastLeft : PREF.lastRight, state);
+    }
+    writePref(side === "left" ? PREF.layoutLeft : PREF.layoutRight, state);
+    if (side === "left") D.outline = state !== "hidden";
+    applyLayout();
+  }
+
+  function toggleLayout(side) {
+    const eff = effectiveLayout();
+    if (eff[side] !== "hidden") setLayout(side, "hidden");
+    else setLayout(side, D.lastLayout[side] === "hidden" ? "docked" : (D.lastLayout[side] || "docked"));
+  }
+
   /** 打开抽屉：所有入口共用，保证右缘把手与面板状态一致 */
   function openDrawer() {
-    const body = document.getElementById("wbBody");
-    if (body) body.classList.add("drawer-open");
-    syncDrawerHandle();
+    if (!D.layout) return;
+    if (effectiveLayout().right === "hidden") {
+      setLayout("right", D.lastLayout.right === "hidden" ? "docked" : (D.lastLayout.right || "docked"));
+    } else applyLayout();
   }
 
   function syncDrawerHandle() {
     const btn = document.getElementById("wbDrawerOpen");
     if (!btn) return;
-    if (document.getElementById("wbBody").classList.contains("drawer-open")) {
+    const hidden = effectiveLayout().right === "hidden";
+    if (!hidden) {
       btn.hidden = true;
       return;
     }
     const total = (D.comments || []).length;
     btn.textContent = total ? `意见 ${total}` : "意见";
     btn.hidden = false;
-    // 面板开合会改变正文宽度 → 块高度随之变化，刻度要重量
   }
 
   function renderFiles() {
@@ -953,20 +1052,21 @@
   }
   /* 全屏阅读的左侧大纲：可隐藏，状态记忆 */
   function setOutline(on) {
-    D.outline = Boolean(on);
-    writePref(PREF.outline, D.outline);
-    document.body.classList.toggle("outline-off", !D.outline);
-    const btn = document.getElementById("focusOutline");
-    if (btn) btn.setAttribute("aria-pressed", String(D.outline));
+    const want = Boolean(on);
+    if (!D.layout) return;
+    if (want && D.layout.left === "hidden") setLayout("left", "docked");
+    else if (!want && D.layout.left !== "hidden") setLayout("left", "hidden");
+    else applyLayout();
   }
 
   function setFocus(on) {
     D.focus = Boolean(on);
     writePref(PREF.focus, D.focus);
     if (document.body && document.body.classList) document.body.classList.toggle("reading-focus", D.focus);
+    // 全屏会改网格列模板（导航列变窄），交给布局模型重算
+    applyLayout();
     // 窄屏进全屏时先把大纲收起（浮层会盖住正文），用户可再点「大纲」打开
-    if (D.focus && window.innerWidth <= 899 && D.outline) setOutline(false);
-    else setOutline(D.outline);
+    if (D.focus && window.innerWidth <= 899 && D.layout.left !== "hidden") setLayout("left", "hidden");
     const bar = document.getElementById("focusBar");
     if (bar) bar.hidden = !D.focus;
     const btn = document.getElementById("wbFocusBtn");
@@ -1230,6 +1330,9 @@
     return `<div class="mm-fail"><div class="mm-fail-head">图表渲染失败</div>`
       + `<div class="mm-fail-msg">${msg}</div><pre class="mm-src">${esc(code)}</pre></div>`;
   }
+  window.__setLayout = (side, state) => setLayout(side, state);
+  window.__effLayout = () => effectiveLayout();
+  window.__layout = () => D.layout;
   window.__mmMount = (root) => { mountMermaid(root); };
   async function mountMermaid(root) {
     const hosts = root.querySelectorAll("[data-mermaid]");
@@ -2539,7 +2642,6 @@
         const line = Number(anchor.dataset.line);
         D.active = { path: D.file, start: line, end: line, quote: "" };
         render();
-        body.classList.add("drawer-open");
         openDrawer();
         setTimeout(() => { const ta = document.getElementById("wbcText"); if (ta) ta.focus(); }, 50);
         return;
@@ -2809,14 +2911,16 @@
         if (document.getElementById("tblCellPop")) { closeCellPopover(); return; }
         const panel = document.querySelector(".colpanel:not([hidden])");
         if (panel) { panel.hidden = true; return; }
+        // Esc 收起浮层面板（停靠的不用 Esc 收，避免误伤）
+        const eff = effectiveLayout();
+        if (eff.right === "floating") { setLayout("right", "hidden"); return; }
+        if (eff.left === "floating") { setLayout("left", "hidden"); return; }
         return;
       }
       if (e.key === "n") { e.preventDefault(); gotoChange(1); }
       else if (e.key === "p") { e.preventDefault(); gotoChange(-1); }
-      else if (e.key === "1") { D.active = null; setMode("reading"); }
-      else if (e.key === "2") { D.active = null; setMode("sidebyside"); }
-      else if (e.key === "3") { D.active = null; setMode("unified"); }
-      else if (e.key === "4") { D.active = null; setMode("split"); }
+      else if (e.key === "[") { e.preventDefault(); toggleLayout("left"); }
+      else if (e.key === "]") { e.preventDefault(); toggleLayout("right"); }
     });
     document.getElementById("dselchip").addEventListener("click", () => {
       const chip = document.getElementById("dselchip");
@@ -3380,24 +3484,15 @@
       writePref(PREF.read, D.read);
       applyTheme();
     }));
-    document.getElementById("wbDrawerBtn").addEventListener("click", () => {
-      document.getElementById("wbBody").classList.toggle("drawer-open");
-      syncDrawerHandle();
-    });
-    document.getElementById("wbDrawerFold").addEventListener("click", () => {
-      document.getElementById("wbBody").classList.remove("drawer-open");
-      syncDrawerHandle();
-    });
+    document.getElementById("wbDrawerBtn").addEventListener("click", () => toggleLayout("right"));
+    document.getElementById("wbDrawerFold").addEventListener("click", () => setLayout("right", "hidden"));
     document.getElementById("wbFocusBtn").addEventListener("click", () => setFocus(!D.focus));
     document.getElementById("focusExit").addEventListener("click", () => setFocus(false));
     const fo = document.getElementById("focusOutline");
     if (fo) fo.addEventListener("click", () => setOutline(!D.outline));
     document.getElementById("focusZoomIn").addEventListener("click", () => stepZoom(1));
     document.getElementById("focusZoomOut").addEventListener("click", () => stepZoom(-1));
-    document.getElementById("focusDrawer").addEventListener("click", () => {
-      document.getElementById("wbBody").classList.toggle("drawer-open");
-      syncDrawerHandle();
-    });
+    document.getElementById("focusDrawer").addEventListener("click", () => toggleLayout("right"));
     document.addEventListener("fullscreenchange", () => {
       if (!document.fullscreenElement && D.focus) setFocus(false);
     });
@@ -3449,12 +3544,53 @@
       openDrawer();
       syncDrawerHandle();
     });
-    document.getElementById("wbNavFold").addEventListener("click", () => {
-      document.getElementById("wbBody").classList.toggle("nav-collapsed");
+    document.getElementById("wbNavFold").addEventListener("click", () => setLayout("left", "hidden"));
+    document.getElementById("wbNavToggle").addEventListener("click", () => toggleLayout("left"));
+    /* 面板头部的停靠 / 悬浮三态控件 */
+    document.querySelectorAll("[data-panel][data-layout]").forEach((btn) => {
+      btn.addEventListener("click", () => setLayout(btn.dataset.panel, btn.dataset.layout));
     });
-    document.getElementById("wbNavToggle").addEventListener("click", () => {
-      document.getElementById("wbBody").classList.toggle("nav-collapsed");
+    /* 浮层面板：按住头部拖动，位置只在本次会话内保留 */
+    for (const side of ["left", "right"]) {
+      const el = panelOf(side);
+      if (!el) continue;
+      el.addEventListener("pointerdown", (e) => {
+        if (!el.classList.contains("is-floating")) return;
+        if (e.button !== undefined && e.button !== 0) return;
+        if (!e.target.closest(".wb-nav-head, .wb-drawer-head")) return;
+        if (e.target.closest("button, input, select, a")) return;
+        const r = el.getBoundingClientRect();
+        D.drag = { side, el, dx: e.clientX - r.left, dy: e.clientY - r.top };
+        el.classList.add("is-dragging");
+        el.style.right = "auto";
+        el.style.left = `${r.left}px`;
+        el.style.top = `${r.top}px`;
+        if (e.preventDefault) e.preventDefault();
+      });
+    }
+    document.addEventListener("pointermove", (e) => {
+      const d = D.drag;
+      if (!d) return;
+      const r = d.el.getBoundingClientRect();
+      const maxX = Math.max(0, Number(window.innerWidth) - r.width - 4);
+      const maxY = Math.max(0, Number(window.innerHeight) - 60);
+      const x = Math.min(maxX, Math.max(4, e.clientX - d.dx));
+      const y = Math.min(maxY, Math.max(4, e.clientY - d.dy));
+      d.el.style.left = `${x}px`;
+      d.el.style.top = `${y}px`;
+      if (!D.floatPos) D.floatPos = {};
+      D.floatPos[d.side] = { x, y };
     });
+    document.addEventListener("pointerup", () => {
+      const d = D.drag;
+      if (!d) return;
+      d.el.classList.remove("is-dragging");
+      D.drag = null;
+    });
+    /* 跨断点切换时 dock/floating 的判定会变，需重算 */
+    if (typeof window.addEventListener === "function") {
+      window.addEventListener("resize", () => { if (D.layout) applyLayout(); });
+    }
     document.getElementById("wbFilter").addEventListener("input", (e) => { D.filter = e.target.value; renderFiles(); });
     document.getElementById("wbOrigCopy").addEventListener("click", () => copyPrLink());
     document.querySelectorAll(".wb-viewseg [data-view]").forEach((btn) => {
@@ -3501,8 +3637,21 @@
     D.zoom = clampZoom(readPref(PREF.zoom, 1) || 1);
     D.focus = Boolean(readPref(PREF.focus, false));
     applyZoom();
-    D.outline = readPref(PREF.outline, true) !== false;
-    setOutline(D.outline);
+    D.floatPos = {};
+    const pick = (key, fallback) => {
+      const v = readPref(key, null);
+      return LAYOUTS.includes(v) ? v : fallback;
+    };
+    D.layout = {
+      left: pick(PREF.layoutLeft, window.innerWidth <= 900 ? "hidden" : "docked"),
+      right: pick(PREF.layoutRight, "hidden"),
+    };
+    D.lastLayout = {
+      left: pick(PREF.lastLeft, "docked"),
+      right: pick(PREF.lastRight, "docked"),
+    };
+    D.outline = D.layout.left !== "hidden";
+    applyLayout();
     if (D.focus) setFocus(true);
     const rv = readPref(PREF.reviewed, {});
     /* 旧版本键是 revKey|path|line，没有侧别：按 head 认领，避免升级后已阅全清零 */
@@ -3514,8 +3663,6 @@
     }
     const folded = readPref(PREF.folded(number), []);
     D.folded = new Set(Array.isArray(folded) ? folded : []);
-    /* 窄屏下文件导航默认收起，避免占满阅读宽度；宽屏保持展开 */
-    document.getElementById("wbBody").classList.toggle("nav-collapsed", window.innerWidth <= 900);
     document.getElementById("wbLoading").hidden = false;
     D.ref = null;
     refTextCache.clear();
@@ -3575,7 +3722,11 @@
       const handle = document.getElementById("wbDrawerOpen");
       if (handle) handle.hidden = true;
       const shell = document.getElementById("wbBody");
-      if (shell) shell.classList.remove("drawer-open");
+      if (shell) {
+        for (const side of ["left", "right"]) {
+          for (const st of LAYOUTS) shell.classList.remove(`${side}-${st}`);
+        }
+      }
       document.body.classList.remove("wb-mode-on");
       document.body.classList.remove("tbl-full-on");
       closeCellPopover();

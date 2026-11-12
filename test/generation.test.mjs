@@ -1148,3 +1148,47 @@ test('改动清单折叠状态在标已阅后保持展开', async () => {
   app.ctx.window.__render();
   assert.ok(app.els.get('wbDrawerBody').innerHTML.includes('chg-fold" open'), '展开状态写进 DOM');
 });
+
+test('面板布局：停靠 / 悬浮 / 隐藏三态，窄屏把停靠降级为浮层', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n正文。\n' };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const w = app.ctx.window;
+  const body = app.els.get('wbBody');
+  const nav = app.els.get('wbNav');
+  const drawer = app.els.get('wbDrawer');
+
+  // 默认：左栏停靠、右栏隐藏（保留右缘把手）
+  assert.ok(body.classList.contains('left-docked'), '默认左栏停靠');
+  assert.ok(body.classList.contains('right-hidden'), '默认右栏隐藏');
+  assert.ok(body.style.gridTemplateColumns.includes('7px'), '停靠时留分隔列');
+  assert.equal(app.els.get('wbDrawerOpen').hidden, false, '右栏隐藏时留把手');
+
+  // 左栏改悬浮：不再占列，元素变浮层
+  w.__setLayout('left', 'floating');
+  assert.ok(body.classList.contains('left-floating'));
+  assert.ok(!body.classList.contains('left-docked'));
+  assert.ok(nav.classList.contains('is-floating'));
+  assert.ok(!body.style.gridTemplateColumns.includes('7px'), '悬浮不占列');
+
+  // 右栏改停靠：网格末列出现抽屉宽度
+  w.__setLayout('right', 'docked');
+  assert.ok(body.classList.contains('right-docked'));
+  assert.ok(body.style.gridTemplateColumns.trim().endsWith('var(--drawer-w)'));
+  assert.equal(app.els.get('wbDrawerOpen').hidden, true, '面板可见时不显示把手');
+  assert.ok(drawer.classList.contains('is-floating') === false);
+
+  // 记住上次状态：隐藏后再打开回到停靠，而不是默认值
+  w.__setLayout('right', 'hidden');
+  assert.equal(app.els.get('wbDrawerOpen').hidden, false);
+  w.__setLayout('right', 'docked');
+  assert.ok(body.classList.contains('right-docked'));
+
+  // 窄屏：dock 降级为浮层，不再挤压正文
+  app.ctx.window.innerWidth = 820;
+  w.__setLayout('left', 'docked');
+  assert.equal(w.__effLayout().left, 'floating');
+  assert.ok(body.classList.contains('left-floating'));
+  assert.ok(nav.classList.contains('is-floating'));
+});
