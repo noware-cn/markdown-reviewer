@@ -1104,9 +1104,9 @@ test('文档缩放：只作用于正文，档位与快捷键都改变 --doc-zoom
   assert.equal(w.__D.zoom, 1.3);
   assert.equal(w.__zoomVar(), '1.3');
   w.__setZoom(99);
-  assert.equal(w.__D.zoom, 2, '超出上限被夹住');
+  assert.equal(w.__D.zoom, 1.5, '超出上限被夹住');
   w.__setZoom(0.1);
-  assert.equal(w.__D.zoom, 0.6, '低于下限被夹住');
+  assert.equal(w.__D.zoom, 0.9, '低于下限被夹住');
 });
 
 test('全屏阅读：切焦点模式加类，Esc 退出；草稿与选中评论仍在浮层面板里', async () => {

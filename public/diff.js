@@ -927,8 +927,10 @@
    * 同一段里同一句话出现多次时无法判断哪处是新增，直接不标，只留页边记号。
    */
   /* ---------- 文档缩放与全屏阅读 ---------- */
-  const ZOOM_STEPS = [0.8, 0.9, 1, 1.15, 1.3, 1.5];
-  const clampZoom = (v) => Math.min(2, Math.max(0.6, Math.round(Number(v) * 100) / 100));
+  const ZOOM_STEPS = [0.9, 1, 1.15, 1.3, 1.5];
+  const ZOOM_MIN = ZOOM_STEPS[0];
+  const ZOOM_MAX = ZOOM_STEPS[ZOOM_STEPS.length - 1];
+  const clampZoom = (v) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(Number(v) * 100) / 100));
   function applyZoom() {
     const z = clampZoom(D.zoom || 1);
     D.zoom = z;
@@ -942,11 +944,9 @@
   }
   function stepZoom(dir) {
     const cur = D.zoom || 1;
-    const idx = ZOOM_STEPS.findIndex((v) => v > cur - 0.001);
-    const next = dir > 0
-      ? ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, (idx < 0 ? ZOOM_STEPS.length - 1 : idx) + (Math.abs(ZOOM_STEPS[idx] - cur) < 0.001 ? 1 : 0))]
-      : ZOOM_STEPS[Math.max(0, (idx < 0 ? ZOOM_STEPS.length - 1 : idx) - 1)];
-    D.zoom = clampZoom(next);
+    let idx = ZOOM_STEPS.findIndex((v) => Math.abs(v - cur) < 0.001);
+    if (idx < 0) idx = ZOOM_STEPS.reduce((best, v, i) => (Math.abs(v - cur) < Math.abs(ZOOM_STEPS[best] - cur) ? i : best), 0);
+    D.zoom = clampZoom(ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, idx + dir))]);
     writePref(PREF.zoom, D.zoom);
     applyZoom();
   }
@@ -960,9 +960,12 @@
     if (btn) btn.setAttribute("aria-pressed", String(D.focus));
     // 浏览器级全屏：失败也不影响页内焦点模式
     try {
-      if (D.focus && !document.fullscreenElement) document.documentElement.requestFullscreen?.();
-      if (!D.focus && document.fullscreenElement) document.exitFullscreen?.();
-    } catch { /* 忽略：用户可能已拒绝全屏 */ }
+      const p = D.focus && !document.fullscreenElement
+        ? document.documentElement.requestFullscreen?.()
+        : (!D.focus && document.fullscreenElement ? document.exitFullscreen?.() : null);
+      // 用户可能拒绝或浏览器不允许，页内焦点模式仍要生效
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch { /* 同步抛错同样忽略 */ }
   }
 
   /* ---------- 已阅与改动清单 ---------- */
@@ -3382,6 +3385,8 @@
       if (!document.fullscreenElement && D.focus) setFocus(false);
     });
     document.addEventListener("keydown", (e) => {
+      const wb = document.getElementById("workbench");
+      if (wb && wb.hidden) return;
       const mod = e.metaKey || e.ctrlKey;
       if (mod && (e.key === "=" || e.key === "+")) { e.preventDefault(); stepZoom(1); return; }
       if (mod && e.key === "-") { e.preventDefault(); stepZoom(-1); return; }
@@ -3391,7 +3396,14 @@
       if (!mod && !e.altKey && !typing && (e.key === "f" || e.key === "F")) {
         e.preventDefault(); setFocus(!D.focus); return;
       }
-      if (e.key === "Escape" && D.focus) setFocus(false);
+      if (e.key === "Escape" && D.focus) {
+        // 表格全屏、单元格弹层、列面板优先消费 Esc
+        const busy = document.querySelector(".table-shell.is-full")
+          || document.getElementById("tblCellPop")
+          || document.querySelector(".colpanel:not([hidden])")
+          || document.querySelector("#wbDrawerBody .composer");
+        if (!busy) setFocus(false);
+      }
     });
     document.addEventListener("wheel", (e) => {
       if (!(e.ctrlKey || e.metaKey)) return;
