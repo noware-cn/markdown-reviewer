@@ -3455,6 +3455,7 @@
         || null;
       D.pendingFile = null;
       render();
+      if (opts.onRendered) opts.onRendered();
       loadMergeOptions();
       /* 提交列表与正文并行拉取：列表慢只影响提交选择器，不该挡住默认阅读视图 */
       const commitsReady = ensureCommits(force || headChanged);
@@ -3613,18 +3614,21 @@
     if (refreshBtn) {
       refreshBtn.addEventListener("click", async () => {
         if (!D.n || refreshBtn.disabled) return;
+        // 刷新会重渲染正文，输入框里的字会被冲掉：先让用户处理掉
+        const pending = Array.from(document.querySelectorAll("#wbDoc .composer textarea, #wbDrawerBody textarea"))
+          .some((el) => el.offsetParent && el.value.trim());
+        if (pending) { toast("有未提交的回复，先发送或取消再刷新"); return; }
         refreshBtn.disabled = true;
-        // 刷新会重渲染正文：留住阅读位置，别把人弹回文首
         const doc = document.getElementById("wbDoc");
         const stop = doc ? doc.scrollTop : 0;
-        const restore = () => { if (doc) doc.scrollTop = stop; };
-        try {
-          await load(D.n, true, true);
-          restore();
-          requestAnimationFrame(restore);
-        } finally {
-          refreshBtn.disabled = false;
-        }
+        const fileAtClick = D.file;
+        const opts = { onRendered: () => {
+          // 只在本文件仍是同一份时回到原位置，避免把切换后的视图拽回去
+          if (doc && D.file === fileAtClick) doc.scrollTop = stop;
+        } };
+        // 历史提交视图刷新后仍停在那个提交，不要被切回「全部改动」
+        if (isCommitView()) opts.commit = D.rev.sha;
+        try { await load(D.n, true, true, opts); } finally { refreshBtn.disabled = false; }
       });
     }
     /* 面板头部的停靠 / 悬浮三态控件 */
