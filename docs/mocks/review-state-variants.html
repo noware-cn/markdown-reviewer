@@ -1,0 +1,117 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · 评审状态的四种画法</title>
+<link rel="stylesheet" href="../../public/styles.css?v=319">
+<style>
+  body { padding: 28px 24px 60px; background: var(--ground); }
+  .wrap { max-width: 880px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+  .lead { margin: 0 0 22px; color: var(--muted); font-size: var(--fs-label); }
+
+  .v { margin: 0 0 26px; }
+  .vhead { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px; }
+  .vhead b { font-size: var(--fs-label); font-weight: 600; }
+  .vhead span { color: var(--muted); font-size: var(--fs-meta); }
+  .vbody {
+    padding: 14px 14px 14px 44px;
+    background: var(--sheet); border: 1px solid var(--border); border-radius: 12px;
+  }
+  .vbody .md-block { padding: 2px 0; }
+  .vbody .md-block + .md-block { margin-top: 10px; }
+  .vbody p { margin: 0; font-size: var(--fs-label); }
+  .vbody .tag { font-family: var(--mono); font-size: 10px; color: var(--faint); }
+
+  /* 每个变体自己画页边，基线统一，只比较「状态」这一层 */
+  .rail, .rail2, .cnt { position: absolute; }
+  .rail { left: -14px; top: 3px; bottom: 3px; width: 2px; border-radius: 1px; background: var(--mark-mod); }
+  .rv-draft .rail { background: var(--warning); }
+
+  /* V1 单线：未评审实、已评审淡 */
+  .v1 .rv-reviewed .rail { width: 1px; opacity: 0.45; }
+
+  /* V2 页边底带：未评审琥珀面积，评完就消失 */
+  .v2 .rv-unreviewed .rail {
+    left: -22px; width: 9px; border-radius: 2px;
+    background: var(--warning-soft); border-left: 2px solid var(--warning);
+  }
+  .v2 .rv-reviewed .rail { width: 1px; opacity: 0.4; }
+
+  /* V3 右缘数字：左侧只讲改动，评审写在右留白 */
+  .v3 .rv-reviewed .rail { opacity: 0.55; }
+  .v3 .cnt { right: -26px; top: 1px; font-family: var(--mono); font-size: 10px; color: var(--muted); }
+  .v3 .rv-draft .cnt { color: var(--warning); }
+
+  /* V4 双轨：主线讲改动，外侧 1px 副线只在未评审时出现 */
+  .v4 .rv-unreviewed .rail2 { left: -20px; top: 3px; bottom: 3px; width: 1px; background: var(--warning); }
+
+  .note {
+    margin: 4px 0 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px;
+    background: var(--raised); color: var(--muted); font-size: var(--fs-meta); line-height: 1.8;
+  }
+  .note b { color: var(--text); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>评审状态的四种画法</h1>
+  <p class="lead">同一组三种块：未评审、已评审（2 条评论）、草稿未发。只比较页边这一层。</p>
+
+  <section class="v v1">
+    <div class="vhead"><b>V1 单线</b><span>线宽与饱和度编码：未评审 2px 实色，已评审 1px 半透明</span></div>
+    <div class="vbody">
+      <div class="md-block rv-unreviewed"><i class="rail"></i>
+        <p>尽调材料由客户经理线下收集，缺失率 18%。<span class="tag">未评审</span></p></div>
+      <div class="md-block rv-reviewed"><i class="rail"></i>
+        <p>目标压缩到 1 个工作日，核验保留双人复核。<span class="tag">已评 2</span></p></div>
+      <div class="md-block rv-draft"><i class="rail"></i>
+        <p>回退开关由科技值守 15 分钟内生效。<span class="tag">草稿</span></p></div>
+    </div>
+  </section>
+
+  <section class="v v2">
+    <div class="vhead"><b>V2 页边底带</b><span>未评审用面积提示，评完即消失；不需任何图形元素</span></div>
+    <div class="vbody">
+      <div class="md-block rv-unreviewed"><i class="rail"></i>
+        <p>尽调材料由客户经理线下收集，缺失率 18%。<span class="tag">未评审</span></p></div>
+      <div class="md-block rv-reviewed"><i class="rail"></i>
+        <p>目标压缩到 1 个工作日，核验保留双人复核。<span class="tag">已评 2</span></p></div>
+      <div class="md-block rv-draft"><i class="rail"></i>
+        <p>回退开关由科技值守 15 分钟内生效。<span class="tag">草稿</span></p></div>
+    </div>
+  </section>
+
+  <section class="v v3">
+    <div class="vhead"><b>V3 右缘数字</b><span>左侧只讲改动；评论条数写到右侧留白</span></div>
+    <div class="vbody">
+      <div class="md-block rv-unreviewed"><i class="rail"></i>
+        <p>尽调材料由客户经理线下收集，缺失率 18%。<span class="tag">未评审</span></p></div>
+      <div class="md-block rv-reviewed"><i class="rail"></i><span class="cnt">2</span>
+        <p>目标压缩到 1 个工作日，核验保留双人复核。<span class="tag">已评 2</span></p></div>
+      <div class="md-block rv-draft"><i class="rail"></i><span class="cnt">草稿</span>
+        <p>回退开关由科技值守 15 分钟内生效。<span class="tag">草稿</span></p></div>
+    </div>
+  </section>
+
+  <section class="v v4">
+    <div class="vhead"><b>V4 双轨</b><span>主线讲改动不变，外侧 1px 副线只在未评审时出现</span></div>
+    <div class="vbody">
+      <div class="md-block rv-unreviewed"><i class="rail2"></i><i class="rail"></i>
+        <p>尽调材料由客户经理线下收集，缺失率 18%。<span class="tag">未评审</span></p></div>
+      <div class="md-block rv-reviewed"><i class="rail"></i>
+        <p>目标压缩到 1 个工作日，核验保留双人复核。<span class="tag">已评 2</span></p></div>
+      <div class="md-block rv-draft"><i class="rail"></i>
+        <p>回退开关由科技值守 15 分钟内生效。<span class="tag">草稿</span></p></div>
+    </div>
+  </section>
+
+  <p class="note">
+    <b>V2 的理由</b>：用面积而不是线宽提示「这处还没人看」，扫视最快；评完底带消失，越评越干净，方向是对的。
+    琥珀只出现在页边，不与改动色（青/绿/红）抢。代价是未评审多时页边会有一排浅色块——那正好是待办清单。
+    <br><b>V3</b> 的好处是把评审与改动彻底分到两侧，正文左侧最干净，适合屏幕宽、右留白充足的场景。
+  </p>
+</div>
+</body>
+</html>

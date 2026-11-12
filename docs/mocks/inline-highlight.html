@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · 直接在文字上标评论</title>
+<link rel="stylesheet" href="../../public/styles.css?v=319">
+<style>
+  body { padding: 28px 24px 60px; background: var(--ground); }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+  .lead { margin: 0 0 20px; color: var(--muted); font-size: var(--fs-label); line-height: 1.8; }
+
+  .v { margin: 0 0 26px; }
+  .vhead { display: flex; align-items: baseline; gap: 10px; margin: 0 0 8px; }
+  .vhead b { font-size: var(--fs-label); font-weight: 600; }
+  .vhead span { color: var(--muted); font-size: var(--fs-meta); }
+  .doc {
+    padding: 16px 20px; background: var(--sheet);
+    border: 1px solid var(--border); border-radius: 12px;
+    font-size: 16px; line-height: 30px;
+  }
+  .doc p { margin: 0; }
+
+  /* 半高荧光：只盖文字下半，像真的荧光笔，比整块底色轻一半 */
+  .hl {
+    padding: 0 1px; border-radius: 2px;
+    background-image: linear-gradient(transparent 58%, var(--warning-soft) 58%);
+    box-shadow: inset 0 -1px 0 rgba(138, 83, 0, 0.18);
+    cursor: pointer;
+  }
+  .hl:hover { background-image: linear-gradient(transparent 45%, #f7e8c6 45%); }
+
+  /* 行尾上标：默认唯一常驻的记号 */
+  .sup {
+    font-family: var(--mono); font-size: 10px; line-height: 1;
+    color: var(--faint); vertical-align: super; margin-left: 2px;
+    cursor: pointer; user-select: none;
+  }
+  .sup:hover { color: var(--warning); }
+
+  /* 悬停才铺色：常态完全不动 */
+  .quiet .hl {
+    background-image: none; box-shadow: none;
+  }
+  .quiet .hl:hover,
+  .quiet .hl:focus-visible {
+    background-image: linear-gradient(transparent 58%, var(--warning-soft) 58%);
+    box-shadow: inset 0 -1px 0 rgba(138, 83, 0, 0.18);
+    outline: none;
+  }
+
+  /* 已有记号：新增片段的下划线 */
+  .md-ins {
+    text-decoration: underline; text-decoration-color: var(--mark-add);
+    text-decoration-thickness: 2px; text-underline-offset: 3px;
+  }
+
+  .fold {
+    margin-top: 6px; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 10px; background: var(--raised); color: var(--muted);
+    font-size: var(--fs-meta); line-height: 1.9;
+  }
+  .fold b { color: var(--text); }
+  .fold code { font-family: var(--mono); }
+
+  /* 同处多条：小票叠加，当前条加深强调，回复缩进 */
+  .stack { margin: 12px 0 0; border-top: 1px dashed var(--border); padding-top: 8px; }
+  .row {
+    padding: 4px 8px; border-left: 2px solid transparent;
+    font-size: var(--fs-meta); line-height: 1.7; color: var(--muted);
+  }
+  .row b { display: block; color: var(--text); font-weight: 600; }
+  .row q { color: var(--mod); font-style: normal; }
+  .row.cur { border-left-color: var(--warning); background: var(--warning-soft); border-radius: 0 6px 6px 0; }
+  .row.reply { margin-left: 18px; color: var(--faint); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>直接在文字上标评论</h1>
+  <p class="lead">高亮范围取引文；没有引文就取整行。下面三组对比「常驻荧光」「只留上标、悬停才铺色」以及和新增下划线共存的效果。</p>
+
+  <section class="v">
+    <div class="vhead"><b>A 常驻半高荧光</b><span>评过的片段一直带色，扫视最快</span></div>
+    <div class="doc">
+      <p>改为线上预填 + 一次到店核验，<span class="hl">目标压缩到 1 个工作日</span><span class="sup">1</span>，核验环节保留双人复核。缺少材料时<span class="hl">系统直接退回并列出缺项</span><span class="sup">2</span>，线下补件不再允许。</p>
+    </div>
+  </section>
+
+  <section class="v">
+    <div class="vhead"><b>B 只留行尾上标，悬停铺色</b><span>正文常态最轻；鼠标划过才浮出高亮</span></div>
+    <div class="doc quiet">
+      <p>改为线上预填 + 一次到店核验，<span class="hl" tabindex="0">目标压缩到 1 个工作日</span><span class="sup">1</span>，核验环节保留双人复核。缺少材料时<span class="hl" tabindex="0">系统直接退回并列出缺项</span><span class="sup">2</span>，线下补件不再允许。</p>
+    </div>
+  </section>
+
+  <section class="v">
+    <div class="vhead"><b>C 与「新增」下划线共存</b><span>下划线在基线下方，荧光盖文字下半，两者不打架</span></div>
+    <div class="doc">
+      <p>尽调材料由客户经理线下收集，缺失率 18%；<span class="md-ins">改为由影像平台自动校验</span><span class="sup">3</span>，校验不通过<span class="hl">当场提示缺项名称</span><span class="sup">4</span>。</p>
+    </div>
+  </section>
+
+  <section class="v">
+    <div class="vhead"><b>D 同一处 3 条评论</b><span>一个高亮、一个上标；上标数线程，小票逐条</span></div>
+    <div class="doc">
+      <p>改为线上预填 + 一次到店核验，<span class="hl">目标压缩到 1 个工作日</span><span class="sup">2</span>，核验环节保留双人复核。</p>
+      <div class="stack">
+        <div class="row cur"><b>李静 · L2 · 当前</b><q>“目标压缩到 1 个工作日”</q>请给出测算依据。</div>
+        <div class="row"><b>王磊 · L2</b>同意，但要区分大客户与普通客户。</div>
+        <div class="row reply"><b>陈曦 · L2</b>↳ 回复王磊：大客户另设 0.5 天目标。</div>
+      </div>
+    </div>
+  </section>
+
+  <p class="fold">
+    <b>为什么不做默认整块底色</b>：一页里已经有三层文字记号（新增下划线、行内代码、链接）。再给评过的句子铺满底色，等于把「重点」和「评过」混成同一种强调，长文档会像校样稿。
+    <br><b>推荐 B</b>：常态只留行尾上标（10px，等宽），视线扫到数字就知道这处有评论；悬停或键盘聚焦时铺半高荧光并弹出小票。想快速复盘时再切「全部高亮」。
+    <br><b>未评审</b> = 既没有上标也没有荧光，保持缺席；需要更显眼时叠上一轮的琥珀页边底带。
+  </p>
+</div>
+</body>
+</html>

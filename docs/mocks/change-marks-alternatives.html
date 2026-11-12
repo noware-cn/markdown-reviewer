@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · 四种避开对齐的改动标记</title>
+<link rel="stylesheet" href="../../public/styles.css?v=324">
+<style>
+  body { margin: 0; background: var(--ground); }
+  .board { width: min(100% - 32px, 1080px); margin: 28px auto 80px; }
+  .board > h1 { font-size: 20px; margin: 0 0 4px; }
+  .board > p.lead { color: var(--muted); font-size: 12px; margin: 0 0 26px; }
+  .v { margin: 0 0 34px; }
+  .vhead {
+    display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+    padding: 0 0 8px; border-bottom: 1px solid var(--border); margin-bottom: 12px;
+  }
+  .vhead b { font-size: 13px; }
+  .vhead span { color: var(--muted); font-size: 11px; }
+  .doc { background: var(--sheet); border: 1px solid var(--border); border-radius: 10px; padding: 20px 26px; }
+  .doc > :first-child { margin-top: 0; }
+  .doc > :last-child { margin-bottom: 0; }
+
+  /* A：文档流内的状态胶囊，标记跟着块走，永不失配 */
+  .doc-a .md-block { position: relative; }
+  .doc-a .md-block.is-added { border-left: 2px solid var(--mark-add); padding-left: 12px; }
+  .doc-a .md-block.is-modified-new { border-left: 2px solid var(--mark-mod); padding-left: 12px; }
+
+  /* B：改动清单（第三种页签），只列表不画位 */
+  .clist { display: flex; flex-direction: column; gap: 2px; }
+  .cl {
+    display: grid; grid-template-columns: 22px 62px 1fr; gap: 8px; align-items: center;
+    padding: 6px 8px; border-radius: 6px; font-size: 11px; cursor: pointer;
+  }
+  .cl:hover { background: var(--raised); }
+  .cl .k { font-family: var(--mono); font-size: 10px; text-align: center; border-radius: 3px; }
+  .cl.add .k { color: var(--mark-add); background: var(--positive-soft); }
+  .cl.mod .k { color: var(--mark-mod); background: var(--mod-soft); }
+  .cl.del .k { color: var(--mark-del); background: var(--negative-soft); }
+  .cl .l { color: var(--faint); font-family: var(--mono); }
+  .cl .t { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+  /* C：顶部横向分段条，按块序排，不映射垂直位置 */
+  .seg { display: flex; gap: 2px; margin-bottom: 14px; }
+  .seg i { flex: 1; height: 6px; border-radius: 2px; background: var(--raised); }
+  .seg i.add { background: var(--mark-add); }
+  .seg i.mod { background: var(--mark-mod); }
+  .seg i.del { background: var(--mark-del); }
+
+  /* D：行号槽着色，行号与块同高 */
+  .doc-d { display: grid; grid-template-columns: 34px 1fr; column-gap: 12px; }
+  .doc-d .ln {
+    font-family: var(--mono); font-size: 10px; color: var(--faint);
+    text-align: right; align-self: start; padding-top: 4px;
+  }
+  .doc-d .ln.add { color: var(--mark-add); }
+  .doc-d .ln.mod { color: var(--mark-mod); }
+  .doc-d .ln.del { color: var(--mark-del); }
+</style>
+</head>
+<body>
+<main class="board">
+  <h1>四种避开「刻度对齐」的改动标记</h1>
+  <p class="lead">同一段文档，四种标记方式。共同点：标记长在块内部或独立列表里，不需要和正文高度对齐。</p>
+
+  <section class="v">
+    <div class="vhead"><b>A · 文档流内状态胶囊</b><span>块左内边线 + 行首小方块；标记即块本身</span></div>
+    <div class="doc doc-a">
+      <div class="md-block is-modified-new"><p><span class="cmark" style="color:var(--mark-mod)">~</span> 2024 年区域银行智能研发投入同比增长 18.6%，其中股份制银行占 42%。</p></div>
+      <div class="md-block"><p>样本覆盖 84 家机构，口径与去年一致。</p></div>
+      <div class="md-block is-added"><p><span class="cmark" style="color:var(--mark-add)">+</span> 新增：2025 年上半年已披露中标金额 12.4 亿元。</p></div>
+      <div class="md-block"><p>以上数据来源于各行年报与公开中标公告。</p></div>
+    </div>
+  </section>
+
+  <section class="v">
+    <div class="vhead"><b>B · 「改动」清单页签</b><span>只列表，不画位置；n / p 或点击跳转</span></div>
+    <div class="doc">
+      <div class="clist">
+        <div class="cl mod"><span class="k">~</span><span class="l">L 12</span><span class="t">2024 年区域银行智能研发投入同比增长 18.6%…</span></div>
+        <div class="cl add"><span class="k">+</span><span class="l">L 26</span><span class="t">新增：2025 年上半年已披露中标金额 12.4 亿元。…</span></div>
+        <div class="cl del"><span class="k">−</span><span class="l">L 31</span><span class="t">（删除）原口径含未披露机构，已剔除。…</span></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="v">
+    <div class="vhead"><b>C · 顶部横向分段条</b><span>按块序均分，表示"改动有几处、什么类型、走到哪了"</span></div>
+    <div class="doc">
+      <div class="seg">
+        <i></i><i class="mod"></i><i></i><i class="add"></i><i></i><i></i><i class="del"></i><i></i>
+      </div>
+      <div class="md-block"><p>2024 年区域银行智能研发投入同比增长 18.6%，其中股份制银行占 42%。</p></div>
+      <div class="md-block"><p>样本覆盖 84 家机构，口径与去年一致。</p></div>
+      <div class="md-block"><p>新增：2025 年上半年已披露中标金额 12.4 亿元。</p></div>
+    </div>
+  </section>
+
+  <section class="v">
+    <div class="vhead"><b>D · 行号槽着色</b><span>恢复行号列，行号与块同高，颜色即状态</span></div>
+    <div class="doc doc-d">
+      <span class="ln mod">12</span>
+      <div class="md-block"><p>2024 年区域银行智能研发投入同比增长 18.6%，其中股份制银行占 42%。</p></div>
+      <span class="ln">18</span>
+      <div class="md-block"><p>样本覆盖 84 家机构，口径与去年一致。</p></div>
+      <span class="ln add">26</span>
+      <div class="md-block"><p>新增：2025 年上半年已披露中标金额 12.4 亿元。</p></div>
+      <span class="ln del">31</span>
+      <div class="md-block"><p>（删除）原口径含未披露机构，已剔除。</p></div>
+    </div>
+  </section>
+</main>
+</body>
+</html>

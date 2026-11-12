@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · 阅读改动视图的评审覆盖</title>
+<link rel="stylesheet" href="../../public/styles.css?v=319">
+<style>
+  /* ===== 仅为本次 Mock 增加的样式：提案中的「评审覆盖」===== */
+  body { padding: 24px; background: var(--ground); }
+
+  .mock-top {
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    max-width: 1180px; margin: 0 auto 12px;
+    font-size: var(--fs-label); color: var(--muted);
+  }
+  .mock-top b { color: var(--text); font-weight: 600; }
+  .mock-count { display: inline-flex; align-items: center; gap: 8px; font-variant-numeric: tabular-nums; }
+  .mock-count .bar { width: 120px; height: 3px; border-radius: 2px; background: var(--active); overflow: hidden; }
+  .mock-count .bar i { display: block; height: 100%; background: var(--mark-mod); }
+  .mock-btn {
+    padding: 4px 10px; border: 1px solid var(--border); border-radius: 999px;
+    background: var(--sheet); font-size: var(--fs-meta); color: var(--text);
+  }
+  .mock-btn[aria-pressed="true"] { border-color: var(--text); font-weight: 600; }
+
+  .mock-frame {
+    display: flex; gap: 12px; max-width: 1180px; margin: 0 auto;
+    height: 680px;
+  }
+  .mock-nav {
+    flex: none; width: 220px; padding: 10px 8px; overflow: auto;
+    background: var(--sheet); border: 1px solid var(--border); border-radius: 16px;
+  }
+  .mock-nav .cap { padding: 2px 8px 8px; color: var(--faint); font-size: var(--fs-meta); }
+  .mock-doc { flex: 1; }
+
+  /* 评审状态：页边线外一格，横竖都与线首对齐。空心=未评审，实心=已评论，琥珀=草稿 */
+  .rv-dot {
+    position: absolute; left: -24px; top: 3px;
+    width: 8px; height: 8px; border-radius: 50%;
+    background: var(--sheet); box-sizing: border-box;
+    border: 1.5px solid var(--mark-mod);
+  }
+  .md-block.is-added .rv-dot { border-color: var(--mark-add); }
+  .rv-dot.is-commented { background: var(--mark-mod); }
+  .md-block.is-added .rv-dot.is-commented { background: var(--mark-add); }
+  .rv-dot.is-draft { background: var(--warning); border-color: var(--warning); }
+  .rv-n {
+    position: absolute; left: -38px; top: 1px;
+    font-family: var(--mono); font-size: 10px; line-height: 1;
+    color: var(--muted); font-variant-numeric: tabular-nums;
+  }
+
+  /* 「只看未评审」：已评审的块先收起，避免滚动时反复打断判断 */
+  body.only-unreviewed .rv-reviewed { display: none; }
+
+  /* 大纲微条：已评审实心，未评审空心 */
+  .cbar i.pending { background: transparent; box-shadow: inset 0 0 0 1px var(--mark-mod); }
+  .mock-legend {
+    max-width: 1180px; margin: 10px auto 0; padding: 10px 12px;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--sheet);
+    font-size: var(--fs-meta); color: var(--muted); line-height: 1.9;
+  }
+  .mock-legend code { font-family: var(--mono); color: var(--text); }
+  .lg { display: inline-flex; align-items: center; gap: 6px; margin-right: 16px; }
+  .lg .sw { width: 8px; height: 8px; border-radius: 50%; border: 1.5px solid var(--mark-mod); }
+  .lg .sw.full { background: var(--mark-mod); }
+  .lg .sw.draft { background: var(--warning); border-color: var(--warning); }
+</style>
+</head>
+<body>
+
+<div class="mock-top">
+  <span class="mock-count"><b>已评审 3 / 9 处改动</b>
+    <span class="bar"><i style="width:33%"></i></span>
+    <span>2 条评论 · 1 条草稿</span>
+  </span>
+  <button class="mock-btn" type="button" id="toggle" aria-pressed="false">只看未评审（6）</button>
+  <span style="margin-left:auto">Mock 预览 · 非已实现界面</span>
+</div>
+
+<div class="mock-frame">
+  <aside class="mock-nav">
+    <div class="cap">大纲</div>
+    <div class="chapter l1"><span class="ctitle">对公账户开户流程线上化改造</span><span class="cbar"><i class="on"></i><i></i><i></i><i></i><i></i></span></div>
+    <div class="chapter l2 has-change"><span class="ctitle">1. 现状与问题</span><span class="cbar"><i class="on"></i><i class="pending"></i><i></i><i></i><i></i></span></div>
+    <div class="chapter l2 has-change"><span class="ctitle">2. 目标流程</span><span class="cbar"><i class="on"></i><i class="on"></i><i class="pending"></i><i></i><i></i></span></div>
+    <div class="chapter l2"><span class="ctitle">3. 系统改造点</span><span class="cbar is-empty"><i></i><i></i><i></i><i></i><i></i></span></div>
+    <div class="chapter l2 has-change active"><span class="ctitle">4. 风险与回退</span><span class="cbar"><i class="pending"></i><i class="pending"></i><i></i><i></i><i></i></span></div>
+  </aside>
+
+  <main class="wb-doc" data-mode="reading">
+    <div class="wb-content">
+
+      <div class="md-block" data-line="1">
+        <h1 class="doc-h1">对公账户开户流程线上化改造</h1>
+      </div>
+
+      <div class="md-block is-modified-new rv-reviewed" data-line="5">
+        <span class="rv-dot is-commented"></span><span class="rv-n">2</span>
+        <h2>1. 现状与问题</h2>
+        <p>当前开户平均耗时 4 个工作日，客户需到柜面 2 次。<ins class="md-ins">尽调材料由客户经理线下收集，缺失率高。</ins></p>
+      </div>
+
+      <div class="md-block is-modified-new rv-reviewed" data-line="11">
+        <span class="rv-dot is-draft"></span>
+        <h2>2. 目标流程</h2>
+        <p>改为线上预填 + 一次到店核验，<ins class="md-ins">目标压缩到 1 个工作日</ins>，核验环节保留双人复核。</p>
+      </div>
+
+      <div class="md-block" data-line="17">
+        <h2>3. 系统改造点</h2>
+        <p>核心系统新增开户预审接口，影像平台增加材料完整性校验。</p>
+      </div>
+
+      <div class="md-block is-added" data-line="23">
+        <span class="rv-dot"></span>
+        <h2>4. 风险与回退</h2>
+        <p>预审接口失败时降级为原流程，<ins class="md-ins">回退开关由科技值守在 15 分钟内生效</ins>。</p>
+      </div>
+
+      <div class="md-block is-added" data-line="29">
+        <span class="rv-dot"></span>
+        <p>上线首周每日核对开户量与柜面受理量差异，<ins class="md-ins">偏差超过 5% 触发人工介入</ins>。</p>
+      </div>
+
+      <div class="md-block is-modified-new" data-line="33">
+        <span class="rv-dot"></span>
+        <p>季度复盘由运营部牵头，<ins class="md-ins">结论纳入下季度流程优化清单</ins>。</p>
+      </div>
+
+    </div>
+  </main>
+</div>
+
+<div class="mock-legend">
+  <span class="lg"><span class="sw"></span>未评审：有改动、还没有任何评论</span>
+  <span class="lg"><span class="sw full"></span>已评论：数字为评论条数</span>
+  <span class="lg"><span class="sw draft"></span>待提交：本地草稿未发出</span>
+  <br>
+  页边线仍然表示改动类型：<code>实线=新增</code>、<code>实线+顶部横杠=修改</code>、<code>虚线=删除</code>。
+  圆点只表示评审状态，两者不抢同一个位置。
+</div>
+
+<script>
+  const btn = document.getElementById('toggle');
+  btn.addEventListener('click', () => {
+    const on = btn.getAttribute('aria-pressed') !== 'true';
+    btn.setAttribute('aria-pressed', String(on));
+    document.body.classList.toggle('only-unreviewed', on);
+    btn.textContent = on ? '显示全部改动' : '只看未评审（6）';
+  });
+</script>
+</body>
+</html>

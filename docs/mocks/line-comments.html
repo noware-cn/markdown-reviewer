@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mock · 同一段里多处评论</title>
+<link rel="stylesheet" href="../../public/styles.css?v=319">
+<style>
+  body { padding: 28px 24px 60px; background: var(--ground); }
+  .wrap { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 22px; margin: 0 0 6px; font-weight: 600; }
+  .lead { margin: 0 0 20px; color: var(--muted); font-size: var(--fs-label); line-height: 1.8; }
+
+  /* 正文列：左边留出 92px 给刻度与卡片 */
+  .doc {
+    position: relative; padding: 14px 18px 14px 92px;
+    background: var(--sheet); border: 1px solid var(--border); border-radius: 12px;
+  }
+  .doc h2 { margin: 0 0 10px; font-size: 15px; font-weight: 600; }
+
+  .para { position: relative; font-size: 16px; line-height: 30px; }
+  .src-line { display: block; }
+  .md-ins { text-decoration: underline; text-decoration-color: var(--mark-add); text-decoration-thickness: 2px; text-underline-offset: 3px; }
+
+  /* 段落页边线：整块一条，表示「有改动」 */
+  .para::before {
+    content: ""; position: absolute; left: -14px; top: 2px; bottom: 2px;
+    width: 2px; border-radius: 1px; background: var(--mark-mod);
+  }
+
+  /* 行刻度：在评论所在行的高度伸出一段横线 + 条数 */
+  .tick {
+    position: absolute; left: -22px; width: 8px; height: 2px; border-radius: 1px;
+    background: var(--mark-mod);
+  }
+  .tick.open { background: transparent; box-shadow: inset 0 0 0 1px var(--mark-mod); }
+  .tick .n {
+    position: absolute; left: -20px; top: -7px;
+    font-family: var(--mono); font-size: 10px; line-height: 1; color: var(--muted);
+  }
+
+  /* 悬停展开：一条评论一张小票，引文在前 */
+  .note {
+    position: absolute; left: -92px; width: 78px; padding: 5px 6px;
+    border: 1px solid var(--border); border-radius: 6px; background: var(--raised);
+    font-size: 10px; line-height: 1.5; color: var(--muted);
+    opacity: 0; pointer-events: none; transition: opacity 0.12s;
+  }
+  .tick:hover + .note, .note:hover { opacity: 1; pointer-events: auto; }
+  .note b { display: block; color: var(--text); font-weight: 600; margin-bottom: 2px; }
+  .note q { display: block; color: var(--mod); font-style: normal; margin-bottom: 2px; }
+
+  .fold {
+    margin-top: 16px; padding: 10px 12px; border: 1px solid var(--border);
+    border-radius: 10px; background: var(--raised); color: var(--muted);
+    font-size: var(--fs-meta); line-height: 1.9;
+  }
+  .fold b { color: var(--text); }
+  .fold code { font-family: var(--mono); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>同一段里多处评论</h1>
+  <p class="lead">评论锚在行上，不在字符上。所以段落里每条评论都伸一段横向刻度，高度对齐它所在的那一行；同一行多条合成一个刻度加数字，悬停逐条展开。</p>
+
+  <div class="doc">
+    <h2>2. 目标流程</h2>
+
+    <div class="para">
+      <span class="src-line">改为线上预填 + 一次到店核验，<span class="md-ins">目标压缩到 1 个工作日</span>，</span>
+      <span class="src-line">核验环节保留双人复核。客户经理在提交前完成材料完整性检查，</span>
+      <span class="src-line">缺少材料时系统直接退回并列出缺项。线下补件不再允许，</span>
+      <span class="src-line">所有补充材料必须走影像平台上传。</span>
+
+      <!-- 刻度：行 2 一条、行 3 两条、行 5 未评审（无刻度） -->
+      <span class="tick" style="top: 29px"><span class="n">1</span></span>
+      <span class="note" style="top: 20px"><b>李静 · L2</b><q>"目标压缩到 1 个工作日"</q>请给出测算依据。</span>
+
+      <span class="tick" style="top: 59px"><span class="n">2</span></span>
+      <span class="note" style="top: 44px"><b>王磊 · L3</b><q>"双人复核"</q>谁复核、留痕在哪？</span>
+      <span class="note" style="top: 56px"><b>陈曦 · L3</b><q>"系统直接退回"</q>退回话术要能改。</span>
+    </div>
+
+    <p class="lead" style="margin:14px 0 0">下一段没有评论，也还没有人看：页边线在，刻度不在。</p>
+    <div class="para">
+      <span class="src-line">季度复盘由运营部牵头，<span class="md-ins">结论纳入下季度流程优化清单</span>。</span>
+      <span class="tick open" style="top: 29px"></span>
+    </div>
+  </div>
+
+  <p class="fold">
+    <b>行内细分靠引文，不靠行号。</b>GitHub 只允许行级锚点，同一行里两条评论的差别只在引文。
+    所以刻度显示行，小票显示引文；点小票时用引文在渲染后的文本里定位并高亮，定位不到就只滚到该行。
+    <br><b>空刻度</b>（只有框、没有数字）＝ 已评审但只留了草稿；实心刻度＝已发出。
+    <br><b>刻度位置</b>由渲染后每行 <code>&lt;span data-line&gt;</code> 的 <code>offsetTop</code> 算，不猜行高；代码块与表格降级为块级一条。
+  </p>
+</div>
+</body>
+</html>
