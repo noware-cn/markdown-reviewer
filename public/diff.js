@@ -925,11 +925,12 @@
    * 同一段里同一句话出现多次时无法判断哪处是新增，直接不标，只留页边记号。
    */
   /* ---------- 已阅与改动清单 ---------- */
-  const reviewKey = (file, line) => `${D.revKey}|${file ? file.path : ""}|${line}`;
-  const isReviewed = (file, line) => Boolean(file && D.reviewed && D.reviewed[reviewKey(file, line)]);
-  function setReviewed(file, line, on) {
+  /* 键里带侧别：base 第 N 行与 head 第 N 行是两处不同的内容 */
+  const reviewKey = (file, line, side) => `${D.revKey}|${file ? file.path : ""}|${side || "head"}|${line}`;
+  const isReviewed = (file, line, side) => Boolean(file && D.reviewed && D.reviewed[reviewKey(file, line, side)]);
+  function setReviewed(file, line, side, on) {
     if (!file) return;
-    const key = reviewKey(file, line);
+    const key = reviewKey(file, line, side);
     if (on) D.reviewed[key] = 1; else delete D.reviewed[key];
     writePref(PREF.reviewed, D.reviewed);
   }
@@ -940,7 +941,8 @@
     const doc = semDocFor(file);
     if (doc) {
       return doc.filter((d) => d.state !== "normal").map((d) => ({
-        line: d.block.side === "head" ? d.block.startLine : (d.pair && d.pair.line) || null,
+        /* 删除块只有 base 行号，没有 pair；用块自己的行，才能标已阅与跳转 */
+        line: d.block.startLine != null ? d.block.startLine : (d.pair && d.pair.line) || null,
         side: d.block.side, state: d.state, tier: d.tier,
         text: String(d.block.text || "").slice(0, 60),
       }));
@@ -954,7 +956,7 @@
   }
   function reviewStats(file) {
     const units = changeUnits(file);
-    const done = units.filter((u) => u.line != null && isReviewed(file, u.line)).length;
+    const done = units.filter((u) => u.line != null && isReviewed(file, u.line, u.side)).length;
     return { total: units.length, done };
   }
   function changeListHTML(file) {
@@ -962,9 +964,9 @@
     const units = changeUnits(file);
     if (!units.length) return "";
     const items = units.map((u) => {
-      const done = u.line != null && isReviewed(file, u.line);
+      const done = u.line != null && isReviewed(file, u.line, u.side);
       return `<li class="chg-item${done ? " is-done" : ""}"${u.line != null ? ` data-jump-to="${u.side === "head" ? u.line : ""}" data-jump-base="${u.side === "base" ? u.line : ""}"` : ""}>`
-        + `<button type="button" class="chg-rv${done ? " on" : ""}" data-review="${u.line}" aria-pressed="${done}" title="${done ? "取消已阅" : "标为已阅"}">✓</button>`
+        + `<button type="button" class="chg-rv${done ? " on" : ""}" data-review="${u.line}" data-review-side="${u.side}" aria-pressed="${done}" title="${done ? "取消已阅" : "标为已阅"}">✓</button>`
         + `<span class="chg-chip ${u.state}">${STATE_LABEL[u.state] || "改动"}</span>`
         + `<span class="chg-text">${esc(u.text || "（无文本）")}</span>`
         + `<span class="chg-line">L${u.line == null ? "-" : u.line}</span></li>`;
@@ -997,7 +999,12 @@
     }
     if (isCsv(file.path)) return csvReadingHTML(file);
     if (viewState() !== "markup" && file.status !== "added" && file.status !== "removed") {
-      return plainDocHTML(file, viewState() === "original" ? "base" : "head");
+      const side = viewState() === "original" ? "base" : "head";
+      /* 截断的文件不能当成全文展示：两个纯净视图都要先拦 */
+      if (side === "base" ? textState.baseTruncated : textState.headTruncated) {
+        return `<div class="error-box">文件超过读取上限（400 KB），当前内容不完整，请用 GitHub 原始文件查看。</div>`;
+      }
+      return plainDocHTML(file, side);
     }
     if (textState.headTruncated) {
       return `<div class="error-box">文件超过读取上限（400 KB），当前内容不完整，请用 GitHub 原始文件查看。</div>`;
@@ -1496,10 +1503,10 @@
     const bubble = threads.length || drafts.length ? commentBubbleHTML(threads, b, drafts) : "";
     /* 改动块给一个「已阅」开关：点一下整块退成普通正文，计数随之更新 */
     const changedBlock = /is-(added|modified-new|removed)/.test(cls);
-    const done = changedBlock && viewState() === "markup" && isReviewed(file, b.startLine);
+    const done = changedBlock && viewState() === "markup" && isReviewed(file, b.startLine, b.changeState === "removed" ? "base" : "head");
     if (done) cls += " is-reviewed";
     const rvBtn = changedBlock && viewState() === "markup"
-      ? `<button type="button" class="rv-toggle${done ? " on" : ""}" data-review="${b.startLine}" aria-pressed="${done}" title="${done ? "取消已阅" : "标为已阅"}">✓ 已阅</button>`
+      ? `<button type="button" class="rv-toggle${done ? " on" : ""}" data-review="${b.startLine}" data-review-side="${b.changeState === "removed" ? "base" : "head"}" aria-pressed="${done}" title="${done ? "取消已阅" : "标为已阅"}">✓ 已阅</button>`
       : "";
     return `<div class="${cls}${quiet}" data-line="${b.startLine}" data-end-line="${b.endLine}" data-block="${b.startLine}">${stripe}${dstripe}${rvBtn}${oldBlock}${bodyHtml}${anchor}${bubble}</div>`;
   }
@@ -2549,9 +2556,10 @@
       if (rv) {
         e.preventDefault();
         const line = Number(rv.dataset.review);
+        const side = rv.dataset.reviewSide === "base" ? "base" : "head";
         const f = curFile();
         if (f && Number.isFinite(line)) {
-          setReviewed(f, line, !isReviewed(f, line));
+          setReviewed(f, line, side, !isReviewed(f, line, side));
           render();
         }
         return;
