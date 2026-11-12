@@ -172,6 +172,8 @@
     tbl: "wb.doc.tbl",
     read: "wb.doc.read",
     docView: "wb.doc.docview",
+    zoom: "wb.doc.zoom",
+    focus: "wb.doc.focus",
     reviewed: "wb.doc.reviewed",
   };
   const readPref = (key, fallback) => {
@@ -924,6 +926,48 @@
    * 按位置匹配：把纯文本片段拼成一条流，用游标保证新增行按文档顺序消费，
    * 同一段里同一句话出现多次时无法判断哪处是新增，直接不标，只留页边记号。
    */
+  /* ---------- 文档缩放与全屏阅读 ---------- */
+  const ZOOM_STEPS = [0.9, 1, 1.15, 1.3, 1.5];
+  const ZOOM_MIN = ZOOM_STEPS[0];
+  const ZOOM_MAX = ZOOM_STEPS[ZOOM_STEPS.length - 1];
+  const clampZoom = (v) => Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, Math.round(Number(v) * 100) / 100));
+  function applyZoom() {
+    const z = clampZoom(D.zoom || 1);
+    D.zoom = z;
+    const root = document.documentElement || document.body;
+    if (root && root.style && root.style.setProperty) root.style.setProperty("--doc-zoom", String(z));
+    const label = document.getElementById("focusZoomLabel");
+    if (label) label.textContent = `${Math.round(z * 100)}%`;
+    document.querySelectorAll("[data-zoom]").forEach((b) => {
+      b.setAttribute("aria-checked", String(Math.abs(Number(b.dataset.zoom) - z) < 0.001));
+    });
+  }
+  function stepZoom(dir) {
+    const cur = D.zoom || 1;
+    let idx = ZOOM_STEPS.findIndex((v) => Math.abs(v - cur) < 0.001);
+    if (idx < 0) idx = ZOOM_STEPS.reduce((best, v, i) => (Math.abs(v - cur) < Math.abs(ZOOM_STEPS[best] - cur) ? i : best), 0);
+    D.zoom = clampZoom(ZOOM_STEPS[Math.min(ZOOM_STEPS.length - 1, Math.max(0, idx + dir))]);
+    writePref(PREF.zoom, D.zoom);
+    applyZoom();
+  }
+  function setFocus(on) {
+    D.focus = Boolean(on);
+    writePref(PREF.focus, D.focus);
+    if (document.body && document.body.classList) document.body.classList.toggle("reading-focus", D.focus);
+    const bar = document.getElementById("focusBar");
+    if (bar) bar.hidden = !D.focus;
+    const btn = document.getElementById("wbFocusBtn");
+    if (btn) btn.setAttribute("aria-pressed", String(D.focus));
+    // 浏览器级全屏：失败也不影响页内焦点模式
+    try {
+      const p = D.focus && !document.fullscreenElement
+        ? document.documentElement.requestFullscreen?.()
+        : (!D.focus && document.fullscreenElement ? document.exitFullscreen?.() : null);
+      // 用户可能拒绝或浏览器不允许，页内焦点模式仍要生效
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch { /* 同步抛错同样忽略 */ }
+  }
+
   /* ---------- 已阅与改动清单 ---------- */
   /* 键里带侧别：base 第 N 行与 head 第 N 行是两处不同的内容 */
   const reviewKey = (file, line, side) => `${D.revKey}|${file ? file.path : ""}|${side || "head"}|${line}`;
@@ -3311,6 +3355,11 @@
       writePref(PREF.tbl, D.tbl);
       applyTheme();
     }));
+    lookPop.querySelectorAll("[data-zoom]").forEach((b) => b.addEventListener("click", () => {
+      D.zoom = clampZoom(b.dataset.zoom);
+      writePref(PREF.zoom, D.zoom);
+      applyZoom();
+    }));
     lookPop.querySelectorAll("[data-read]").forEach((b) => b.addEventListener("click", () => {
       D.read = b.dataset.read;
       writePref(PREF.read, D.read);
@@ -3324,6 +3373,44 @@
       document.getElementById("wbBody").classList.remove("drawer-open");
       syncDrawerHandle();
     });
+    document.getElementById("wbFocusBtn").addEventListener("click", () => setFocus(!D.focus));
+    document.getElementById("focusExit").addEventListener("click", () => setFocus(false));
+    document.getElementById("focusZoomIn").addEventListener("click", () => stepZoom(1));
+    document.getElementById("focusZoomOut").addEventListener("click", () => stepZoom(-1));
+    document.getElementById("focusDrawer").addEventListener("click", () => {
+      document.getElementById("wbBody").classList.toggle("drawer-open");
+      syncDrawerHandle();
+    });
+    document.addEventListener("fullscreenchange", () => {
+      if (!document.fullscreenElement && D.focus) setFocus(false);
+    });
+    document.addEventListener("keydown", (e) => {
+      const wb = document.getElementById("workbench");
+      if (wb && wb.hidden) return;
+      const mod = e.metaKey || e.ctrlKey;
+      if (mod && (e.key === "=" || e.key === "+")) { e.preventDefault(); stepZoom(1); return; }
+      if (mod && e.key === "-") { e.preventDefault(); stepZoom(-1); return; }
+      if (mod && e.key === "0") { e.preventDefault(); D.zoom = 1; writePref(PREF.zoom, 1); applyZoom(); return; }
+      const t = e.target;
+      const typing = t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable);
+      if (!mod && !e.altKey && !typing && (e.key === "f" || e.key === "F")) {
+        e.preventDefault(); setFocus(!D.focus); return;
+      }
+      if (e.key === "Escape" && D.focus) {
+        // 表格全屏、单元格弹层、列面板优先消费 Esc
+        const busy = document.querySelector(".table-shell.is-full")
+          || document.getElementById("tblCellPop")
+          || document.querySelector(".colpanel:not([hidden])")
+          || document.querySelector("#wbDrawerBody .composer");
+        if (!busy) setFocus(false);
+      }
+    });
+    document.addEventListener("wheel", (e) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      if (!e.target.closest || !e.target.closest("#wbDoc")) return;
+      e.preventDefault();
+      stepZoom(e.deltaY < 0 ? 1 : -1);
+    }, { passive: false });
     const rvBtn = document.getElementById("wbReviewCount");
     if (rvBtn) rvBtn.addEventListener("click", () => {
       openDrawer();
@@ -3383,6 +3470,10 @@
     D.tbl = TBL_STYLES.includes(readPref(PREF.tbl, "grid")) ? readPref(PREF.tbl, "grid") : "grid";
     D.read = READ_WIDTHS.includes(readPref(PREF.read, "standard")) ? readPref(PREF.read, "standard") : "standard";
     D.docView = VIEWS.includes(readPref(PREF.docView, "markup")) ? readPref(PREF.docView, "markup") : "markup";
+    D.zoom = clampZoom(readPref(PREF.zoom, 1) || 1);
+    D.focus = Boolean(readPref(PREF.focus, false));
+    applyZoom();
+    if (D.focus) setFocus(true);
     const rv = readPref(PREF.reviewed, {});
     /* 旧版本键是 revKey|path|line，没有侧别：按 head 认领，避免升级后已阅全清零 */
     D.reviewed = {};
