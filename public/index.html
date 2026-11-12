@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Markdown 文档审批工作台 · noware-cn/workspace</title>
-<link rel="stylesheet" href="/styles.css?v=327">
+<link rel="stylesheet" href="/styles.css?v=328">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -73,20 +73,14 @@
       <button class="wb-orig-copy" id="wbOrigCopy" type="button" title="复制 PR 链接">复制</button>
     </span>
     <span class="wb-commit-pick" id="wbCommitPick" hidden>
-      <select class="wb-commit-select" id="wbCommitSelect" aria-label="选择提交"></select>
+      <label class="wb-commit-label" for="wbCommitSelect">版本</label>
+      <select class="wb-commit-select" id="wbCommitSelect" aria-label="选择查看的提交版本"></select>
     </span>
-    <div class="wb-modes" role="group" aria-label="视图模式">
-      <button type="button" class="wb-mode on" data-mode="reading" aria-pressed="true">阅读改动</button>
-      <button type="button" class="wb-mode" data-mode="sidebyside" aria-pressed="false">前后对照</button>
-      <button type="button" class="wb-mode" data-mode="unified" aria-pressed="false">统一 Diff</button>
-      <button type="button" class="wb-mode" data-mode="split" aria-pressed="false">分栏 Diff</button>
-    </div>
-    <label class="wb-marks" title="显示变更标记"><input type="checkbox" id="wbMarks" checked aria-label="显示变更标记"> 显示变更标记</label>
-    <span class="wb-rvcount" id="wbReviewCount" hidden></span>
-    <div class="wb-viewstate" role="group" aria-label="显示状态">
-      <button type="button" data-view-state="markup" aria-pressed="true" title="显示改动标记">标记</button>
-      <button type="button" data-view-state="final" aria-pressed="false" title="只看定稿">最终</button>
-      <button type="button" data-view-state="original" aria-pressed="false" title="只看改前">原始</button>
+    <span class="wb-sep" aria-hidden="true"></span>
+    <div class="wb-viewstate" role="group" aria-label="显示">
+      <button type="button" data-view-state="markup" aria-pressed="true" title="显示改动记号与评论">改动与评论</button>
+      <button type="button" data-view-state="final" aria-pressed="false" title="只看定稿">定稿</button>
+      <button type="button" data-view-state="original" aria-pressed="false" title="只看改前">改前</button>
     </div>
     <div class="wb-look">
       <button class="wb-look-btn" id="wbLookBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="wbLookPop" title="文档主题与表格样式">外观</button>
@@ -117,7 +111,9 @@
         </div>
       </div>
     </div>
-    <button class="wb-drawer-btn" id="wbDrawerBtn" type="button">意见 <span class="wb-badge" id="wbDraftCount">0</span></button>
+    <span class="wb-sep" aria-hidden="true"></span>
+    <button class="wb-rvcount" id="wbReviewCount" type="button" hidden title="打开改动清单">已阅 0/0</button>
+    <button class="wb-drawer-btn" id="wbDrawerBtn" type="button" title="打开意见面板">意见 <span class="wb-badge" id="wbCommentCount">0</span><span class="wb-badge draft" id="wbDraftCount" hidden>0</span></button>
   </header>
 
   <div class="wb-body" id="wbBody">
@@ -209,7 +205,7 @@ window.DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 <script src="/diff-model.js?v=211"></script>
 <script src="/highlight.min.js?v=1"></script>
 <script src="/semdiff.js?v=2"></script>
-<script src="/diff.js?v=253"></script>
+<script src="/diff.js?v=254"></script>
 <script src="/app.js?v=220"></script>
 </body>
 </html>

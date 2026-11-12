@@ -2239,11 +2239,16 @@
       b.classList.toggle("on", on);
       b.setAttribute("aria-pressed", String(on));
     });
-    document.getElementById("wbMarks").checked = D.marks;
+    D.marks = viewState() === "markup";
     document.querySelectorAll("[data-view-state]").forEach((btn) => {
       btn.setAttribute("aria-pressed", String(btn.dataset.viewState === viewState()));
     });
-    document.getElementById("wbDraftCount").textContent = String(D.drafts.length);
+    const draftBadge = document.getElementById("wbDraftCount");
+    if (draftBadge) {
+      draftBadge.textContent = String(D.drafts.length);
+      draftBadge.hidden = !D.drafts.length;
+      draftBadge.title = `${D.drafts.length} 条未发送草稿`;
+    }
     const seen = D.files.filter((f) => reviewInfo(f.path).reviewed).length;
     document.getElementById("wbProgress").textContent = isCommitView()
       ? (D.files.length ? `本提交 ${D.files.length} 个文件` : "")
@@ -2292,9 +2297,12 @@
     const rvCount = document.getElementById("wbReviewCount");
     if (rvCount) {
       const st = file && viewState() === "markup" ? reviewStats(file) : { done: 0, total: 0 };
-      rvCount.textContent = st.total ? `已阅 ${st.done}/${st.total}` : "";
+      rvCount.textContent = `已阅 ${st.done}/${st.total}`;
       rvCount.hidden = !st.total;
+      rvCount.setAttribute("aria-label", `已阅 ${st.done} / ${st.total}，打开改动清单`);
     }
+    const cmCount = document.getElementById("wbCommentCount");
+    if (cmCount) cmCount.textContent = String(file ? commentThreads(file).length : 0);
 
     document.getElementById("wbDrawerBody").innerHTML = drawerHTML();
     syncDrawerHandle();
@@ -3256,7 +3264,6 @@
     document.querySelectorAll(".wb-mode").forEach((b) => {
       b.addEventListener("click", () => setMode(b.dataset.mode));
     });
-    document.getElementById("wbMarks").addEventListener("change", (e) => { D.marks = e.target.checked; render(); });
     document.addEventListener("click", (e) => {
       const btn = e.target.closest && e.target.closest("[data-view-state]");
       if (!btn) return;
@@ -3316,6 +3323,12 @@
     document.getElementById("wbDrawerFold").addEventListener("click", () => {
       document.getElementById("wbBody").classList.remove("drawer-open");
       syncDrawerHandle();
+    });
+    const rvBtn = document.getElementById("wbReviewCount");
+    if (rvBtn) rvBtn.addEventListener("click", () => {
+      openDrawer();
+      const head = document.querySelector("#wbDrawerBody .chg-head");
+      if (head) head.scrollIntoView({ block: "start", behavior: "smooth" });
     });
     document.getElementById("wbDrawerOpen").addEventListener("click", () => {
       openDrawer();
