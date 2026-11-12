@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Markdown 文档审批工作台 · noware-cn/workspace</title>
-<link rel="stylesheet" href="/styles.css?v=342">
+<link rel="stylesheet" href="/styles.css?v=343">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -135,13 +135,6 @@
         <span class="wb-progress" id="wbProgress"></span>
         <button class="wb-nav-fold" id="wbNavFold" type="button" title="隐藏导航" aria-label="隐藏导航">◀</button>
       </div>
-      <div class="wb-nav-tools">
-        <input class="wb-filter" id="wbFilter" type="search" placeholder="筛选文件路径" autocomplete="off">
-        <div class="wb-viewseg" role="group" aria-label="文件列表视图">
-          <button type="button" data-view="tree" aria-pressed="true" title="树状视图（目录结构）">树状</button>
-          <button type="button" data-view="flat" aria-pressed="false" title="平铺视图（单层列表）">平铺</button>
-        </div>
-      </div>
       <section class="wb-view wb-view-files" id="wbFilesView">
         <button class="wb-view-head" id="wbFilesHead" type="button" aria-expanded="true" aria-controls="wbFiles">
           <span class="chev" aria-hidden="true"></span><span class="wb-view-label">文件</span>
@@ -152,7 +145,14 @@
         <button type="button" data-panel="files" data-layout="floating" title="悬浮" aria-pressed="false">⧉</button>
         <button type="button" data-panel="files" data-layout="hidden" title="隐藏" aria-pressed="false">✕</button>
       </div>
-        <div class="wb-files" id="wbFiles" role="tree" tabindex="0" aria-label="变更文件"></div>
+        <div class="wb-nav-tools">
+        <input class="wb-filter" id="wbFilter" type="search" placeholder="筛选文件路径" autocomplete="off">
+        <div class="wb-viewseg" role="group" aria-label="文件列表视图">
+          <button type="button" data-view="tree" aria-pressed="true" title="树状视图（目录结构）">树状</button>
+          <button type="button" data-view="flat" aria-pressed="false" title="平铺视图（单层列表）">平铺</button>
+        </div>
+      </div>
+      <div class="wb-files" id="wbFiles" role="tree" tabindex="0" aria-label="变更文件"></div>
       </section>
       <div class="wb-sash" id="wbSashY" role="separator" aria-orientation="horizontal" tabindex="0"
         title="拖动调整上下高度（双击复位）"></div>
@@ -240,7 +240,7 @@ window.DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 <script src="/diff-model.js?v=211"></script>
 <script src="/highlight.min.js?v=1"></script>
 <script src="/semdiff.js?v=2"></script>
-<script src="/diff.js?v=264"></script>
+<script src="/diff.js?v=265"></script>
 <script src="/app.js?v=220"></script>
 </body>
 </html>

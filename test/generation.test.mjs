@@ -1205,4 +1205,23 @@ test('面板布局：文件树与大纲各自停靠 / 悬浮 / 隐藏，窄屏�
   w.__setLayout('outline', 'docked');
   assert.equal(w.__effLayout().outline, 'floating');
   assert.equal(w.__effLayout().files, 'hidden');
+
+  // 缩窗到窄屏（两块偏好都是 docked）：也只浮一块，两张卡片不叠在正文上
+  app.ctx.window.innerWidth = 1440;
+  w.__setLayout('files', 'docked');
+  w.__setLayout('outline', 'docked');
+  app.ctx.window.innerWidth = 390;
+  w.__setLayout('right', 'hidden');
+  const narrowEff = w.__effLayout();
+  assert.ok(
+    !(narrowEff.files === 'floating' && narrowEff.outline === 'floating'),
+    '窄屏不会同时浮起文件树与大纲',
+  );
+  // 上一轮最后打开的是大纲，缩窗后保留它
+  assert.equal(narrowEff.outline, 'floating');
+  assert.equal(narrowEff.files, 'hidden');
+  // 换开文件树则反过来
+  w.__setLayout('files', 'docked');
+  assert.equal(w.__effLayout().files, 'floating');
+  assert.equal(w.__effLayout().outline, 'hidden');
 });

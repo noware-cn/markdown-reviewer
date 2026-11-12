@@ -2004,6 +2004,7 @@ body.tbl-full-on { overflow: hidden; }
 
 .wb-nav-tools {
   flex: none;
+  margin-top: 4px;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2934,7 +2935,6 @@ body.reading-focus .wb-nav { padding-inline: 2px 10px; }
 .wb-nav.is-single > .wb-view { flex: 1 1 auto; }
 /* 两块都不停靠时，列头与工具条也一起让位；浮层仍留在 DOM 里 */
 .wb-nav:not(.has-docked) > .wb-nav-head,
-.wb-nav:not(.has-docked) > .wb-nav-tools,
 .wb-nav:not(.has-docked) > .wb-sash { display: none; }
 .wb-nav:not(.has-docked) {
   padding-inline: 0;

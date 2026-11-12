@@ -494,7 +494,12 @@
   function effectiveLayout() {
     const lay = D.layout || (D.layout = { files: "docked", outline: "docked", right: "hidden" });
     const eff = { files: lay.files, outline: lay.outline, right: lay.right };
-    for (const id of LEFT_PANELS) if (eff[id] === "docked" && isNarrow("left")) eff[id] = "floating";
+    const narrowLeft = isNarrow("left");
+    for (const id of LEFT_PANELS) if (eff[id] === "docked" && narrowLeft) eff[id] = "floating";
+    // 窄屏放不下两块浮层：只留一块，另一块按隐藏渲染（不改用户偏好）
+    if (narrowLeft && eff.files === "floating" && eff.outline === "floating") {
+      eff[D.keepFloat === "outline" ? "files" : "outline"] = "hidden";
+    }
     if (eff.right === "docked" && isNarrow("right")) eff.right = "floating";
     // 全屏归位：文件树让位给大纲，右栏按浮层渲染
     if (D.focus) {
@@ -549,7 +554,7 @@
       if (el.setAttribute) el.setAttribute("aria-hidden", String(eff[id] === "hidden"));
     }
     const fo = document.getElementById("focusOutline");
-    if (fo) fo.setAttribute("aria-pressed", String(D.layout.outline !== "hidden"));
+    if (fo) fo.setAttribute("aria-pressed", String(eff.outline !== "hidden"));
     const navBtn = document.getElementById("wbNavToggle");
     if (navBtn) navBtn.setAttribute("aria-expanded", String(eff.files !== "hidden"));
     const olBtn = document.getElementById("wbOutlineToggle");
@@ -560,6 +565,7 @@
 
   /* 浮层的默认落点：避开仍停靠的左列，两块同时浮起时左右错开 */
   function defaultFloatPos(id, eff) {
+    if (id === "right") return { x: Math.max(12, Number(window.innerWidth) - 412), y: 60 };
     const nav = document.getElementById("wbNav");
     const docked = !!(nav && nav.classList && nav.classList.contains("has-docked"));
     const colRight = docked && nav.getBoundingClientRect ? Math.round(nav.getBoundingClientRect().right) : 0;
@@ -590,12 +596,17 @@
 
   function setLayout(id, state) {
     if (!LAYOUTS.includes(state) || !D.layout || !(id in D.layout)) return;
+    if (state !== "hidden" && LEFT_PANELS.includes(id)) D.keepFloat = id;
     // 窄屏放不下两块浮层：打开一块就把另一块收起
     if (state !== "hidden" && LEFT_PANELS.includes(id) && isNarrow("left")) {
       const other = LEFT_PANELS.find((p) => p !== id);
       if (other && D.layout[other] !== "hidden") {
         D.layout[other] = "hidden";
         writePref(PREF[prefName("layout", other)], "hidden");
+        if (other === "outline") {
+          D.outline = false;
+          writePref(PREF.outline, false);
+        }
       }
     }
     if (!D.lastLayout) D.lastLayout = {};
@@ -1097,11 +1108,6 @@
     applyZoom();
   }
   /* 全屏阅读的左侧大纲：可隐藏，状态记忆 */
-  function setOutline(on) {
-    const last = D.lastLayout.outline === "hidden" ? "docked" : (D.lastLayout.outline || "docked");
-    setLayout("outline", on ? last : "hidden");
-  }
-
   function setFocus(on) {
     D.focus = Boolean(on);
     writePref(PREF.focus, D.focus);
@@ -3534,7 +3540,7 @@
     document.getElementById("wbFocusBtn").addEventListener("click", () => setFocus(!D.focus));
     document.getElementById("focusExit").addEventListener("click", () => setFocus(false));
     const fo = document.getElementById("focusOutline");
-    if (fo) fo.addEventListener("click", () => setOutline(!D.outline));
+    if (fo) fo.addEventListener("click", () => toggleLayout("outline"));
     document.getElementById("focusZoomIn").addEventListener("click", () => stepZoom(1));
     document.getElementById("focusZoomOut").addEventListener("click", () => stepZoom(-1));
     document.getElementById("focusDrawer").addEventListener("click", () => toggleLayout("right"));
@@ -3713,9 +3719,10 @@
       outline: pick(PREF.layoutOutline, leftFallback),
       right: pick(PREF.layoutRight, "hidden"),
     };
+    const legacyLast = pick(PREF.lastLeft, null);
     D.lastLayout = {
-      files: pick(PREF.lastFiles, "docked"),
-      outline: pick(PREF.lastOutline, "docked"),
+      files: pick(PREF.lastFiles, legacyLast || "docked"),
+      outline: pick(PREF.lastOutline, legacyLast || "docked"),
       right: pick(PREF.lastRight, "docked"),
     };
     D.outline = D.layout.outline !== "hidden";
