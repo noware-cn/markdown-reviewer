@@ -936,6 +936,20 @@
   }
   const STATE_LABEL = { added: "新增", modified: "修改", removed: "删除", moved: "搬移" };
   /** 当前文件的改动块（引擎为准，缺引擎时退回 DiffModel 的插入/删除） */
+  /** 改前条目没有新行号：滚到最接近该行号的删除块并闪一下 */
+  function jumpToBaseLine(line) {
+    const blocks = [...document.querySelectorAll("#wbDoc .del-block[data-old-line]")];
+    if (!blocks.length) return;
+    let target = blocks[0];
+    for (const el of blocks) {
+      const l = Number(el.dataset.oldLine);
+      if (Number.isFinite(l) && l <= line) target = el;
+    }
+    target.scrollIntoView({ block: "center", behavior: "smooth" });
+    target.classList.add("cflash");
+    window.setTimeout(() => target.classList.remove("cflash"), 1200);
+  }
+
   function changeUnits(file) {
     if (!file) return [];
     const doc = semDocFor(file);
@@ -965,7 +979,9 @@
     if (!units.length) return "";
     const items = units.map((u) => {
       const done = u.line != null && isReviewed(file, u.line, u.side);
-      return `<li class="chg-item${done ? " is-done" : ""}"${u.line != null ? ` data-jump-to="${u.side === "head" ? u.line : ""}" data-jump-base="${u.side === "base" ? u.line : ""}"` : ""}>`
+      const jumpAttr = u.line == null ? ""
+        : u.side === "head" ? ` data-jump-to="${u.line}"` : ` data-jump-base="${u.line}"`;
+      return `<li class="chg-item${done ? " is-done" : ""}"${jumpAttr}>`
         + `<button type="button" class="chg-rv${done ? " on" : ""}" data-review="${u.line}" data-review-side="${u.side}" aria-pressed="${done}" title="${done ? "取消已阅" : "标为已阅"}">✓</button>`
         + `<span class="chg-chip ${u.state}">${STATE_LABEL[u.state] || "改动"}</span>`
         + `<span class="chg-text">${esc(u.text || "（无文本）")}</span>`
@@ -2648,6 +2664,8 @@
       if (ev) { D.event = ev.dataset.ev; render(); return; }
       const submit = e.target.closest("#wbSubmit");
       if (submit) submitDrafts();
+      const jumpBase = e.target.closest("[data-jump-base]");
+      if (jumpBase) { jumpToBaseLine(Number(jumpBase.dataset.jumpBase)); return; }
       const jump = e.target.closest("[data-jump-to]");
       if (jump) jumpToCommentLine(Number(jump.dataset.jumpTo));
     });
@@ -3353,7 +3371,13 @@
     D.read = READ_WIDTHS.includes(readPref(PREF.read, "standard")) ? readPref(PREF.read, "standard") : "standard";
     D.docView = VIEWS.includes(readPref(PREF.docView, "markup")) ? readPref(PREF.docView, "markup") : "markup";
     const rv = readPref(PREF.reviewed, {});
-    D.reviewed = rv && typeof rv === "object" ? rv : {};
+    /* 旧版本键是 revKey|path|line，没有侧别：按 head 认领，避免升级后已阅全清零 */
+    D.reviewed = {};
+    for (const [k, v] of Object.entries(rv && typeof rv === "object" ? rv : {})) {
+      const parts = String(k).split("|");
+      if (parts.length === 3) D.reviewed[`${parts[0]}|${parts[1]}|head|${parts[2]}`] = v;
+      else D.reviewed[k] = v;
+    }
     const folded = readPref(PREF.folded(number), []);
     D.folded = new Set(Array.isArray(folded) ? folded : []);
     /* 窄屏下文件导航默认收起，避免占满阅读宽度；宽屏保持展开 */

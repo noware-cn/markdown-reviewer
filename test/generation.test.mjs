@@ -106,7 +106,8 @@ function makeWorld() {
       const body = (isBase && world.texts && world.texts[`${p}@base`])
         || (world.texts && world.texts[p])
         || `# ${p} @ ${ref}\n\n- 项目\n`;
-      return { status: 200, ok: true, json: async () => ({ text: body, truncated: Boolean(world.truncated) }) };
+      const trunc = isBase ? world.baseTruncated : world.truncated;
+      return { status: 200, ok: true, json: async () => ({ text: body, truncated: Boolean(trunc) }) };
     }
     return { status: world.post.status, ok: world.post.status === 200, json: async () => world.post.data };
   };
@@ -1056,14 +1057,34 @@ test('截断文件在最终/原始视图也给提示，不当成全文', async (
   world.texts = { 'a.md': '# 标题\n\n正文。\n', 'a.md@base': '# 标题\n\n改前正文。\n' };
   world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n-改前正文。\n+正文。\n' };
   world.truncated = true;
+  world.baseTruncated = false;
   const app = mountApp(world);
   await mountComplete(world, app, 1);
   const D = app.ctx.window.__D;
   D.docView = 'final';
   app.ctx.window.__render();
-  assert.ok(app.els.get('wbContent').innerHTML.includes('超过读取上限'), '最终态也拦截断');
+  assert.ok(app.els.get('wbContent').innerHTML.includes('超过读取上限'), '最终态拦住 head 截断');
   D.docView = 'original';
   app.ctx.window.__render();
-  assert.ok(app.els.get('wbContent').innerHTML.includes('超过读取上限'), '原始态也拦截断');
+  assert.ok(!app.els.get('wbContent').innerHTML.includes('超过读取上限'), 'base 未截断时不误报');
+  D.docView = 'markup';
+});
+
+
+test('截断分侧判断：只有 base 截断时，原始态拦住、最终态不误报', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n正文。\n', 'a.md@base': '# 标题\n\n改前正文。\n' };
+  world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n-改前正文。\n+正文。\n' };
+  world.truncated = false;
+  world.baseTruncated = true;
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const D = app.ctx.window.__D;
+  D.docView = 'original';
+  app.ctx.window.__render();
+  assert.ok(app.els.get('wbContent').innerHTML.includes('超过读取上限'), '原始态拦住 base 截断');
+  D.docView = 'final';
+  app.ctx.window.__render();
+  assert.ok(!app.els.get('wbContent').innerHTML.includes('超过读取上限'), 'head 完整时不误报');
   D.docView = 'markup';
 });
