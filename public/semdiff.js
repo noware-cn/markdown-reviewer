@@ -69,7 +69,12 @@
     const walk = (tokens, parent) => {
       for (const tok of tokens || []) {
         const raw = tok.raw != null ? String(tok.raw) : "";
-        /* 行号由真实的源码偏移推出来：marked 的 raw 可能带尾随空行，累加行数会漂移 */
+        /* 行号由真实的源码偏移推出来：marked 的 raw 可能带尾随空行，
+           累加长度会漂移，所以先在源码里定位这一块的真实起点 */
+        if (raw) {
+          const at = src.indexOf(raw, pos);
+          if (at >= 0) pos = at;
+        }
         const start = lineAt(pos);
         const kind = KIND_OF[tok.type];
         if (kind === "list") {
@@ -247,14 +252,48 @@
     for (const b of base) state[b.id] = "removed";
     for (const h of head) state[h.id] = "added";
     const byId = new Map(base.map((b) => [b.id, b]));
+    /* 错配修正：同文块本该配在一起（段落换位时相似度会把甲段配给乙段） */
+    const headUsed = new Set(pairs.map((pr) => pr[1]));
+    const baseUsed = new Set(pairs.map((pr) => pr[0]));
+    const headById = new Map(head.map((h) => [h.id, h]));
+    const movedPairs = [];
+    for (const pr of pairs.slice()) {
+      const b = byId.get(pr[0]), h = headById.get(pr[1]);
+      if (!b || !h || norm(b.text) === norm(h.text)) continue;
+      const h2 = head.find((x) => !headUsed.has(x.id) && x.kind === b.kind && norm(x.text) === norm(b.text));
+      const b2 = base.find((x) => !baseUsed.has(x.id) && x.kind === h.kind && norm(x.text) === norm(h.text));
+      if (!h2 || !b2) continue;
+      headUsed.delete(pr[1]); baseUsed.delete(pr[0]);
+      headUsed.add(h2.id); baseUsed.add(b2.id);
+      pr[0] = b.id; pr[1] = h2.id;
+      pairs.push([b2.id, h.id]);
+      movedPairs.push(pr, [b2.id, h.id]);
+    }
+
     const byHead = new Map(head.map((h) => [h.id, h]));
     for (const [bid, hid] of pairs) {
       state[bid] = "normal"; state[hid] = "normal";
       const b = byId.get(bid), h = byHead.get(hid);
       baseLineOf[hid] = b ? b.startLine : 0;
       if (b && h && norm(b.text) !== norm(h.text)) state[hid] = "modified";
+      if (movedPairs.some(([mb, mh]) => mb === bid && mh === hid)) { state[bid] = "moved"; state[hid] = "moved"; }
     }
-    return { pairs, state, baseLineOf };
+    /* 搬移：未配对、但正文与类型完全相同的块配成 moved（不改动状态，只加标记） */
+    const moved = [];
+    const usedHead = new Set(state ? [] : []);
+    const freeBase = base.filter((b) => state[b.id] === "removed" && norm(b.text));
+    const freeHead = head.filter((h) => state[h.id] === "added" && norm(h.text));
+    for (const b of freeBase) {
+      const hit = freeHead.find((h) => !usedHead.has(h.id) && h.kind === b.kind && norm(h.text) === norm(b.text));
+      if (!hit) continue;
+      usedHead.add(hit.id);
+      state[b.id] = "moved";
+      state[hit.id] = "moved";
+      moved.push([b.id, hit.id]);
+      pairs.push([b.id, hit.id]);
+      baseLineOf[hit.id] = b.startLine;
+    }
+    return { pairs, state, baseLineOf, moved };
   }
 
   /* ---------- 行内差异 ---------- */
@@ -372,8 +411,10 @@
       const b = byId.get(bid);
       usedBase.add(bid);
       const ranges = diffBlock(b.text, h.text);
+      /* 搬移：内容未变、只是换了位置；不给行内标记，只标「已移动」 */
+      const moved = align.state[h.id] === "moved";
       out.push({
-        block: h, state: ranges.length ? "modified" : "normal",
+        block: h, state: moved ? "moved" : ranges.length ? "modified" : "normal",
         inline: ranges.map((r) => Object.assign({ unit: h.id }, r)),
         tier: classify(b, h, ranges).tier,
         baseText: b.text, pair: { blockId: b.id, line: b.startLine },

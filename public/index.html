@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Markdown 文档审批工作台 · noware-cn/workspace</title>
-<link rel="stylesheet" href="/styles.css?v=325">
+<link rel="stylesheet" href="/styles.css?v=327">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -82,6 +82,12 @@
       <button type="button" class="wb-mode" data-mode="split" aria-pressed="false">分栏 Diff</button>
     </div>
     <label class="wb-marks" title="显示变更标记"><input type="checkbox" id="wbMarks" checked aria-label="显示变更标记"> 显示变更标记</label>
+    <span class="wb-rvcount" id="wbReviewCount" hidden></span>
+    <div class="wb-viewstate" role="group" aria-label="显示状态">
+      <button type="button" data-view-state="markup" aria-pressed="true" title="显示改动标记">标记</button>
+      <button type="button" data-view-state="final" aria-pressed="false" title="只看定稿">最终</button>
+      <button type="button" data-view-state="original" aria-pressed="false" title="只看改前">原始</button>
+    </div>
     <div class="wb-look">
       <button class="wb-look-btn" id="wbLookBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="wbLookPop" title="文档主题与表格样式">外观</button>
       <div class="wb-look-pop" id="wbLookPop" hidden>
@@ -202,8 +208,8 @@ window.DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 <script src="/route.js?v=2"></script>
 <script src="/diff-model.js?v=211"></script>
 <script src="/highlight.min.js?v=1"></script>
-<script src="/semdiff.js?v=1"></script>
-<script src="/diff.js?v=249"></script>
+<script src="/semdiff.js?v=2"></script>
+<script src="/diff.js?v=251"></script>
 <script src="/app.js?v=220"></script>
 </body>
 </html>

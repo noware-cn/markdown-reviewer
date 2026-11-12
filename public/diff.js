@@ -171,6 +171,8 @@
     theme: "wb.doc.theme",
     tbl: "wb.doc.tbl",
     read: "wb.doc.read",
+    docView: "wb.doc.docview",
+    reviewed: "wb.doc.reviewed",
   };
   const readPref = (key, fallback) => {
     try {
@@ -922,6 +924,70 @@
    * 按位置匹配：把纯文本片段拼成一条流，用游标保证新增行按文档顺序消费，
    * 同一段里同一句话出现多次时无法判断哪处是新增，直接不标，只留页边记号。
    */
+  /* ---------- 已阅与改动清单 ---------- */
+  const reviewKey = (file, line) => `${D.revKey}|${file ? file.path : ""}|${line}`;
+  const isReviewed = (file, line) => Boolean(file && D.reviewed && D.reviewed[reviewKey(file, line)]);
+  function setReviewed(file, line, on) {
+    if (!file) return;
+    const key = reviewKey(file, line);
+    if (on) D.reviewed[key] = 1; else delete D.reviewed[key];
+    writePref(PREF.reviewed, D.reviewed);
+  }
+  const STATE_LABEL = { added: "新增", modified: "修改", removed: "删除", moved: "搬移" };
+  /** 当前文件的改动块（引擎为准，缺引擎时退回 DiffModel 的插入/删除） */
+  function changeUnits(file) {
+    if (!file) return [];
+    const doc = semDocFor(file);
+    if (doc) {
+      return doc.filter((d) => d.state !== "normal").map((d) => ({
+        line: d.block.side === "head" ? d.block.startLine : (d.pair && d.pair.line) || null,
+        side: d.block.side, state: d.state, tier: d.tier,
+        text: String(d.block.text || "").slice(0, 60),
+      }));
+    }
+    const model = modelFor(file);
+    if (!model) return [];
+    const out = [];
+    for (const it of model.headInsertions || []) out.push({ line: it.afterNewLine, side: "head", state: "added", text: "" });
+    for (const ch of (model.changes || [])) out.push({ line: ch.oldStartLine || null, side: "base", state: "removed", text: "" });
+    return out;
+  }
+  function reviewStats(file) {
+    const units = changeUnits(file);
+    const done = units.filter((u) => u.line != null && isReviewed(file, u.line)).length;
+    return { total: units.length, done };
+  }
+  function changeListHTML(file) {
+    if (!file || viewState() !== "markup") return "";
+    const units = changeUnits(file);
+    if (!units.length) return "";
+    const items = units.map((u) => {
+      const done = u.line != null && isReviewed(file, u.line);
+      return `<li class="chg-item${done ? " is-done" : ""}"${u.line != null ? ` data-jump-to="${u.side === "head" ? u.line : ""}" data-jump-base="${u.side === "base" ? u.line : ""}"` : ""}>`
+        + `<button type="button" class="chg-rv${done ? " on" : ""}" data-review="${u.line}" aria-pressed="${done}" title="${done ? "取消已阅" : "标为已阅"}">✓</button>`
+        + `<span class="chg-chip ${u.state}">${STATE_LABEL[u.state] || "改动"}</span>`
+        + `<span class="chg-text">${esc(u.text || "（无文本）")}</span>`
+        + `<span class="chg-line">L${u.line == null ? "-" : u.line}</span></li>`;
+    }).join("");
+    const { done, total } = reviewStats(file);
+    return `<div class="chg-head">改动 · ${total} 处 · 已阅 ${done}</div><ul class="chg-list">${items}</ul>`;
+  }
+
+  /* ---------- 显示状态：最终 / 原始 / 标记 ---------- */
+  const VIEWS = ["markup", "final", "original"];
+  const viewState = () => (VIEWS.includes(D.docView) ? D.docView : "markup");
+  /** 最终=定稿正文，原始=改前正文；两者都不显示改动记号与评论入口 */
+  function plainDocHTML(file, side) {
+    const text = side === "base" ? textOf(file.path, "base") : textOf(file.path, "head");
+    if (!text) return `<div class="dempty">正在加载正文…</div>`;
+    const blocks = window.DiffModel.mdBlocks(text);
+    const isHead = side !== "base";
+    return `<div class="view-note">${isHead ? "最终稿（不显示改动）" : "改前版本（Base）"}`
+      + ` · <button type="button" class="linkish" data-view-state="markup">回到标记视图</button></div>`
+      + blocks.map((b) => `<div class="md-block" data-${isHead ? "" : "base-"}line="${b.startLine}">`
+        + `${resolveBlockUrls(b.html, file)}</div>`).join("");
+  }
+
   function readingHTML(file) {
     const textState = textsOf(file.path);
     const errMsg = (textState && textState.error) || D.err;
@@ -930,6 +996,9 @@
       return `<div class="dempty">正在加载正文…</div>`;
     }
     if (isCsv(file.path)) return csvReadingHTML(file);
+    if (viewState() !== "markup" && file.status !== "added" && file.status !== "removed") {
+      return plainDocHTML(file, viewState() === "original" ? "base" : "head");
+    }
     if (textState.headTruncated) {
       return `<div class="error-box">文件超过读取上限（400 KB），当前内容不完整，请用 GitHub 原始文件查看。</div>`;
     }
@@ -982,6 +1051,27 @@
 
   /* ---------- 语义 diff（引擎在 public/semdiff.js） ---------- */
   const semCache = new Map();
+  /** 整份引擎结果（改动清单、已阅计数都用它） */
+  function semDocFor(file) {
+    if (!window.SemDiff || !file || isCsv(file.path)) return null;
+    const head = textOf(file.path, "head");
+    const base = textOf(file.path, "base");
+    if (!head || base == null) return null;
+    const key = D.revKey + "|" + file.path;
+    const hit = semCache.get(key);
+    if (hit && hit.head === head && hit.base === base) return hit.doc;
+    let doc = null;
+    try { doc = window.SemDiff.diffDocument(base, head); } catch (e) { doc = null; }
+    semCache.set(key, { head, base, doc, map: null });
+    return doc;
+  }
+  function mapOfDoc(doc) {
+    if (!doc) return null;
+    const map = new Map();
+    for (const d of doc) if (d.block.side === "head") map.set(d.block.startLine, d);
+    return map;
+  }
+
   /** 当前文件的 head 块起始行 → 引擎条目（含 inline 区间与改前文本） */
   function semInlineFor(file) {
     if (!window.SemDiff || !file || isCsv(file.path)) return null;
@@ -990,14 +1080,13 @@
     if (!head || base == null) return null;
     const key = D.revKey + "|" + file.path;
     const hit = semCache.get(key);
-    if (hit && hit.head === head && hit.base === base) return hit.map;
-    let map = null;
-    try {
-      const doc = window.SemDiff.diffDocument(base, head);
-      map = new Map();
-      for (const d of doc) if (d.block.side === "head") map.set(d.block.startLine, d);
-    } catch (e) { map = null; }
-    semCache.set(key, { head, base, map });
+    if (hit && hit.head === head && hit.base === base) {
+      if (!hit.map) hit.map = mapOfDoc(hit.doc);
+      return hit.map;
+    }
+    const doc = semDocFor(file);
+    const map = mapOfDoc(doc);
+    semCache.set(key, { head, base, doc, map });
     return map;
   }
 
@@ -1397,15 +1486,22 @@
     /* 行内记号：引擎给出的插入区间投影进 HTML，匹配失败则只留块级记号 */
     bodyHtml = applyInlineMarks(bodyHtml, b);
     /* 有评论的块：极浅底色 + 页边窄条，正文不出现数字；气泡悬停才出 */
-    const threads = threadsInBlock(file, b);
-    const drafts = draftsInBlock(file, b);
+    const threads = viewState() === "markup" ? threadsInBlock(file, b) : [];
+    const drafts = viewState() === "markup" ? draftsInBlock(file, b) : [];
     let quiet = threads.length ? " has-comments" : "";
     if (drafts.length) quiet += " has-drafts";
     const stripe = threads.length ? `<span class="cstripe" aria-hidden="true"></span>` : "";
     // 草稿用页边虚线：读者一眼能分出「已发出的评论」和「我还压在本地没发」
     const dstripe = drafts.length ? `<span class="dstripe" aria-hidden="true" title="未发送的草稿"></span>` : "";
     const bubble = threads.length || drafts.length ? commentBubbleHTML(threads, b, drafts) : "";
-    return `<div class="${cls}${quiet}" data-line="${b.startLine}" data-end-line="${b.endLine}" data-block="${b.startLine}">${stripe}${dstripe}${oldBlock}${bodyHtml}${anchor}${bubble}</div>`;
+    /* 改动块给一个「已阅」开关：点一下整块退成普通正文，计数随之更新 */
+    const changedBlock = /is-(added|modified-new|removed)/.test(cls);
+    const done = changedBlock && viewState() === "markup" && isReviewed(file, b.startLine);
+    if (done) cls += " is-reviewed";
+    const rvBtn = changedBlock && viewState() === "markup"
+      ? `<button type="button" class="rv-toggle${done ? " on" : ""}" data-review="${b.startLine}" aria-pressed="${done}" title="${done ? "取消已阅" : "标为已阅"}">✓ 已阅</button>`
+      : "";
+    return `<div class="${cls}${quiet}" data-line="${b.startLine}" data-end-line="${b.endLine}" data-block="${b.startLine}">${stripe}${dstripe}${rvBtn}${oldBlock}${bodyHtml}${anchor}${bubble}</div>`;
   }
 
   /** 评论树的一条线程：根评论 + 缩进的回复，整块可点，点了滚到正文对应行。 */
@@ -1506,6 +1602,8 @@
 
   function drawerHTML() {
     const parts = [];
+    const file0 = curFile();
+    if (file0 && D.ref == null) parts.push(changeListHTML(file0));
     // existing comments for current file
     const file = curFile();
     const threads = file ? commentThreads(file) : [];
@@ -2119,6 +2217,9 @@
       b.setAttribute("aria-pressed", String(on));
     });
     document.getElementById("wbMarks").checked = D.marks;
+    document.querySelectorAll("[data-view-state]").forEach((btn) => {
+      btn.setAttribute("aria-pressed", String(btn.dataset.viewState === viewState()));
+    });
     document.getElementById("wbDraftCount").textContent = String(D.drafts.length);
     const seen = D.files.filter((f) => reviewInfo(f.path).reviewed).length;
     document.getElementById("wbProgress").textContent = isCommitView()
@@ -2164,6 +2265,13 @@
 
     decorateTables(content);
     if (window.__mmMount) window.__mmMount(content);
+
+    const rvCount = document.getElementById("wbReviewCount");
+    if (rvCount) {
+      const st = file && viewState() === "markup" ? reviewStats(file) : { done: 0, total: 0 };
+      rvCount.textContent = st.total ? `已阅 ${st.done}/${st.total}` : "";
+      rvCount.hidden = !st.total;
+    }
 
     document.getElementById("wbDrawerBody").innerHTML = drawerHTML();
     syncDrawerHandle();
@@ -2437,6 +2545,17 @@
       img.replaceWith(miss);
     }, true);
     document.addEventListener("click", (e) => {
+      const rv = e.target.closest && e.target.closest("[data-review]");
+      if (rv) {
+        e.preventDefault();
+        const line = Number(rv.dataset.review);
+        const f = curFile();
+        if (f && Number.isFinite(line)) {
+          setReviewed(f, line, !isReviewed(f, line));
+          render();
+        }
+        return;
+      }
       if (!e.target.closest(".table-shell")) {
         document.querySelectorAll(".colpanel:not([hidden])").forEach((panel) => {
           panel.hidden = true;
@@ -3112,6 +3231,16 @@
       b.addEventListener("click", () => setMode(b.dataset.mode));
     });
     document.getElementById("wbMarks").addEventListener("change", (e) => { D.marks = e.target.checked; render(); });
+    document.addEventListener("click", (e) => {
+      const btn = e.target.closest && e.target.closest("[data-view-state]");
+      if (!btn) return;
+      e.preventDefault();
+      const next = btn.dataset.viewState;
+      if (!VIEWS.includes(next) || next === viewState()) return;
+      D.docView = next;
+      writePref(PREF.docView, next);
+      render();
+    });
     document.getElementById("wbCommitSelect").addEventListener("change", (e) => {
       const sha = e.target.value;
       if (!sha) selectAll();
@@ -3214,6 +3343,9 @@
     D.theme = THEMES.includes(readPref(PREF.theme, "paper")) ? readPref(PREF.theme, "paper") : "paper";
     D.tbl = TBL_STYLES.includes(readPref(PREF.tbl, "grid")) ? readPref(PREF.tbl, "grid") : "grid";
     D.read = READ_WIDTHS.includes(readPref(PREF.read, "standard")) ? readPref(PREF.read, "standard") : "standard";
+    D.docView = VIEWS.includes(readPref(PREF.docView, "markup")) ? readPref(PREF.docView, "markup") : "markup";
+    const rv = readPref(PREF.reviewed, {});
+    D.reviewed = rv && typeof rv === "object" ? rv : {};
     const folded = readPref(PREF.folded(number), []);
     D.folded = new Set(Array.isArray(folded) ? folded : []);
     /* 窄屏下文件导航默认收起，避免占满阅读宽度；宽屏保持展开 */

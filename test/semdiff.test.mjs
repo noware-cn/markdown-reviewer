@@ -97,3 +97,14 @@ test('projectInline：把插入文本包进 .md-ins，标签内不插入', () =>
   assert.ok(out.includes('<ins class="md-ins">，样本需补充来源</ins>'));
   assert.ok(out.includes('</p>'));
 });
+
+test('搬移检测：同一段落换位置标为 moved，而不是新增+删除', () => {
+  const S = window.SemDiff;
+  const base = '甲段。\n\n乙段。\n\n丙段。\n';
+  const head = '乙段。\n\n甲段。\n\n丙段。\n';
+  const doc = S.diffDocument(base, head);
+  const states = doc.map((d) => d.state);
+  assert.ok(states.includes('moved'), '至少一块被标为搬移');
+  assert.ok(!states.includes('added'), '不再误报为新增');
+  assert.ok(!states.includes('removed'), '不再误报为删除');
+});
