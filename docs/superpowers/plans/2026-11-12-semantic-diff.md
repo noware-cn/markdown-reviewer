@@ -291,7 +291,7 @@ git commit -m "feat(semdiff): 行内差异与三条后处理"
 - Modify: `public/semdiff.js`、`test/semdiff.test.mjs`
 
 **Interfaces:**
-- Produces: `SemDiff.classify(baseBlock, headBlock, ranges) => { tier: "inline"|"sentence"|"block"|"node", r: number }`；`SemDiff.diffDocument(baseText, headText) => Decorated[]`，`Decorated = { block, state, inline?: Array<{ unit: string, ranges: InlineRange[] }>, baseText?, pair?, children? }`（按 head 顺序，`removed` 块插在其配对位置；`unit` 为改动单元标识，段落为 `block.id`，表格单元格为 `rowId#c<col>`）。
+- Produces: `SemDiff.classify(baseBlock, headBlock, ranges) => { tier: "inline"|"sentence"|"block"|"node", r: number }`；`SemDiff.diffDocument(baseText, headText) => Decorated[]`，`Decorated = { block, state, inline?: InlineChange[], baseText?, pair?, children? }`，其中 `InlineChange = InlineRange & { unit: string }`（`unit` 为改动单元标识，段落为 `block.id`，表格单元格为 `rowId#c<col>`）；按 head 顺序输出，`removed` 块插在其配对位置。形状与设计文档 §7.5 完全一致：**扁平条目，每条自带 `unit`、`op`、`start`、`end`**。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -385,11 +385,11 @@ git commit -m "test(semdiff): 黄金语料回归"
 - Modify: `public/diff.js`、`public/styles.css`、`test/generation.test.mjs`
 
 **Interfaces:**
-- Produces: `projectInline(html: string, units: Array<{ unit: string, textMap: Array<{ textStart: number, textEnd: number, htmlStart: number, htmlEnd: number }>, ranges: InlineRange[] }>) => string`（消费 `Decorated.inline`，`textMap` 由渲染器在生成该块 HTML 时同步记录）；`blockHtml` 额外输出 `data-block-id`。
+- Produces: `projectInline(html: string, changes: InlineChange[], textMaps: Record<string, Array<{ textStart: number, textEnd: number, htmlStart: number, htmlEnd: number }>>) => string`（`changes` 直接来自 `Decorated.inline`，按 `unit` 分组查 `textMaps`；`textMap` 由渲染器在生成该块 HTML 时同步记录）；`blockHtml` 额外输出 `data-block-id`。
 
 - [ ] **Step 1: 写失败测试**（断言：`<ins class="md-ins">`、`<del class="md-del">` 落在正确文本位置；`data-block-id` 存在；`data-line`/`data-end-line`/`data-block` 仍在）
 - [ ] **Step 2: 跑测试确认失败** — Run: `node --test test/generation.test.mjs`；Expected: FAIL — 无 `md-del`、无 `data-block-id`
-- [ ] **Step 3: 实现**：块 HTML 生成时同步产出 `textMap`（每段文本在 HTML 字符串中的起止），按 range 插入标签；跨标签时按 textMap 分段插入
+- [ ] **Step 3: 实现**：块 HTML 生成时同步产出 `textMap`（每段文本在 HTML 字符串中的起止），按 `changes` 的 `unit` + `start/end` 换算为 HTML 偏移后插入标签；跨标签时按该 unit 的 textMap 分段插入
 - [ ] **Step 4: 加 CSS**（`.md-ins` 沿用、`.md-del` 删除线、块级 `border-left` 三色 + `::before` 符号 `+ ~ − ↔`）
 - [ ] **Step 5: 跑测试确认通过** — Run: `npm test`；Expected: 全绿
 - [ ] **Step 6: 提交**

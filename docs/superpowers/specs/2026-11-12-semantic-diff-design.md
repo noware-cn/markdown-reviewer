@@ -303,7 +303,7 @@ r > 0.60            → block    （段级：旧段删除线 + 新段下划线�
 interface Decorated {
   block: Block;                       // head 侧；removed 块为 base 侧
   state: BlockState;
-  inline?: Array<{
+  inline?: Array<{          // 扁平条目：每条自带 unit/op/start/end（实现计划 T7 与此一致）
     op: "ins" | "del";
     unit: string;                     // block.id，或 tableRow 的 `${block.id}#c${col}`
     start: number; end: number;       // unit 文本内的字符偏移
