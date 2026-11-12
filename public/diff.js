@@ -46,7 +46,7 @@
   const THEMES = ["paper", "sepia", "night"];
   const TBL_STYLES = ["grid", "zebra", "plain"];
   const READ_WIDTHS = ["narrow", "standard", "wide"];
-  const MODES = ["reading", "sidebyside", "unified", "split"];
+  const MODES = ["reading"];
 
   const esc = window.DiffModel.esc;
   const isCsv = (path) => window.DiffModel.isCsvPath(path);
@@ -478,7 +478,6 @@
     btn.textContent = total ? `意见 ${total}` : "意见";
     btn.hidden = false;
     // 面板开合会改变正文宽度 → 块高度随之变化，刻度要重量
-    requestAnimationFrame(syncRail);
   }
 
   function renderFiles() {
@@ -913,60 +912,6 @@
    * 按位置匹配：把纯文本片段拼成一条流，用游标保证新增行按文档顺序消费，
    * 同一段里同一句话出现多次时无法判断哪处是新增，直接不标，只留页边记号。
    */
-  function wrapAddedText(html, needles) {
-    const parts = html.split(/(<[^>]+>)/);
-    const segs = [];
-    let flat = "";
-    parts.forEach((part, index) => {
-      if (!part || part.startsWith("<")) return;
-      segs.push({ index, start: flat.length, end: flat.length + part.length });
-      flat += part;
-    });
-    if (!segs.length) return html;
-    let cursor = 0;
-    const marks = new Map();
-    for (const needle of needles) {
-      const at = flat.indexOf(needle, cursor);
-      if (at < 0) continue;
-      if (flat.indexOf(needle, at + 1) >= 0) continue;
-      const seg = segs.find((s) => at >= s.start && at + needle.length <= s.end);
-      if (!seg) continue;
-      const list = marks.get(seg.index) || [];
-      list.push({ at: at - seg.start, len: needle.length });
-      marks.set(seg.index, list);
-      cursor = at + needle.length;
-    }
-    if (!marks.size) return html;
-    return parts.map((part, index) => {
-      const list = marks.get(index);
-      if (!list) return part;
-      let out = "";
-      let last = 0;
-      for (const m of list.sort((x, y) => x.at - y.at)) {
-        out += `${part.slice(last, m.at)}<ins class="md-ins">${part.slice(m.at, m.at + m.len)}</ins>`;
-        last = m.at + m.len;
-      }
-      return out + part.slice(last);
-    }).join("");
-  }
-
-  function markInlineAdded(html, b) {
-    if (!b || b.type === "code" || b.changeState === "normal" || b.changeState === "added") return html;
-    const model = modelFor(curFile());
-    const ops = (model && model.parsed && model.parsed.ops) || [];
-    const needles = [];
-    for (const op of ops) {
-      if (op.t !== "add" || op.new == null) continue;
-      if (op.new < b.startLine || op.new > b.endLine) continue;
-      const clean = String(op.text || "").replace(/^\s*[>#*+-]*\s*/, "").replace(/[*_`[\]]/g, "").trim();
-      if (clean.length >= 4) needles.push(clean);
-    }
-    if (!needles.length) return html;
-    /* 按源码顺序匹配：游标只前进，先匹配长句会把后面更短的唯一行整段吃掉 */
-    return wrapAddedText(html, needles);
-  }
-
-  /* ---------- 阅读改动渲染 ---------- */
   function readingHTML(file) {
     const textState = textsOf(file.path);
     const errMsg = (textState && textState.error) || D.err;
@@ -1022,271 +967,114 @@
       }
     }
     while (j < insertions.length) { html += insertionHtml(insertions[j].change, file); j += 1; }
-    return html + changeRail(blocks, file);
+    return html;
   }
 
-  function blockHtml(b, opts) {
-    let cls = "md-block";
-    if (!opts.plain) {
-      if (b.changeState === "added") cls += " is-added";
-      else if (b.changeState === "modified-new" || b.changeState === "partial") cls += " is-modified-new";
-      else if (b.changeState === "removed") cls += " is-removed";
-    }
-    const file = curFile();
-    // 旧文按文档排版渲染（不再当作代码），相对资源同样按提交解析
-    const oldBlock = (b.pairedChanges || (b.pairedChange ? [b.pairedChange] : []))
-      .map((pc) => `<div class="del-block md-old"><div class="del-head">原文（已替换）</div>`
-        + `<div class="del-body">${oldDocHtml(pc.oldText, file)}</div></div>`)
-      .join("");
-    // 代码块：逐行 data-line
-    let bodyHtml = resolveBlockUrls(b.html, file);
-    if (b.type === "code" && b.startLine != null) {
-      bodyHtml = bodyHtml.replace(/(<pre><code>)([\s\S]*?)(<\/code><\/pre>)/, (_m, open, code, close) => {
-        const lines = code.split("\n");
-        const wrapped = lines.map((ln, i) => `<span class="code-line" data-line="${b.startLine + i + 1}">${ln}</span>`).join("\n");
-        return open + wrapped + close;
-      });
-    }
-    // 表格：每个 <tr> 绑定源行（raw 第 0 行是表头，第 1 行是分隔行，渲染时被丢弃）
-    if (b.type === "table" && b.startLine != null) {
-      let rowIdx = -1;
-      bodyHtml = bodyHtml.replace(/<tr\b([^>]*)>/g, (_m, attrs) => {
-        rowIdx += 1;
-        const rawIdx = rowIdx === 0 ? 0 : rowIdx + 1;
-        return `<tr${attrs} data-line="${b.startLine + rawIdx}">`;
-      });
-    }
-    // 列表：给每个 <li> 绑定源码行号（按 raw 顺序，跳过围栏内的假标记行；嵌套项也有行号）
-    if ((b.type === "ul" || b.type === "ol") && b.raw) {
-      const itemLines = window.DiffModel.listItemLines(b.raw, b.startLine);
-      const liCount = (bodyHtml.match(/<li\b[^>]*>/g) || []).length;
-      // 映射数量不一致时整体放弃行号映射，绝不把后续 <li> 错配到别的源码行。
-      if (itemLines.length === liCount) {
-        let liIdx = 0;
-        bodyHtml = bodyHtml.replace(/<li\b([^>]*)>/g, (_match, attrs) => {
-          const lineNum = itemLines[liIdx++];
-          return lineNum == null ? `<li${attrs}>` : `<li${attrs} data-line="${lineNum}">`;
-        });
-      }
-    }
-    // 在块范围内找一个 hunk 覆盖的行作为评论锚点（从后往前找，优先命中改动行）
-    const cl = modelFor(curFile())?.parsed?.commentableHeadLines;
-    let anchorLine = null;
-    if (cl) for (let l = (b.endLine ?? b.startLine); l >= b.startLine; l--) if (cl.has(l)) { anchorLine = l; break; }
-    const anchor = anchorLine
-      ? `<span class="line-anchor" data-line="${anchorLine}" data-side="RIGHT" role="button" title="在第 ${anchorLine} 行评论">L${anchorLine} +</span>`
-      : "";
-    /* 标题块：注入「#」，点击复制本段深链（与地址栏同一套 L 行号） */
-    if (b.startLine != null && /^\s*<h[1-4][\s>]/.test(bodyHtml)) {
-      bodyHtml = bodyHtml.replace(/^(\s*)<h([1-4])([^>]*)>/, (_m, pad, level, attrs) =>
-        `${pad}<h${level}${attrs} data-line="${b.startLine}"><a class="hlink" href="#L${b.startLine}" data-hlink="${b.startLine}" title="复制本段链接" aria-label="复制第 ${b.startLine} 行所在标题的链接">#</a>`);
-    }
-    /* 行内记号：修改块里只给新增的片段加下划线，其余保持正文排版 */
-    bodyHtml = markInlineAdded(bodyHtml, b);
-    /* 有评论的块：极浅底色 + 页边窄条，正文不出现数字；气泡悬停才出 */
-    const threads = threadsInBlock(file, b);
-    const drafts = draftsInBlock(file, b);
-    let quiet = threads.length ? " has-comments" : "";
-    if (drafts.length) quiet += " has-drafts";
-    const stripe = threads.length ? `<span class="cstripe" aria-hidden="true"></span>` : "";
-    // 草稿用页边虚线：读者一眼能分出「已发出的评论」和「我还压在本地没发」
-    const dstripe = drafts.length ? `<span class="dstripe" aria-hidden="true" title="未发送的草稿"></span>` : "";
-    const bubble = threads.length || drafts.length ? commentBubbleHTML(threads, b, drafts) : "";
-    return `<div class="${cls}${quiet}" data-line="${b.startLine}" data-end-line="${b.endLine}" data-block="${b.startLine}">${stripe}${dstripe}${oldBlock}${bodyHtml}${anchor}${bubble}</div>`;
+  /* ---------- 语义 diff（引擎在 public/semdiff.js） ---------- */
+  const semCache = new Map();
+  /** 当前文件的 head 块起始行 → 引擎条目（含 inline 区间与改前文本） */
+  function semInlineFor(file) {
+    if (!window.SemDiff || !file || isCsv(file.path)) return null;
+    const head = textOf(file.path, "head");
+    const base = textOf(file.path, "base");
+    if (!head || base == null) return null;
+    const key = D.revKey + "|" + file.path;
+    const hit = semCache.get(key);
+    if (hit && hit.head === head && hit.base === base) return hit.map;
+    let map = null;
+    try {
+      const doc = window.SemDiff.diffDocument(base, head);
+      map = new Map();
+      for (const d of doc) if (d.block.side === "head") map.set(d.block.startLine, d);
+    } catch (e) { map = null; }
+    semCache.set(key, { head, base, map });
+    return map;
   }
 
-  /**
-   * 变更密度尺：把本次改动的块按行号投到左沟槽上，点一下就跳过去。
-   * 整篇新增的文件没有可导航的位置，直接不出。
-   */
-  function changeRail(blocks, file) {
-    if (!D.marks || !blocks || !blocks.length || file.status === "added") return "";
-    // 刻度位置等正文渲染完再量（见 syncRail）：行号比例与真实高度没有对应关系
-    return `<div class="drail" aria-label="本次变更的位置"></div>`;
-  }
-
-  /**
-   * 用渲染后的真实盒子摆刻度，保证细线和右侧高亮块上下对齐。
-   * 行号只说明「第几行」，说明不了「第几个像素」：标题、表格、代码块的行高
-   * 差别很大，按行号比例投放必然错位。
-   */
-  function syncRail() {
-    const content = document.getElementById("wbContent");
-    if (!content) return;
-    const rail = content.querySelector(".drail");
-    if (!rail) return;
-    const base = content.getBoundingClientRect();
-    const items = [...content.querySelectorAll(
-      ".md-block.is-added, .md-block.is-modified-new, .md-block.is-removed, .del-block",
-    )].map((el) => {
-      const cls = el.classList;
-      const kind = cls.contains("is-added") ? "add"
-        : (cls.contains("is-removed") || cls.contains("del-block")) ? "del" : "mod";
-      const rect = el.getBoundingClientRect();
-      const line = Number(el.dataset.line || el.dataset.oldLine || el.dataset.baseLine) || 0;
-      return { kind, line, top: rect.top - base.top, height: rect.height };
-    }).filter((it) => it.height > 0).sort((x, y) => x.top - y.top);
-    if (!items.length) { rail.innerHTML = ""; return; }
-
-    rail.innerHTML = railHTML(items);
-  }
-
-  /** 把「块的位置」变成刻度：相邻同类先合并，再用像素定位。 */
-  function railHTML(items) {
-    const merged = [];
-    for (const it of items) {
-      const prev = merged[merged.length - 1];
-      if (prev && prev.kind === it.kind && it.top - (prev.top + prev.height) <= 6) {
-        prev.height = Math.max(prev.height, it.top + it.height - prev.top);
-        if (!prev.line) prev.line = it.line;
-        continue;
-      }
-      merged.push({ ...it });
+  /** 把引擎给出的插入区间投影进块 HTML；匹配失败就只留块级记号，不猜位置 */
+  function applyInlineMarks(html, b) {
+    if (!b || b.type === "code" || !window.SemDiff) return html;
+    const map = semInlineFor(curFile());
+    const entry = map && map.get(b.startLine);
+    let ranges = entry && entry.inline;
+    if (!ranges || !ranges.length) {
+      /* 引擎拿不到整份 base（例如新增文件）时，退回块内配对保留的改前文本 */
+      const old = (b.pairedChanges || (b.pairedChange ? [b.pairedChange] : []))
+        .map((pc) => pc.oldText || "").join("\n").trim();
+      if (!old) return html;
+      try {
+        ranges = window.SemDiff.diffBlock(old, window.SemDiff.plainText(html));
+      } catch (e) { return html; }
     }
-    const label = { add: "新增", del: "删除", mod: "修改" };
-    return merged.map((it) => `<button type="button" class="drail-t ${it.kind}"`
-      + `${it.line ? ` data-drail="${it.line}"` : ""}`
-      + ` style="top:${it.top.toFixed(1)}px;height:${Math.max(it.height, 3).toFixed(1)}px"`
-      + ` title="${it.line ? `第 ${it.line} 行 · ` : ""}${label[it.kind]}"`
-      + ` aria-label="${it.line ? `跳到第 ${it.line} 行（${label[it.kind]}）` : label[it.kind]}"></button>`).join("");
+    if (!ranges || !ranges.length) return html;
+    try { return window.SemDiff.projectInline(html, ranges); } catch (e) { return html; }
   }
 
-  function listBlockWithInsertions(block, changes, file) {
-    const ranges = window.DiffModel.listItemRanges(block.raw, block.startLine);
-    const byLine = new Map();
-    const unplaced = [];
-    for (const item of changes) {
-      const anchor = item.afterNewLine;
-      const candidates = ranges
-        .filter((range) => range.startLine <= anchor && range.endLine >= anchor)
-        .sort((a, b) => b.startLine - a.startLine);
-      const target = candidates[0];
-      if (!target) { unplaced.push(item); continue; }
-      if (!byLine.has(target.startLine)) byLine.set(target.startLine, []);
-      byLine.get(target.startLine).push(item);
-    }
-    const stack = [];
-    const rendered = blockHtml(block, {});
-    const html = rendered.replace(/<li\b([^>]*)>|<\/li>/g, (tag, attrs) => {
-      if (tag.startsWith("</li")) {
-        const itemLine = stack.pop();
-        const inserts = byLine.get(itemLine) || [];
-        if (inserts.length) byLine.delete(itemLine);
-        return tag + inserts.map((item) => `<li class="list-deleted-item">${insertionHtml(item.change, file)}</li>`).join("");
-      }
-      const mapped = /\bdata-line="(\d+)"/.exec(attrs || "");
-      stack.push(mapped ? Number(mapped[1]) : null);
-      return tag;
+  const LANG_ALIAS = { js: "javascript", ts: "typescript", jsx: "javascript", tsx: "typescript",
+    sh: "bash", shell: "bash", zsh: "bash", yml: "yaml", md: "markdown", py: "python",
+    golang: "go", rs: "rust", kt: "kotlin", htm: "xml", html: "xml", text: null, plaintext: null };
+  function langOf(info) {
+    const raw = String(info || "").trim().toLowerCase();
+    if (!raw) return null;
+    const name = Object.prototype.hasOwnProperty.call(LANG_ALIAS, raw) ? LANG_ALIAS[raw] : raw;
+    if (!name) return null;
+    if (!window.hljs || !window.hljs.getLanguage || !window.hljs.getLanguage(name)) return null;
+    return name;
+  }
+
+  function fenceInfo(b) {
+    const hit = /^\s*```+\s*([\w#+.-]*)/.exec(String(b.raw || ""));
+    return hit ? hit[1] : "";
+  }
+  function fenceCode(b) {
+    return String(b.raw || "").replace(/^\s*```+[^\n]*\n?/, "").replace(/\n?```+\s*$/, "");
+  }
+
+  let mmLoading = null;
+  function loadMermaid() {
+    if (window.mermaid) return Promise.resolve();
+    if (mmLoading) return mmLoading;
+    mmLoading = new Promise((resolve, reject) => {
+      const sc = document.createElement("script");
+      sc.src = "/mermaid.min.js";
+      sc.defer = true;
+      sc.onload = () => resolve();
+      sc.onerror = () => reject(new Error("mermaid 脚本加载失败"));
+      document.head.appendChild(sc);
     });
-    // 行号映射被放弃（itemLines 与 <li> 数量不一致）或目标项未渲染时，
-    // byLine 中的删除内容不会插入列表；补回 unplaced，避免阅读模式漏看删除。
-    for (const items of byLine.values()) unplaced.push(...items);
-    return { html, unplaced };
+    return mmLoading;
+  }
+  function mermaidFailHTML(err, code) {
+    const msg = esc(String((err && err.message) || err || "未知错误"));
+    return `<div class="mm-fail"><div class="mm-fail-head">图表渲染失败</div>`
+      + `<div class="mm-fail-msg">${msg}</div><pre class="mm-src">${esc(code)}</pre></div>`;
+  }
+  window.__mmMount = (root) => { mountMermaid(root); };
+  async function mountMermaid(root) {
+    const hosts = root.querySelectorAll("[data-mermaid]");
+    if (!hosts.length) return;
+    let failed = null;
+    try { await loadMermaid(); } catch (e) { failed = e; }
+    for (const host of hosts) {
+      const code = host.getAttribute("data-src") || "";
+      const box = host.querySelector(".mm-host");
+      if (!box) continue;
+      if (failed) { box.innerHTML = mermaidFailHTML(failed, code); continue; }
+      try {
+        window.mermaid.initialize({
+          startOnLoad: false,
+          securityLevel: "strict",
+          theme: document.documentElement.classList.contains("dark") ? "dark" : "default",
+        });
+        const out = await window.mermaid.render(`mm${Math.random().toString(36).slice(2)}`, code);
+        box.innerHTML = out.svg || out;
+      } catch (e) { box.innerHTML = mermaidFailHTML(e, code); }
+    }
   }
 
-  /* 新增文件的统一说明：整份都是新增，不逐块/逐行涂色，但要说清楚它是新增文件。 */
   function addedFileNote() {
     return `<div class="added-note"><span class="added-tag">新增文件</span>`
       + `本 PR 新增，以下内容全部为新增行，未逐行标注。</div>`;
-  }
-
-  function insertionHtml(ch, file) {
-    return `<div class="del-block" data-old-line="${ch.oldStart}" data-change="${ch.id}">`
-      + `<div class="del-head">删除（Base L${ch.oldStart}${ch.oldEnd > ch.oldStart ? "–" + ch.oldEnd : ""}）</div>`
-      + `<div class="del-body">${oldDocHtml(ch.oldText, file)}</div>`
-      + `<div class="del-jump" data-jump-source="${esc(file.path)}">在源码 Diff 中查看 →</div></div>`;
-  }
-
-  /* ---------- CSV 数据表 ---------- */
-  function csvGutter(row, opts) {
-    if (opts.anchors && row.commentLine) {
-      return `<span class="line-anchor" data-line="${row.commentLine}" data-side="RIGHT" title="在第 ${row.commentLine} 行评论">`
-        + `${row.commentLine}<i>+</i></span>`;
-    }
-    return `<span class="csv-num">${opts.oldLine ? "−" : ""}${row.startLine}</span>`;
-  }
-
-  function csvCells(row, cols, tag, labels) {
-    let out = "";
-    for (let i = 0; i < cols; i += 1) {
-      const changed = row.changedCells && row.changedCells.has(i);
-      const label = labels && labels[i] != null ? ` data-label="${esc(labels[i])}"` : "";
-      out += `<${tag} data-col="${i}"${label}${changed ? ' class="is-changed"' : ""}>${esc(row.cells[i] ?? "")}</${tag}>`;
-    }
-    return out;
-  }
-
-  function csvRowMarkup(row, cols, opts) {
-    const tag = opts.header ? "th" : "td";
-    const state = opts.state || "normal";
-    const cls = "csv-row" + (opts.header ? " is-header" : "") + (state === "normal" ? "" : " is-" + state);
-    const attrs = opts.anchors
-      ? ` data-line="${row.startLine}" data-end-line="${row.endLine}"${row.commentLine ? ` data-comment-line="${row.commentLine}"` : ""}`
-      : ` data-old-line="${row.startLine}"`;
-    return `<tr class="${cls}"${attrs}><${tag} class="csv-ln" data-col="ln">${csvGutter(row, opts)}</${tag}>`
-      + `${csvCells(row, cols, tag, opts.labels)}</tr>`;
-  }
-
-  /* ---------- 表格外壳：表头/行号粘住 + 工具栏 + 边缘渐隐 ---------- */
-  /* 新增文件的表没有"变化行"可言，不提供行过滤开关 */
-  const csvToolsHTML = (opts) => ((opts && opts.noRows) ? ""
-    : `<button class="tbtn" type="button" data-tbl="only" aria-pressed="false">仅看变化行</button>`)
-    + `<button class="tbtn" type="button" data-tbl="cols" aria-expanded="false">列</button>`
-    + `<button class="tbtn" type="button" data-tbl="density" aria-pressed="false">紧凑</button>`
-    + `<button class="tbtn" type="button" data-tbl="full" aria-pressed="false">全屏</button>`;
-
-  function tableShellHTML(opts) {
-    return `<div class="table-shell${opts.csv ? " is-csv" : ""}" data-table>`
-      + `<div class="tbar"><span class="tstat">${opts.stat || ""}</span><span class="tgrow"></span>${opts.tools || ""}</div>`
-      + `<div class="tscroll" tabindex="0" role="region" aria-label="${opts.label || "表格"}，可横向滚动">${opts.table}</div>`
-      + `<div class="tshadow l" aria-hidden="true"></div><div class="tshadow r" aria-hidden="true"></div>`
-      + (opts.csv ? `<div class="colpanel" hidden></div>` : "")
-      + `</div>`;
-  }
-
-  /* 阅读视图：Head 数据表，被删记录按锚点插回原位，被改记录上方保留旧记录。 */
-  function csvReadingTable(model, plain) {
-    const rows = model.head.rows;
-    if (!rows.length) return `<div class="dempty">（空 CSV 文件）</div>`;
-    const cols = model.columns;
-    const [header, ...rest] = rows;
-    const labels = header.cells;
-    const pending = plain ? [] : model.removed;
-    let pi = 0;
-    let body = "";
-    const flush = (beforeLine) => {
-      while (pi < pending.length && pending[pi].afterLine < beforeLine) {
-        body += csvRowMarkup(pending[pi].row, cols, { state: "removed", oldLine: true, labels });
-        pi += 1;
-      }
-    };
-    const headState = (row) => (plain ? "normal" : row.state);
-    let heading = csvRowMarkup(header, cols, { header: true, state: headState(header), anchors: true, labels });
-    if (!plain && header.before) {
-      heading = csvRowMarkup(header.before, cols, { header: true, state: "removed", oldLine: true, labels }) + heading;
-    }
-    flush(header.startLine);
-    for (const row of rest) {
-      flush(row.startLine);
-      if (!plain && row.before) {
-        body += csvRowMarkup(row.before, cols, { state: "removed", oldLine: true, labels });
-      }
-      body += csvRowMarkup(row, cols, { state: headState(row), anchors: true, labels });
-    }
-    flush(Infinity);
-    return `<table class="csv-table">`
-      + `<thead>${heading}</thead><tbody>${body}</tbody></table>`;
-  }
-
-  function csvSimpleTable(rows, cols, opts) {
-    if (!rows.length) return `<div class="dempty">（空文件）</div>`;
-    const [header, ...rest] = rows;
-    const labels = header.cells;
-    const stateOf = opts.stateOf || ((row) => row.state);
-    return `<table class="csv-table">`
-      + `<thead>${csvRowMarkup(header, cols, { header: true, state: stateOf(header), anchors: opts.anchors, labels })}</thead>`
-      + `<tbody>${rest.map((row) => csvRowMarkup(row, cols, { state: stateOf(row), anchors: opts.anchors, labels })).join("")}</tbody>`
-      + `</table>`;
   }
 
   function csvBlockHTML(model, opts) {
@@ -1302,6 +1090,24 @@
     return `<div class="csv-block">`
       + tableShellHTML({ csv: true, stat, tools: csvToolsHTML({ noRows: plain }), table: csvReadingTable(model, plain), label: "CSV 数据表" })
       + `</div>`;
+  }
+
+  function csvCells(row, cols, tag, labels) {
+    let out = "";
+    for (let i = 0; i < cols; i += 1) {
+      const changed = row.changedCells && row.changedCells.has(i);
+      const label = labels && labels[i] != null ? ` data-label="${esc(labels[i])}"` : "";
+      out += `<${tag} data-col="${i}"${label}${changed ? ' class="is-changed"' : ""}>${esc(row.cells[i] ?? "")}</${tag}>`;
+    }
+    return out;
+  }
+
+  function csvGutter(row, opts) {
+    if (opts.anchors && row.commentLine) {
+      return `<span class="line-anchor" data-line="${row.commentLine}" data-side="RIGHT" title="在第 ${row.commentLine} 行评论">`
+        + `${row.commentLine}<i>+</i></span>`;
+    }
+    return `<span class="csv-num">${opts.oldLine ? "−" : ""}${row.startLine}</span>`;
   }
 
   function csvReadingHTML(file) {
@@ -1336,110 +1142,73 @@
     return csvBlockHTML(csvModelFor(file), {});
   }
 
-  function csvSideBySideHTML(file) {
-    const textState = textsOf(file.path);
-    const errMsg = (textState && textState.error) || D.err;
-    if (!textState || !textState.headLoaded || !textState.baseLoaded) {
-      if (errMsg) return `<div class="error-box">${esc(errMsg)} <button type="button" class="retry" data-retry="1">重试</button></div>`;
-      return `<div class="dempty">正在加载前后版本…</div>`;
-    }
-    if (textState.headTruncated || textState.baseTruncated) {
-      return `<div class="error-box">文件超过读取上限（400 KB），前后对照内容不完整，请用 GitHub 查看完整版本。</div>`;
-    }
-    if (!file.patch && file.status !== "added" && file.status !== "removed") {
-      return `<div class="error-box">GitHub 未返回该文件的差异（文件过大）。<a href="${D.meta.url}/files#diff-${encodeURIComponent(file.path)}" target="_blank" rel="noopener">在 GitHub 中查看完整 Diff →</a></div>`;
-    }
-    const model = csvModelFor(file);
-    const forceHead = file.status === "added";
-    const forceBase = file.status === "removed";
-    const baseTable = csvSimpleTable(model.base.rows, model.columns, { stateOf: forceBase ? () => "removed" : undefined });
-    const headTable = csvSimpleTable(model.head.rows, model.columns, { anchors: true, stateOf: forceHead ? () => "added" : undefined });
-    return `<div class="sb2">`
-      + `<div class="sb-col sb-base"><div class="sb-col-head">Base（变更前）</div>`
-      + tableShellHTML({ csv: true, stat: "Base", tools: csvToolsHTML(), table: baseTable, label: "Base CSV 数据表" })
-      + `</div>`
-      + `<div class="sb-col sb-head"><div class="sb-col-head">Head（变更后）</div>`
-      + tableShellHTML({ csv: true, stat: "Head", tools: csvToolsHTML(), table: headTable, label: "Head CSV 数据表" })
-      + `</div>`
-      + `</div>`;
-  }
-
-  function sideBySideHTML(file) {
-    if (isCsv(file.path)) return csvSideBySideHTML(file);
-    const textState = textsOf(file.path);
-    const errMsg = (textState && textState.error) || D.err;
-    if (!textState || !textState.headLoaded || !textState.baseLoaded) {
-      if (errMsg) return `<div class="error-box">${esc(errMsg)} <button type="button" class="retry" data-retry="1">重试</button></div>`;
-      return `<div class="dempty">正在加载前后版本…</div>`;
-    }
-    if (textState.headTruncated || textState.baseTruncated) {
-      return `<div class="error-box">文件超过读取上限（400 KB），前后对照内容不完整，请用 GitHub 查看完整版本。</div>`;
-    }
-    if (!file.patch && file.status !== "added" && file.status !== "removed") {
-      return `<div class="error-box">GitHub 未返回该文件的差异（文件过大）。<a href="${D.meta.url}/files#diff-${encodeURIComponent(file.path)}" target="_blank" rel="noopener">在 GitHub 中查看完整 Diff →</a></div>`;
-    }
-    const model = modelFor(file);
-    const leftBlocks = model.baseBlocks || [];
-    const rightBlocks = model.headBlocks || [];
-    const leftHtml = leftBlocks.map((b) => {
-      let cls = "md-block";
-      let tag = "";
-      if (b.changeState === "removed") { cls += " is-removed"; tag = `<span class="diff-tag del">删除</span>`; }
-      else if (b.changeState === "partial") { cls += " is-partial"; tag = `<span class="diff-tag mod">修改</span>`; }
-      return `<div class="${cls}" data-base-line="${b.startLine}">${tag}${b.html}</div>`;
-    }).join("");
-    const rightHtml = rightBlocks.map((b) => {
-      let cls = "md-block";
-      let tag = "";
-      if (b.changeState === "added" || file.status === "added") { cls += " is-added"; tag = `<span class="diff-tag add">新增</span>`; }
-      else if (b.changeState === "modified-new" || b.changeState === "partial") { cls += " is-modified-new"; tag = `<span class="diff-tag mod">修改</span>`; }
-      return `<div class="${cls}" data-line="${b.startLine}">${tag}${b.html}</div>`;
-    }).join("");
-    return `<div class="sb2">`
-      + `<div class="sb-col sb-base"><div class="sb-col-head">Base（变更前）</div>${leftHtml || '<div class="dempty">（空文件）</div>'}</div>`
-      + `<div class="sb-col sb-head"><div class="sb-col-head">Head（变更后）</div>${rightHtml || '<div class="dempty">（空文件）</div>'}</div>`
-      + `</div>`;
-  }
-
-  /* ---------- 源码 Diff（保留） ---------- */
-  function unifiedHTML(file) {
-    const patch = file.patch || "";
-    const rows = window.DiffModel.parsePatch(patch);
-    if (!rows.ops.length) return `<div class="dempty">GitHub 未返回该文件 patch（文件过大或为二进制）。</div>`;
-    let html = "";
-    for (const op of rows.ops) {
-      if (op.t === "ctx") {
-        html += `<div class="dline ctx" data-line="${op.new}"><span class="ln">${op.old}</span><span class="ln">${op.new}</span><span class="sg"></span><span class="tx">${esc(op.text)}</span></div>`;
-      } else if (op.t === "add") {
-        html += `<div class="dline add" data-line="${op.new}"><span class="ln"></span><span class="ln">${op.new}</span><span class="sg">+</span><span class="tx">${esc(op.text)}</span></div>`;
-      } else {
-        html += `<div class="dline del"><span class="ln">${op.old}</span><span class="ln"></span><span class="sg">−</span><span class="tx">${esc(op.text)}</span></div>`;
+  function csvReadingTable(model, plain) {
+    const rows = model.head.rows;
+    if (!rows.length) return `<div class="dempty">（空 CSV 文件）</div>`;
+    const cols = model.columns;
+    const [header, ...rest] = rows;
+    const labels = header.cells;
+    const pending = plain ? [] : model.removed;
+    let pi = 0;
+    let body = "";
+    const flush = (beforeLine) => {
+      while (pi < pending.length && pending[pi].afterLine < beforeLine) {
+        body += csvRowMarkup(pending[pi].row, cols, { state: "removed", oldLine: true, labels });
+        pi += 1;
       }
+    };
+    const headState = (row) => (plain ? "normal" : row.state);
+    let heading = csvRowMarkup(header, cols, { header: true, state: headState(header), anchors: true, labels });
+    if (!plain && header.before) {
+      heading = csvRowMarkup(header.before, cols, { header: true, state: "removed", oldLine: true, labels }) + heading;
     }
-    return html;
-  }
-
-  function splitHTML(file) {
-    const rows = window.DiffModel.parsePatch(file.patch || "");
-    if (!rows.ops.length) return `<div class="dempty">GitHub 未返回该文件 patch。</div>`;
-    let left = "";
-    let right = "";
-    for (const op of rows.ops) {
-      if (op.t === "ctx") {
-        left += `<div class="dline ctx"><span class="ln">${op.old}</span><span class="tx">${esc(op.text)}</span></div>`;
-        right += `<div class="dline ctx" data-line="${op.new}"><span class="ln">${op.new}</span><span class="tx">${esc(op.text)}</span></div>`;
-      } else if (op.t === "del") {
-        left += `<div class="dline del"><span class="ln">${op.old}</span><span class="tx">${esc(op.text)}</span></div>`;
-        right += `<div class="dline"><span class="ln"></span><span class="tx"></span></div>`;
-      } else {
-        left += `<div class="dline"><span class="ln"></span><span class="tx"></span></div>`;
-        right += `<div class="dline add" data-line="${op.new}"><span class="ln">${op.new}</span><span class="tx">${esc(op.text)}</span></div>`;
+    flush(header.startLine);
+    for (const row of rest) {
+      flush(row.startLine);
+      if (!plain && row.before) {
+        body += csvRowMarkup(row.before, cols, { state: "removed", oldLine: true, labels });
       }
+      body += csvRowMarkup(row, cols, { state: headState(row), anchors: true, labels });
     }
-    return `<div class="split2"><div class="scol">${left}</div><div class="scol">${right}</div></div>`;
+    flush(Infinity);
+    return `<table class="csv-table">`
+      + `<thead>${heading}</thead><tbody>${body}</tbody></table>`;
   }
 
-  /* ---------- 抽屉内容 ---------- */
+  function csvRowMarkup(row, cols, opts) {
+    const tag = opts.header ? "th" : "td";
+    const state = opts.state || "normal";
+    const cls = "csv-row" + (opts.header ? " is-header" : "") + (state === "normal" ? "" : " is-" + state);
+    const attrs = opts.anchors
+      ? ` data-line="${row.startLine}" data-end-line="${row.endLine}"${row.commentLine ? ` data-comment-line="${row.commentLine}"` : ""}`
+      : ` data-old-line="${row.startLine}"`;
+    return `<tr class="${cls}"${attrs}><${tag} class="csv-ln" data-col="ln">${csvGutter(row, opts)}</${tag}>`
+      + `${csvCells(row, cols, tag, opts.labels)}</tr>`;
+  }
+
+  /* ---------- 表格外壳：表头/行号粘住 + 工具栏 + 边缘渐隐 ---------- */
+  /* 新增文件的表没有"变化行"可言，不提供行过滤开关 */
+
+  function csvSimpleTable(rows, cols, opts) {
+    if (!rows.length) return `<div class="dempty">（空文件）</div>`;
+    const [header, ...rest] = rows;
+    const labels = header.cells;
+    const stateOf = opts.stateOf || ((row) => row.state);
+    return `<table class="csv-table">`
+      + `<thead>${csvRowMarkup(header, cols, { header: true, state: stateOf(header), anchors: opts.anchors, labels })}</thead>`
+      + `<tbody>${rest.map((row) => csvRowMarkup(row, cols, { state: stateOf(row), anchors: opts.anchors, labels })).join("")}</tbody>`
+      + `</table>`;
+  }
+
+  function insertionHtml(ch, file) {
+    return `<div class="del-block" data-old-line="${ch.oldStart}" data-change="${ch.id}">`
+      + `<div class="del-head">删除（Base L${ch.oldStart}${ch.oldEnd > ch.oldStart ? "–" + ch.oldEnd : ""}）</div>`
+      + `<div class="del-body">${oldDocHtml(ch.oldText, file)}</div>`
+      + `<div class="del-jump" data-jump-source="${esc(file.path)}">在源码 Diff 中查看 →</div></div>`;
+  }
+
+  /* ---------- CSV 数据表 ---------- */
+
   function mergeBoxHTML() {
     if (!D.meta || D.meta.state !== "open" || D.meta.merged) return "";
     if (D.merge.done) {
@@ -1480,6 +1249,153 @@
       + (warning ? `<div class="mergewarn">${esc(warning)}</div>` : "")
       + squashHint
       + `</div>`;
+  }
+
+  function tableShellHTML(opts) {
+    return `<div class="table-shell${opts.csv ? " is-csv" : ""}" data-table>`
+      + `<div class="tbar"><span class="tstat">${opts.stat || ""}</span><span class="tgrow"></span>${opts.tools || ""}</div>`
+      + `<div class="tscroll" tabindex="0" role="region" aria-label="${opts.label || "表格"}，可横向滚动">${opts.table}</div>`
+      + `<div class="tshadow l" aria-hidden="true"></div><div class="tshadow r" aria-hidden="true"></div>`
+      + (opts.csv ? `<div class="colpanel" hidden></div>` : "")
+      + `</div>`;
+  }
+
+  /* 阅读视图：Head 数据表，被删记录按锚点插回原位，被改记录上方保留旧记录。 */
+
+  const csvToolsHTML = (opts) => ((opts && opts.noRows) ? ""
+    : `<button class="tbtn" type="button" data-tbl="only" aria-pressed="false">仅看变化行</button>`)
+    + `<button class="tbtn" type="button" data-tbl="cols" aria-expanded="false">列</button>`
+    + `<button class="tbtn" type="button" data-tbl="density" aria-pressed="false">紧凑</button>`
+    + `<button class="tbtn" type="button" data-tbl="full" aria-pressed="false">全屏</button>`;
+
+  function listBlockWithInsertions(block, changes, file) {
+    const ranges = window.DiffModel.listItemRanges(block.raw, block.startLine);
+    const byLine = new Map();
+    const unplaced = [];
+    for (const item of changes) {
+      const anchor = item.afterNewLine;
+      const candidates = ranges
+        .filter((range) => range.startLine <= anchor && range.endLine >= anchor)
+        .sort((a, b) => b.startLine - a.startLine);
+      const target = candidates[0];
+      if (!target) { unplaced.push(item); continue; }
+      if (!byLine.has(target.startLine)) byLine.set(target.startLine, []);
+      byLine.get(target.startLine).push(item);
+    }
+    const stack = [];
+    const rendered = blockHtml(block, {});
+    const html = rendered.replace(/<li\b([^>]*)>|<\/li>/g, (tag, attrs) => {
+      if (tag.startsWith("</li")) {
+        const itemLine = stack.pop();
+        const inserts = byLine.get(itemLine) || [];
+        if (inserts.length) byLine.delete(itemLine);
+        return tag + inserts.map((item) => `<li class="list-deleted-item">${insertionHtml(item.change, file)}</li>`).join("");
+      }
+      const mapped = /\bdata-line="(\d+)"/.exec(attrs || "");
+      stack.push(mapped ? Number(mapped[1]) : null);
+      return tag;
+    });
+    // 行号映射被放弃（itemLines 与 <li> 数量不一致）或目标项未渲染时，
+    // byLine 中的删除内容不会插入列表；补回 unplaced，避免阅读模式漏看删除。
+    for (const items of byLine.values()) unplaced.push(...items);
+    return { html, unplaced };
+  }
+
+  /* 新增文件的统一说明：整份都是新增，不逐块/逐行涂色，但要说清楚它是新增文件。 */
+
+  function blockHtml(b, opts) {
+    let cls = "md-block";
+    if (!opts.plain) {
+      if (b.changeState === "added") cls += " is-added";
+      else if (b.changeState === "modified-new" || b.changeState === "partial") cls += " is-modified-new";
+      else if (b.changeState === "removed") cls += " is-removed";
+    }
+    const file = curFile();
+    // 旧文按文档排版渲染（不再当作代码），相对资源同样按提交解析
+    const oldBlock = (b.pairedChanges || (b.pairedChange ? [b.pairedChange] : []))
+      .map((pc) => `<div class="del-block md-old"><div class="del-head">原文（已替换）</div>`
+        + `<div class="del-body">${oldDocHtml(pc.oldText, file)}</div></div>`)
+      .join("");
+    // 代码块：逐行 data-line
+    let bodyHtml = resolveBlockUrls(b.html, file);
+    if (b.type === "code" && b.startLine != null) {
+      const info = fenceInfo(b);
+      const src = fenceCode(b);
+      if (/^mermaid$/i.test(info)) {
+        /* 图不在这里渲染：先占位，正文写完后按需加载 mermaid */
+        const changed = b.changeState === "modified-new" || b.changeState === "partial";
+        bodyHtml = `<div class="mm-block" data-mermaid="1" data-src="${esc(src)}">`
+          + `${changed ? '<span class="mm-badge">图表已变更</span>' : ""}`
+          + `<div class="mm-host">渲染中…</div></div>`;
+      } else {
+        const lang = langOf(info);
+        let highlighted = esc(src);
+        if (lang) {
+          try { highlighted = window.hljs.highlight(src, { language: lang, ignoreIllegals: true }).value; } catch (e) { highlighted = esc(src); }
+        }
+        const lines = window.SemDiff ? window.SemDiff.splitHighlightedLines(highlighted) : highlighted.split("\n");
+        /* 新增行按引擎的行级比较上色；删除行只出现在「原文」面板 */
+        const adds = new Set();
+        const map = semInlineFor(file);
+        const entry = map && map.get(b.startLine);
+        if (entry && entry.baseText != null && window.SemDiff) {
+          try {
+            for (const op of window.SemDiff.diffCodeLines(entry.baseText, src)) if (op.op === "add") adds.add(op.line);
+          } catch (e) { /* 行级比较失败就不标，不影响正文 */ }
+        }
+        const wrapped = lines.map((ln, i) => {
+          const on = adds.has(i + 1);
+          return `<span class="code-line${on ? " is-add" : ""}" data-line="${b.startLine + i + 1}"${on ? ' data-gutter="+"' : ""}>${ln}</span>`;
+        }).join("\n");
+        bodyHtml = `<pre><code class="hljs${lang ? ` lang-${lang}` : ""}">${wrapped}</code></pre>`;
+      }
+    }
+    // 表格：每个 <tr> 绑定源行（raw 第 0 行是表头，第 1 行是分隔行，渲染时被丢弃）
+    if (b.type === "table" && b.startLine != null) {
+      let rowIdx = -1;
+      bodyHtml = bodyHtml.replace(/<tr\b([^>]*)>/g, (_m, attrs) => {
+        rowIdx += 1;
+        const rawIdx = rowIdx === 0 ? 0 : rowIdx + 1;
+        return `<tr${attrs} data-line="${b.startLine + rawIdx}">`;
+      });
+    }
+    // 列表：给每个 <li> 绑定源码行号（按 raw 顺序，跳过围栏内的假标记行；嵌套项也有行号）
+    if ((b.type === "ul" || b.type === "ol") && b.raw) {
+      const itemLines = window.DiffModel.listItemLines(b.raw, b.startLine);
+      const liCount = (bodyHtml.match(/<li\b[^>]*>/g) || []).length;
+      // 映射数量不一致时整体放弃行号映射，绝不把后续 <li> 错配到别的源码行。
+      if (itemLines.length === liCount) {
+        let liIdx = 0;
+        bodyHtml = bodyHtml.replace(/<li\b([^>]*)>/g, (_match, attrs) => {
+          const lineNum = itemLines[liIdx++];
+          return lineNum == null ? `<li${attrs}>` : `<li${attrs} data-line="${lineNum}">`;
+        });
+      }
+    }
+    // 在块范围内找一个 hunk 覆盖的行作为评论锚点（从后往前找，优先命中改动行）
+    const cl = modelFor(curFile())?.parsed?.commentableHeadLines;
+    let anchorLine = null;
+    if (cl) for (let l = (b.endLine ?? b.startLine); l >= b.startLine; l--) if (cl.has(l)) { anchorLine = l; break; }
+    const anchor = anchorLine
+      ? `<span class="line-anchor" data-line="${anchorLine}" data-side="RIGHT" role="button" title="在第 ${anchorLine} 行评论">L${anchorLine} +</span>`
+      : "";
+    /* 标题块：注入「#」，点击复制本段深链（与地址栏同一套 L 行号） */
+    if (b.startLine != null && /^\s*<h[1-4][\s>]/.test(bodyHtml)) {
+      bodyHtml = bodyHtml.replace(/^(\s*)<h([1-4])([^>]*)>/, (_m, pad, level, attrs) =>
+        `${pad}<h${level}${attrs} data-line="${b.startLine}"><a class="hlink" href="#L${b.startLine}" data-hlink="${b.startLine}" title="复制本段链接" aria-label="复制第 ${b.startLine} 行所在标题的链接">#</a>`);
+    }
+    /* 行内记号：引擎给出的插入区间投影进 HTML，匹配失败则只留块级记号 */
+    bodyHtml = applyInlineMarks(bodyHtml, b);
+    /* 有评论的块：极浅底色 + 页边窄条，正文不出现数字；气泡悬停才出 */
+    const threads = threadsInBlock(file, b);
+    const drafts = draftsInBlock(file, b);
+    let quiet = threads.length ? " has-comments" : "";
+    if (drafts.length) quiet += " has-drafts";
+    const stripe = threads.length ? `<span class="cstripe" aria-hidden="true"></span>` : "";
+    // 草稿用页边虚线：读者一眼能分出「已发出的评论」和「我还压在本地没发」
+    const dstripe = drafts.length ? `<span class="dstripe" aria-hidden="true" title="未发送的草稿"></span>` : "";
+    const bubble = threads.length || drafts.length ? commentBubbleHTML(threads, b, drafts) : "";
+    return `<div class="${cls}${quiet}" data-line="${b.startLine}" data-end-line="${b.endLine}" data-block="${b.startLine}">${stripe}${dstripe}${oldBlock}${bodyHtml}${anchor}${bubble}</div>`;
   }
 
   /** 评论树的一条线程：根评论 + 缩进的回复，整块可点，点了滚到正文对应行。 */
@@ -2234,13 +2150,10 @@
     else if (!file) {
       content.innerHTML = `<div class="dempty">${isCommitView() ? "该提交没有文件改动。" : "该 PR 没有变更文件。"}</div>`;
     }
-    else if (D.mode === "unified") content.innerHTML = unifiedHTML(file);
-    else if (D.mode === "split") content.innerHTML = splitHTML(file);
-    else if (D.mode === "sidebyside") content.innerHTML = sideBySideHTML(file);
     else content.innerHTML = readingHTML(file);
 
     decorateTables(content);
-    requestAnimationFrame(syncRail);
+    if (window.__mmMount) window.__mmMount(content);
 
     document.getElementById("wbDrawerBody").innerHTML = drawerHTML();
     syncDrawerHandle();
@@ -2379,12 +2292,6 @@
     doc.addEventListener("click", (e) => {
       const allBtn = e.target.closest("[data-commit-all]");
       if (allBtn) { selectAll(); return; }
-      const drail = e.target.closest("[data-drail]");
-      if (drail) {
-        const line = Number(drail.dataset.drail) || 0;
-        if (line) { D.pendingAnchor = { line }; applyAnchor(); }
-        return;
-      }
       const retry = e.target.closest("[data-retry]");
       if (retry) { if (D.file) selectFile(D.file, true); return; }
       const replyToggle = e.target.closest('[data-act="reply-toggle"]');
@@ -2561,8 +2468,6 @@
       document.querySelectorAll("#wbDrawerBody .titem.chot").forEach((el) => el.classList.remove("chot"));
     };
     /* 图片加载、窗口缩放都会改变块高度：量完再摆一次刻度 */
-    doc.addEventListener("load", (e) => { if (e.target && e.target.tagName === "IMG") syncRail(); }, true);
-    if (window.addEventListener) window.addEventListener("resize", () => requestAnimationFrame(syncRail));
     doc.addEventListener("mouseover", (e) => {
       clearTreeHighlight();
       const block = e.target.closest(".md-block.has-comments");

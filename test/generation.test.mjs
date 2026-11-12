@@ -9,6 +9,7 @@ const REPO = new URL('..', import.meta.url).pathname;
 const markedSrc = fs.readFileSync(`${REPO}public/marked.min.js`, 'utf8');
 const modelSrc = fs.readFileSync(`${REPO}public/diff-model.js`, 'utf8');
 const diffSrc = fs.readFileSync(`${REPO}public/diff.js`, 'utf8');
+const semSrc = fs.readFileSync(`${REPO}public/semdiff.js`, 'utf8');
 
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
@@ -98,10 +99,13 @@ function makeWorld() {
     if (m[2] === 'file') {
       const p = u.searchParams.get('path');
       const side = u.searchParams.get('side');
-      const body = (side === 'base' && world.texts && world.texts[`${p}@base`])
-        || (side !== 'base' && world.texts && world.texts[p])
+      const ref = u.searchParams.get('ref');
+      // base 侧按 ref 识别：客户端用 baseSha 取改前正文，不带 side 参数
+      const isBase = side === 'base'
+        || Object.values(world.prs || {}).some((p2) => p2.baseSha && p2.baseSha === ref);
+      const body = (isBase && world.texts && world.texts[`${p}@base`])
         || (world.texts && world.texts[p])
-        || `# ${p} @ ${u.searchParams.get('ref')}\n\n- 项目\n`;
+        || `# ${p} @ ${ref}\n\n- 项目\n`;
       return { status: 200, ok: true, json: async () => ({ text: body, truncated: false }) };
     }
     return { status: world.post.status, ok: world.post.status === 200, json: async () => world.post.data };
@@ -178,7 +182,13 @@ function mountApp(world) {
   ctx.window.DiffModel = modelCtx.window.DiffModel;
 
   const ANCHOR = '  let bound = false;';
-  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__wrapAdded = wrapAddedText; window.__docTarget = docLinkTarget; window.__docLink = handleDocLink; window.__resolve = resolveBlockUrls; window.__reply = sendReply; window.__railHTML = railHTML;\n${ANCHOR}`);
+  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__docTarget = docLinkTarget; window.__docLink = handleDocLink; window.__resolve = resolveBlockUrls; window.__reply = sendReply;\n${ANCHOR}`);
+  const semCtx = { window: { marked: modelCtx.window.marked }, console };
+  semCtx.window.window = semCtx.window;
+  semCtx.globalThis = semCtx;
+  vm.createContext(semCtx);
+  vm.runInContext(semSrc, semCtx);
+  ctx.window.SemDiff = semCtx.window.SemDiff;
   vm.runInContext(exposed, ctx);
   return { ctx, els, store };
 }
@@ -428,14 +438,14 @@ test('前进/后退到提交地址：恢复路由里的阅读方式并保留锚�
   D.mode = 'reading';
 
   const routed = app.ctx.window.DiffView.applyRoute({
-    kind: 'pr', n: 1, commit: 'h1', mode: 'split', line: 12, endLine: null,
+    kind: 'pr', n: 1, commit: 'h1', line: 12, endLine: null,
   });
   await tick();
   await releaseGated(world, (c) => c.url.includes('/commits/h1/file?'));
   await routed;
 
   assert.equal(D.rev.kind, 'commit');
-  assert.equal(D.mode, 'split', '换视图时要落回路由里的阅读方式');
+  assert.equal(D.mode, 'reading', '只保留阅读视图');
   assert.deepEqual({ ...D.pendingAnchor }, { line: 12, endLine: null }, '换视图不能丢掉路由里的锚点');
 });
 
@@ -670,12 +680,17 @@ test('文档内相对资源：图片与文档链接按当前提交解析', async
 
 test('语义 diff：块内只给新增片段加下划线，不再出现整块徽章', async () => {
   const world = makeWorld();
-  world.texts = { 'a.md': '# 标题\n\n第一段保持不动，\n这里新增了一句话。\n' };
+  world.texts = {
+    'a.md': '# 标题\n\n第一段保持不动，\n这里新增了一句话。\n',
+    'a.md@base': '# 标题\n\n第一段保持不动，\n旧的一句。\n',
+  };
   world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n 第一段保持不动，\n-旧的一句。\n+这里新增了一句话。\n' };
   const app = mountApp(world);
   await mountComplete(world, app, 1);
 
   const html = app.els.get('wbContent').innerHTML;
+  const D = app.ctx.window.__D;
+  const st = D.texts[D.revKey]['a.md'];
   assert.ok(!html.includes('class="diff-tag'), '正文里不再出现「新增/修改」徽章');
   assert.ok(html.includes('<ins class="md-ins">这里新增了一句话。</ins>'), '只标记新增的片段');
   assert.ok(!html.includes('<ins class="md-ins">第一段保持不动'), '未改动的文本不能被一起标上');
@@ -811,21 +826,18 @@ test('原文块按 base 提交解析图片，不用 head', async () => {
 });
 
 
-test('行内新增标记：位置有序；同一段里同一句出现多次时不猜，只留页边记号', () => {
-  const app = mountApp(makeWorld());
-  const wrap = app.ctx.window.__wrapAdded;
-
-  const twice = '<p>目标压到 15 秒，再说一遍目标压到 15 秒。</p>';
-  assert.equal(wrap(twice, ['目标压到 15 秒']), twice, '有歧义时整句都不标');
-
-  const once = wrap('<p>其余不变，目标压到 15 秒。</p>', ['目标压到 15 秒']);
-  assert.ok(once.includes('<ins class="md-ins">目标压到 15 秒</ins>'), '唯一匹配才标');
-
-  const two = wrap('<p>甲段。</p><p>乙段新句。</p>', ['甲段。', '乙段新句。']);
-  assert.equal((two.match(/<ins class="md-ins">/g) || []).length, 2, '多个新增片段各标一次');
-
-  const acrossTags = wrap('<p>前 <b>后</b>。</p>', ['前 后。']);
-  assert.equal(acrossTags.includes('<ins'), false, '跨标签的新增文本不拆标签，只留页边记号');
+test('行内新增标记：重复句也给确定位置，改动落在正确的那一处', async () => {
+  const world = makeWorld();
+  world.texts = {
+    'a.md': '# 标题\n\n同样的一句。然后同样的一句，后面又新增了一段话。\n',
+    'a.md@base': '# 标题\n\n同样的一句。然后同样的一句。\n',
+  };
+  world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n-同样的一句。然后同样的一句。\n+同样的一句。然后同样的一句，后面又新增了一段话。\n' };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const html = app.els.get('wbContent').innerHTML;
+  const ins = html.match(/<ins class="md-ins">[^<]*<\/ins>/g) || [];
+  assert.deepEqual(ins, ['<ins class="md-ins">，后面又新增了一段话。</ins>'], '只标真正新增的片段');
 });
 
 
@@ -841,18 +853,6 @@ test('内链还原：/doc/ 路径与锚点解码回仓库路径，其他链接�
 });
 
 
-test('新增行按源码顺序匹配：短句在前、长句在后，两处都要标出来', async () => {
-  const world = makeWorld();
-  world.texts = {
-    'a.md': '# 标题\n\n第一段不变。\n\n短句新增。\n原始说明文字，目标是与上一版保持一致，另外补充更长的说明。\n',
-    'a.md@base': '# 标题\n\n第一段不变。\n\n原始说明文字，目标是与上一版保持一致。\n',
-  };
-  world.patches = { 'a.md': '@@ -1,5 +1,6 @@\n # 标题\n \n 第一段不变。\n \n-原始说明文字，目标是与上一版保持一致。\n+短句新增。\n+原始说明文字，目标是与上一版保持一致，另外补充更长的说明。\n' };
-  const app = mountApp(world);
-  await mountComplete(world, app, 1);
-  const html = app.els.get('wbContent').innerHTML;
-  assert.equal((html.match(/<ins class="md-ins">/g) || []).length, 2, '两处新增都标出来');
-});
 
 test('带修饰键的内链点击交给浏览器：不拦截、不阻止默认行为', () => {
   const app = mountApp(makeWorld());
@@ -970,21 +970,4 @@ test('未发送的草稿也在正文里标出来：页边虚线 + 气泡条目',
 });
 
 
-test('刻度按真实像素定位：相邻同类合并，颜色只区分新增/修改/删除', async () => {
-  const world = makeWorld();
-  const app = mountApp(world);
-  await mountComplete(world, app, 1);
-  const railHTML = app.ctx.window.__railHTML;
 
-  const html = railHTML([
-    { kind: 'mod', line: 3, top: 120, height: 40 },
-    { kind: 'mod', line: 6, top: 164, height: 20 },   // 与上一块间距 4px，合并
-    { kind: 'add', line: 9, top: 300, height: 30 },
-    { kind: 'del', line: 12, top: 360, height: 10 },
-  ]);
-  assert.equal((html.match(/class="drail-t/g) || []).length, 3, '相邻同类合并成一条');
-  assert.ok(html.includes('style="top:120.0px;height:64.0px"'), '合并后覆盖两块的完整高度');
-  assert.ok(html.includes('style="top:300.0px;height:30.0px"'), '未合并的块保持自己的位置');
-  assert.ok(html.includes('data-drail="9"'), '保留跳转行号');
-  assert.ok(html.includes('· 新增') && html.includes('· 删除') && html.includes('· 修改'), '三种状态都有文案');
-});

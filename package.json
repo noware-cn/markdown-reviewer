@@ -15,6 +15,9 @@
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^5.20261104.1",
+    "esbuild": "^0.28.2",
+    "highlight.js": "^11.11.1",
+    "mermaid": "^11.4.1",
     "typescript": "^7.0.2",
     "wrangler": "^4.157.0"
   }
