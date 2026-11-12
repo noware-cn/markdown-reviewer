@@ -2876,6 +2876,9 @@ body.reading-focus.outline-off .wb-body.nav-collapsed .wb-nav { display: none; }
 
 /* 窄屏：大纲改为浮层，不挤压正文 */
 @media (max-width: 899px) {
+  /* 抽屉优先：打开意见时把大纲浮层让开，且抽屉在更上层 */
+  body.reading-focus .wb-body.drawer-open .wb-nav { display: none !important; }
+  body.reading-focus .wb-drawer { z-index: 90; }
   body.reading-focus .wb-body,
   body.reading-focus .wb-body.nav-collapsed { grid-template-columns: minmax(0, 1fr) !important; }
   body.reading-focus:not(.outline-off) .wb-nav {

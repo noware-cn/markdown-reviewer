@@ -1136,3 +1136,15 @@ test('右栏顺序：评论树在前，改动清单折叠在末尾', async () =>
   assert.ok(fold > tree, '改动清单排在评论之后');
   assert.ok(html.includes('<summary>改动清单'), '改动清单默认折叠');
 });
+
+test('改动清单折叠状态在标已阅后保持展开', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n正文。\n', 'a.md@base': '# 标题\n\n改前正文。\n' };
+  world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n-改前正文。\n+正文。\n' };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const D = app.ctx.window.__D;
+  D.chgOpen = true;
+  app.ctx.window.__render();
+  assert.ok(app.els.get('wbDrawerBody').innerHTML.includes('chg-fold" open'), '展开状态写进 DOM');
+});

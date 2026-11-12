@@ -964,6 +964,9 @@
     D.focus = Boolean(on);
     writePref(PREF.focus, D.focus);
     if (document.body && document.body.classList) document.body.classList.toggle("reading-focus", D.focus);
+    // 窄屏进全屏时先把大纲收起（浮层会盖住正文），用户可再点「大纲」打开
+    if (D.focus && window.innerWidth <= 899 && D.outline) setOutline(false);
+    else setOutline(D.outline);
     const bar = document.getElementById("focusBar");
     if (bar) bar.hidden = !D.focus;
     const btn = document.getElementById("wbFocusBtn");
@@ -1043,7 +1046,7 @@
     }).join("");
     const { done, total } = reviewStats(file);
     // 改动不是评审焦点：默认收起，放在评论之后
-    return `<details class="chg-fold"><summary>改动清单 · ${total} 处 · 已阅 ${done}</summary>`
+    return `<details class="chg-fold"${D.chgOpen ? " open" : ""}><summary>改动清单 · ${total} 处 · 已阅 ${done}</summary>`
       + `<div class="chg-head">改动 · ${total} 处 · 已阅 ${done}</div><ul class="chg-list">${items}</ul></details>`;
   }
 
@@ -3425,6 +3428,15 @@
       e.preventDefault();
       stepZoom(e.deltaY < 0 ? 1 : -1);
     }, { passive: false });
+    const drawerBody = document.getElementById("wbDrawerBody");
+    if (drawerBody) {
+      drawerBody.addEventListener("toggle", (e) => {
+        if (e.target && e.target.classList && e.target.classList.contains("chg-fold")) D.chgOpen = e.target.open;
+      }, true);
+      drawerBody.addEventListener("click", (e) => {
+        if (e.target.closest("[data-review]")) D.chgOpen = true;
+      }, true);
+    }
     const rvBtn = document.getElementById("wbReviewCount");
     if (rvBtn) rvBtn.addEventListener("click", () => {
       openDrawer();
@@ -3490,6 +3502,7 @@
     D.focus = Boolean(readPref(PREF.focus, false));
     applyZoom();
     D.outline = readPref(PREF.outline, true) !== false;
+    setOutline(D.outline);
     if (D.focus) setFocus(true);
     const rv = readPref(PREF.reviewed, {});
     /* 旧版本键是 revKey|path|line，没有侧别：按 head 认领，避免升级后已阅全清零 */
