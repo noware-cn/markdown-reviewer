@@ -600,14 +600,15 @@ git add public/index.html public/diff.js public/styles.css test/generation.test.
 git commit -m "feat: 审阅窗格与键盘导航"
 ```
 
-## Task 21: 语法高亮
+## Task 21: 语法高亮与代码行级比较
 
 **Files:**
 - Create: `public/highlight.min.js`、`scripts/vendor-highlight.mjs`、`test/highlight.test.mjs`
 - Modify: `public/diff.js`（代码块渲染）、`public/styles.css`、`public/index.html`、`public/doc.html`、`test/generation.test.mjs`
 
 **Interfaces:**
-- Produces: `langOf(info: string) => string | null`（别名归一：`js→javascript`、`ts→typescript`、`sh→bash`、`yml→yaml`、`md→markdown`；`hljs.getLanguage(name)` 为 false 时返回 `null`）；`splitHighlightedLines(html: string) => string[]`（在行边界补闭合/重开标签，返回的每段标签自平衡）；代码块输出 `<pre><code class="hljs lang-<x>"><span class="code-line" data-line="N">…</span>…</code></pre>`。
+- Produces: `langOf(info: string) => string | null`（别名归一：`js→javascript`、`ts→typescript`、`sh→bash`、`yml→yaml`、`md→markdown`；`hljs.getLanguage(name)` 为 false 时返回 `null`）；`splitHighlightedLines(html: string) => string[]`（在行边界补闭合/重开标签，返回的每段标签自平衡）；`diffCodeLines(baseText: string, headText: string) => Array<{ op: "add" | "del", line: number }>`（`line` 为**该侧** 1-based 行号，`add` 落在 head、`del` 落在 base；`ctx` 行不输出）。
+- 代码块输出：`<pre><code class="hljs lang-<x>"><span class="code-line" data-line="N">…</span>…</code></pre>`；被标记的行同时带 `is-add` / `is-del` 与 `data-gutter="+"|"−"`。
 
 - [ ] **Step 1: 写失败测试**
 
@@ -627,6 +628,17 @@ test('langOf：别名归一，未知语言返回 null 不猜', () => {
   assert.equal(langOf('objc-not-real'), null);
   assert.equal(langOf(''), null);
 });
+
+test('diffCodeLines：新增标 add、删除标 del、未变行不输出', () => {
+  const r = diffCodeLines('a\nb\nc', 'a\nB\nc\nd');
+  assert.deepEqual(r.filter((x) => x.op === 'del'), [{ op: 'del', line: 2 }]);
+  assert.deepEqual(r.filter((x) => x.op === 'add'), [{ op: 'add', line: 2 }, { op: 'add', line: 4 }]);
+});
+
+test('diffCodeLines：整块新增与整块删除', () => {
+  assert.deepEqual(diffCodeLines('', 'x\ny'), [{ op: 'add', line: 1 }, { op: 'add', line: 2 }]);
+  assert.deepEqual(diffCodeLines('x\ny', ''), [{ op: 'del', line: 1 }, { op: 'del', line: 2 }]);
+});
 ```
 
 - [ ] **Step 2: 跑测试确认失败** — Run: `node --test test/highlight.test.mjs`；Expected: FAIL — 模块不存在
@@ -635,17 +647,21 @@ test('langOf：别名归一，未知语言返回 null 不猜', () => {
 
 - [ ] **Step 4: 实现 `langOf` 与 `splitHighlightedLines`**（用 `<span ...>` 栈：遇开标签入栈，行边界先按栈逆序补 `</span>`，下一行按栈顺序重开；`code-line` 包裹在外层，不参与栈）
 
-- [ ] **Step 5: 接入渲染**（`public/diff.js` 的代码块分支：先 `hljs.highlight(code, { language, ignoreIllegals: true })`，再 `splitHighlightedLines`，逐行包 `code-line` 并保留 `data-line`；`langOf` 返回 `null` 时只 `esc`；超过 1000 行只高亮前 1000 行并加 `data-hljs-truncated`；`index.html`/`doc.html` 在 `diff.js` 之前引入 `highlight.min.js`，版本号递增）
+- [ ] **Step 5: 实现 `diffCodeLines`**（按 `\n` 切行 → 行级 LCS（沿用引擎的 DP，上限 5000 行）→ 未配对行分别产出 `del`（base 行号）与 `add`（head 行号）；行尾空白与 `\r` 先归一，避免误判）
 
-- [ ] **Step 6: 加断言与样式**（`test/generation.test.mjs`：代码块的 `data-line` 与评论落点不变；未知语言无 `class="hljs"`；`styles.css` 加深/浅两套 `.hljs-*` 变量）
+- [ ] **Step 6: 跑测试确认通过（纯函数部分）** — Run: `node --test test/highlight.test.mjs`；Expected: PASS（4 项）
 
-- [ ] **Step 7: 跑测试确认通过** — Run: `npm test`；Expected: 全绿
+- [ ] **Step 7: 接入渲染**（`public/diff.js` 的代码块分支：先 `hljs.highlight(code, { language, ignoreIllegals: true })`，再 `splitHighlightedLines`，逐行包 `code-line` 并保留 `data-line`；`langOf` 返回 `null` 时只 `esc`；超过 1000 行只高亮前 1000 行并加 `data-hljs-truncated`；对 `state !== 'normal'` 的代码块用 `diffCodeLines(baseText, text)` 给 head 行加 `is-add` + `data-gutter="+"`，把 `del` 行渲染进"原文（已替换）"面板并加 `is-del` + `data-gutter="−"`；`index.html`/`doc.html` 在 `diff.js` 之前引入 `highlight.min.js`，版本号递增）
 
-- [ ] **Step 8: 提交**
+- [ ] **Step 8: 加渲染断言与样式**（`test/generation.test.mjs`：① 代码块 `data-line` 与评论落点不变；② 未知语言无 `class="hljs"`；③ 新增一行代码后 `is-add` 只在那一行、被删行出现在原文面板且带 `is-del`；④ 未改动的代码块无 `is-add`/`is-del`。`styles.css` 加深/浅两套 `.hljs-*` 变量与 `.code-line.is-add/.is-del`、`[data-gutter]::before` 的 `+`/`−`）
+
+- [ ] **Step 9: 跑测试确认通过** — Run: `npm test`；Expected: 全绿
+
+- [ ] **Step 10: 提交**
 
 ```bash
 git add scripts/vendor-highlight.mjs public/highlight.min.js public/diff.js public/styles.css public/index.html public/doc.html test/highlight.test.mjs test/generation.test.mjs package.json
-git commit -m "feat: 代码块语法高亮（整块高亮 + 标签感知拆行）"
+git commit -m "feat: 代码块语法高亮与行级比较"
 ```
 
 ## Task 22: mermaid 渲染
@@ -689,7 +705,7 @@ test('失败降级含错误摘要与源码，不空白', () => {
 
 - [ ] **Step 4: 实现占位与懒加载**（渲染时 mermaid 块输出占位；`readingHTML` 之后调用 `ensureMermaidFor(items)`；`window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: prefersDark ? 'dark' : 'default' })`；每个图 `render(<uniqueId>, code)` 后写入 `mm-host`）
 
-- [ ] **Step 5: 实现改动对比**（`state !== 'normal'` 的 mermaid 块：默认显示改后渲染 + 角标"图表已变更"，`<details>` 内放改前渲染（`baseText`）与源码；源码按 Task 21 的代码块规则做行级差异）
+- [ ] **Step 5: 实现改动对比**（`state !== 'normal'` 的 mermaid 块：默认显示改后渲染 + 角标"图表已变更"，`<details>` 内放改前渲染（`baseText`）；两侧源码都用 Task 21 的 `diffCodeLines` + `is-add`/`is-del` 标记，改前侧只显示被删行与上下文、改后侧只显示新增行与上下文）
 
 - [ ] **Step 6: 加断言与样式**（`test/generation.test.mjs`：mermaid 块输出占位且**不包含** `window.mermaid` 调用；改块带"图表已变更"；`styles.css` 加 `.mm-host`、`.mm-src`、`.mm-badge` 与窄屏上下堆叠）
 
@@ -713,5 +729,5 @@ git commit -m "feat: mermaid 懒加载渲染、改动对比与失败降级"
 3. 三态切换不重建 DOM、不重取正文（请求计数断言）。
 4. 既有 169 项测试全绿；新增引擎与语料用例全绿。
 5. 右栏在 1440/1200 两种宽度下行为正确；键盘可达。
-6. 代码块：`data-line` 与评论落点不变；未知语言不着色；> 1000 行只高亮前 1000 行并提示。
+6. 代码块：`data-line` 与评论落点不变；未知语言不着色；> 1000 行只高亮前 1000 行并提示；**改动的代码块里新增行带 `+`、删除行带 `−`（在原文面板）**，未改动行不带标记。
 7. mermaid：无图表页面首屏无 `mermaid.min.js` 请求；有图表页面渲染一次且缓存；三种失败路径都有文案与源码。
