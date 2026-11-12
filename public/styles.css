@@ -1970,6 +1970,22 @@ body.tbl-full-on { overflow: hidden; }
 }
 .wb-orig-copy:hover { border-color: var(--control); color: var(--text); }
 
+/* 顶栏刷新：重新拉取当前 PR 的文件与评论，不整页重载 */
+.wb-refresh {
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--sheet);
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1;
+}
+.wb-refresh:hover { border-color: var(--control); color: var(--text); }
+.wb-refresh:disabled { opacity: 0.5; cursor: progress; }
+
 /* ===== 顶栏：提交选择器（切到某个历史提交的只读视图） ===== */
 .wb-commit-pick { flex: 0 1 220px; display: flex; align-items: center; min-width: 0; }
 .wb-commit-pick[hidden] { display: none; }

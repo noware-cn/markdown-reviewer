@@ -3609,6 +3609,24 @@
     document.getElementById("wbNavToggle").addEventListener("click", () => toggleLayout("files"));
     const olToggle = document.getElementById("wbOutlineToggle");
     if (olToggle) olToggle.addEventListener("click", () => toggleLayout("outline"));
+    const refreshBtn = document.getElementById("wbRefresh");
+    if (refreshBtn) {
+      refreshBtn.addEventListener("click", async () => {
+        if (!D.n || refreshBtn.disabled) return;
+        refreshBtn.disabled = true;
+        // 刷新会重渲染正文：留住阅读位置，别把人弹回文首
+        const doc = document.getElementById("wbDoc");
+        const stop = doc ? doc.scrollTop : 0;
+        const restore = () => { if (doc) doc.scrollTop = stop; };
+        try {
+          await load(D.n, true, true);
+          restore();
+          requestAnimationFrame(restore);
+        } finally {
+          refreshBtn.disabled = false;
+        }
+      });
+    }
     /* 面板头部的停靠 / 悬浮三态控件 */
     document.querySelectorAll("[data-panel][data-layout]").forEach((btn) => {
       btn.addEventListener("click", () => setLayout(btn.dataset.panel, btn.dataset.layout));
