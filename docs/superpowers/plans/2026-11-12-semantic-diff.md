@@ -20,6 +20,8 @@
 - 行内类名沿用 `.md-ins`，新增 `.md-del`；块 DOM 属性 `class="md-block"`、`data-line`、`data-end-line`、`data-block`、`data-base-line`、`data-side="RIGHT"`、`.line-anchor`、`.has-comments` 不得改名，新增 `data-block-id`。
 - 三态 URL 写 `?view=final|base|markup`，读入兼容存量 `?mode=` 并归一。
 - 已阅键：`wb.reviewed.<owner/repo>.<n>.<sha>`。
+- `public/highlight.min.js`（52 KB gzip）与 `public/mermaid.min.js`（766 KB gzip）是**静态资源**，不进 Worker 包；mermaid 必须在页面出现 `lang=mermaid` 的块时才注入，首屏不得请求。
+- 代码块高亮只改渲染字符串，不得让 `SemDiff`/`Decorated` 依赖 hljs。
 - 每处改动必须标注证据级别；测试只用 `node --test`，不引入 jsdom。
 
 ## Review Focus
@@ -28,7 +30,9 @@
 2. **同一块内重复词 + 数字单位**（`12.3%` → `18.6%`，且段内另有一处"样本"）：期望只标真正变化处，单位不被切碎。→ Task 5、Task 6。
 3. **表格列增删与含 `|` 的单元格**：期望不串列、不把相邻列当同列改动。→ Task 8。
 4. **400 KB 截断与引用文档（无 base 侧）**：期望尾部提示截断、引用视图零标记且不报错。→ Task 14。
-5. **旧链接与旧快捷键**（`?mode=split`、按 `1/2/3/4`）：期望不白屏、不报错，归一或忽略。→ Task 12、Task 13。
+5. **未知栅栏语言与超长代码块**（`objc` 之类 hljs 无内置语言、3000 行代码）：期望不着色也不猜语言、只高亮前 1000 行并提示。→ Task 21。
+6. **mermaid 语法错误与脚本加载失败**（离线、被拦截）：期望显示错误摘要 + 源码，块仍可评论，绝不空白。→ Task 22。
+7. **旧链接与旧快捷键**（`?mode=split`、按 `1/2/3/4`）：期望不白屏、不报错，归一或忽略。→ Task 12、Task 13。
 
 ---
 
@@ -596,6 +600,110 @@ git add public/index.html public/diff.js public/styles.css test/generation.test.
 git commit -m "feat: 审阅窗格与键盘导航"
 ```
 
+## Task 21: 语法高亮
+
+**Files:**
+- Create: `public/highlight.min.js`、`scripts/vendor-highlight.mjs`、`test/highlight.test.mjs`
+- Modify: `public/diff.js`（代码块渲染）、`public/styles.css`、`public/index.html`、`public/doc.html`、`test/generation.test.mjs`
+
+**Interfaces:**
+- Produces: `langOf(info: string) => string | null`（别名归一：`js→javascript`、`ts→typescript`、`sh→bash`、`yml→yaml`、`md→markdown`；`hljs.getLanguage(name)` 为 false 时返回 `null`）；`splitHighlightedLines(html: string) => string[]`（在行边界补闭合/重开标签，返回的每段标签自平衡）；代码块输出 `<pre><code class="hljs lang-<x>"><span class="code-line" data-line="N">…</span>…</code></pre>`。
+
+- [ ] **Step 1: 写失败测试**
+
+```js
+// test/highlight.test.mjs
+test('splitHighlightedLines：多行注释跨行仍保持着色且逐行自平衡', () => {
+  const html = '<span class="hljs-comment">/* 第一行\n第二行 */</span>const a = 1;';
+  const lines = splitHighlightedLines(html);
+  assert.equal(lines.length, 2);
+  assert.ok(lines[0].startsWith('<span class="hljs-comment">'), '首行重开');
+  assert.ok(lines[0].endsWith('</span>'), '首行闭合');
+  assert.ok(lines[1].startsWith('<span class="hljs-comment">'), '次行重开');
+});
+
+test('langOf：别名归一，未知语言返回 null 不猜', () => {
+  assert.equal(langOf('ts'), 'typescript');
+  assert.equal(langOf('objc-not-real'), null);
+  assert.equal(langOf(''), null);
+});
+```
+
+- [ ] **Step 2: 跑测试确认失败** — Run: `node --test test/highlight.test.mjs`；Expected: FAIL — 模块不存在
+
+- [ ] **Step 3: vendor 高亮库**（`scripts/vendor-highlight.mjs`：`npm i -D highlight.js@11.11.1` → `esbuild entry --bundle --minify --format=iife`，entry 内容 `import hljs from 'highlight.js/lib/common'; window.hljs = hljs;`，产物写入 `public/highlight.min.js`（实测 158 KB min / 52 KB gzip）。脚本可重跑，产物提交入库；`package.json` 增加 `npm run vendor:hljs`）
+
+- [ ] **Step 4: 实现 `langOf` 与 `splitHighlightedLines`**（用 `<span ...>` 栈：遇开标签入栈，行边界先按栈逆序补 `</span>`，下一行按栈顺序重开；`code-line` 包裹在外层，不参与栈）
+
+- [ ] **Step 5: 接入渲染**（`public/diff.js` 的代码块分支：先 `hljs.highlight(code, { language, ignoreIllegals: true })`，再 `splitHighlightedLines`，逐行包 `code-line` 并保留 `data-line`；`langOf` 返回 `null` 时只 `esc`；超过 1000 行只高亮前 1000 行并加 `data-hljs-truncated`；`index.html`/`doc.html` 在 `diff.js` 之前引入 `highlight.min.js`，版本号递增）
+
+- [ ] **Step 6: 加断言与样式**（`test/generation.test.mjs`：代码块的 `data-line` 与评论落点不变；未知语言无 `class="hljs"`；`styles.css` 加深/浅两套 `.hljs-*` 变量）
+
+- [ ] **Step 7: 跑测试确认通过** — Run: `npm test`；Expected: 全绿
+
+- [ ] **Step 8: 提交**
+
+```bash
+git add scripts/vendor-highlight.mjs public/highlight.min.js public/diff.js public/styles.css public/index.html public/doc.html test/highlight.test.mjs test/generation.test.mjs package.json
+git commit -m "feat: 代码块语法高亮（整块高亮 + 标签感知拆行）"
+```
+
+## Task 22: mermaid 渲染
+
+**Files:**
+- Create: `public/mermaid.min.js`、`scripts/vendor-mermaid.mjs`、`test/mermaid.test.mjs`
+- Modify: `public/diff.js`、`public/styles.css`、`public/index.html`、`public/doc.html`、`test/generation.test.mjs`
+
+**Interfaces:**
+- Produces: `loadMermaidModule(doc: { createElement, appendChild }) => { ensureMermaidFor(items) => Promise<void> }`（把脚本注入所需的宿主操作显式传入，单测用假 doc，生产传 `document`）；`hasMermaid(items: Decorated[]) => boolean`；`mermaidPlaceholderHTML(d: Decorated, i: number) => string`（含 `data-mermaid="i"`、`<pre class="mm-src">源码</pre>`、`<div class="mm-host">渲染中…</div>`）；`ensureMermaidFor(items) => Promise<void>`（无 mermaid 块时立即 resolve 且不注入；有则注入 `<script src="/mermaid.min.js?v=…" defer>`，**并发去重**，失败 reject）；`mermaidFailHTML(err: Error, source: string) => string`；`mountMermaid(root: Element)`（对每个 `[data-mermaid]` 调 `window.mermaid.render`，成功替换 `mm-host`，失败换成 `mermaidFailHTML` + 保留源码）。
+
+- [ ] **Step 1: 写失败测试**
+
+```js
+// test/mermaid.test.mjs
+test('无 mermaid 块时不注入脚本', async () => {
+  const injected = [];
+  const { ensureMermaidFor } = loadMermaidModule({ createElement: () => ({ setAttribute() {}, addEventListener() {} }), appendChild: (n) => injected.push(n) });
+  await ensureMermaidFor([]);
+  assert.equal(injected.length, 0);
+});
+
+test('有 mermaid 块时注入一次，并发调用不重复', async () => {
+  const injected = [];
+  const mod = loadMermaidModule({ createElement: () => ({ src: '', setAttribute() {}, addEventListener() {} }), appendChild: (n) => injected.push(n) });
+  const [a, b] = await Promise.allSettled([mod.ensureMermaidFor([{ block: { kind: 'code', lang: 'mermaid' } }]), mod.ensureMermaidFor([{ block: { kind: 'code', lang: 'mermaid' } }])]);
+  assert.equal(injected.length, 1);
+});
+
+test('失败降级含错误摘要与源码，不空白', () => {
+  const html = mermaidFailHTML(new Error('Parse error'), 'graph TD; A-->');
+  assert.match(html, /图表渲染失败/);
+  assert.match(html, /Parse error/);
+  assert.match(html, /graph TD/);
+});
+```
+
+- [ ] **Step 2: 跑测试确认失败** — Run: `node --test test/mermaid.test.mjs`；Expected: FAIL — 模块不存在
+
+- [ ] **Step 3: vendor mermaid**（`scripts/vendor-mermaid.mjs`：`npm i -D mermaid@11.4.1` → esbuild 打包默认导出为 IIFE `window.mermaid`，产物 `public/mermaid.min.js`，实测 2.6 MB min / 766 KB gzip；`package.json` 增加 `npm run vendor:mermaid`）
+
+- [ ] **Step 4: 实现占位与懒加载**（渲染时 mermaid 块输出占位；`readingHTML` 之后调用 `ensureMermaidFor(items)`；`window.mermaid.initialize({ startOnLoad: false, securityLevel: 'strict', theme: prefersDark ? 'dark' : 'default' })`；每个图 `render(<uniqueId>, code)` 后写入 `mm-host`）
+
+- [ ] **Step 5: 实现改动对比**（`state !== 'normal'` 的 mermaid 块：默认显示改后渲染 + 角标"图表已变更"，`<details>` 内放改前渲染（`baseText`）与源码；源码按 Task 21 的代码块规则做行级差异）
+
+- [ ] **Step 6: 加断言与样式**（`test/generation.test.mjs`：mermaid 块输出占位且**不包含** `window.mermaid` 调用；改块带"图表已变更"；`styles.css` 加 `.mm-host`、`.mm-src`、`.mm-badge` 与窄屏上下堆叠）
+
+- [ ] **Step 7: 跑测试确认通过** — Run: `npm test`；Expected: 全绿（mermaid 真实渲染不进单测）
+
+- [ ] **Step 8: 浏览器冒烟**（`npx wrangler dev --local --port 8790 --var MOCK_MODE:1`；打开含 mermaid 的文档：确认首屏 Network 无 `mermaid.min.js`，滚动到图表后请求一次、渲染成功；再用错误语法验证降级文案）
+
+- [ ] **Step 9: 提交**
+
+```bash
+git add scripts/vendor-mermaid.mjs public/mermaid.min.js public/diff.js public/styles.css public/index.html public/doc.html test/mermaid.test.mjs test/generation.test.mjs package.json
+git commit -m "feat: mermaid 懒加载渲染、改动对比与失败降级"
+```
+
 ---
 
 ## 验收（P4 结束时）
@@ -605,3 +713,5 @@ git commit -m "feat: 审阅窗格与键盘导航"
 3. 三态切换不重建 DOM、不重取正文（请求计数断言）。
 4. 既有 169 项测试全绿；新增引擎与语料用例全绿。
 5. 右栏在 1440/1200 两种宽度下行为正确；键盘可达。
+6. 代码块：`data-line` 与评论落点不变；未知语言不着色；> 1000 行只高亮前 1000 行并提示。
+7. mermaid：无图表页面首屏无 `mermaid.min.js` 请求；有图表页面渲染一次且缓存；三种失败路径都有文案与源码。

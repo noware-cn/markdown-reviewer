@@ -56,6 +56,8 @@
 | 评论锚点 | GitHub 行级评论，锚在 `path + line`（head 侧），`original_line` 用于漂移兜底 | `src/diff.ts` 评论装配 |
 | 前端体积 | 目前 `diff.js` 约 3371 行、`diff-model.js` 757 行；无 bundler，新增依赖必须 vendored 单文件 | 仓库 |
 | 测试 | `node --test` + 手写 DOM stub（无 jsdom） | `test/generation.test.mjs` |
+| 代码块现状 | 无语法高亮；代码块已逐行包裹成 `<span class="code-line" data-line>`，行号锚点可直接复用【核实】 | `public/diff.js:1044` |
+| 图表现状 | 无 mermaid，也没有任何图表渲染依赖【核实】 | `grep -n "mermaid\|hljs\|prism" public/ src/` 无命中 |
 | 语言 | 文档以中文为主，含大量全角标点、中文数字、计量单位 | 演示数据 |
 
 ## 4. 对标项目：能借什么，不能借什么
@@ -350,7 +352,10 @@ interface Decorated {
 
 | 项 | 预算 | 依据 |
 | --- | --- | --- |
-| vendored 新增 JS | ≤ 40 KB min（总增量 ≤ 60 KB gzip） | `diff-match-patch` 解包 97 KB【核实】，min 后约 30–40 KB【推断】 |
+| vendored 新增 JS（引擎） | ≤ 60 KB gzip | `diff-match-patch` 解包 97 KB【核实】，min 后约 30–40 KB【推断】 |
+| 语法高亮 | 52 KB gzip，首屏加载 | 实测 `hljs` common 打包 158 KB min / 52 KB gzip【核实】 |
+| mermaid | 766 KB gzip，**按需加载**（首屏 0 字节） | 实测打包 2.6 MB min / 766 KB gzip【核实】 |
+| 静态资源上限 | 单文件不超过 Cloudflare Assets 限制（25 MiB/文件、20000 文件） | 【文档级】未在部署中验证，P2 冒烟必须确认 mermaid 资源可正常 200 |
 | 400 KB 文档解析 + 对齐 | ≤ 300 ms（M2 笔记本，冷启动计入） | 【推断】未测，P0 基线必须给出实测值 |
 | 内存 | 块数上限 2000；超出则关闭行内差异、关闭搬移检测 | 【我的决定】 |
 | Worker 侧改动 | 无新增接口；仅保留现有 file/diff 接口 | 设计约束：解析全部在浏览器做 |
@@ -372,6 +377,34 @@ interface Decorated {
 - 颜色 + 符号 + 线型三重编码；`prefers-reduced-motion` 下取消块高亮动画。
 - 打印样式：显示标记（等同"标记"态），右栏隐去，改动以符号列呈现。
 
+### 7.12 代码块与图表（2026-11-12 新增需求）
+
+**目标**：代码块有语法高亮且仍可按行锚定评论；mermaid 图能渲染，且能与改动状态共存。
+
+**语法高亮**
+
+- 依赖：`highlight.js 11.11.1` 的 `common` 子集（36 语言），在**vendoring 时**用 esbuild 打成单文件 IIFE，运行时不构建。实测 **158 KB min / 52 KB gzip**【核实：`npx esbuild entry-hl.js --bundle --minify`，产物 161,741 B，gzip 53,366 B】。
+- 做法：**先整块高亮，再按行拆分**。拆分器 `splitHighlightedLines(html)` 在行边界补闭合与重开标签，保证多行注释、模板字符串的着色跨行仍正确；每行仍输出 `<span class="code-line" data-line="N">`，与现有行号锚点、评论落点完全兼容。
+- 语言解析：围栏语言按别名表归一（`js→javascript`、`ts→typescript`、`sh→bash`、`yml→yaml`、`md→markdown`）；**未知语言不猜**——直接用 `highlightAuto` 会在中文文档里把正文误判成代码，因此未知语言只做转义，不着色【我的决定】。
+- 体积不变式：高亮**只影响渲染字符串**，不进入块模型；`Decorated` 与 `SemDiff` 不感知 hljs，引擎保持可单测。
+
+**代码块内的差异**
+
+- 块级仍按"替换"判定，但块内升级为**行级**标记：新增行左侧 `+`、删除行 `−`，行背景淡色。**不做行内字符级 ins/del**——高亮产物是嵌套标签，字符级插入会切碎 token，收益低于噪音【我的决定，依据 §5.3 的同类结论】。
+- 删除行需要 base 侧代码文本：`Decorated.baseText` 已有该字段，删除行只在"原文（已替换）"面板里渲染，不混入高亮后的新增块。
+
+**mermaid**
+
+- 依赖：`mermaid 11.4.1`，vendored 单文件，实测 **2.6 MB min / 766 KB gzip**【核实：esbuild 打包 `mermaid` 默认导出】。体积大，因此**必须懒加载**：首屏不请求，只有当 `Decorated[]` 里出现 `kind: "code" && lang: "mermaid"` 时才注入 `<script defer>`，渲染完成前显示源码 + "渲染中…"占位【我的决定】。
+- 配置：`securityLevel: "strict"`、`startOnLoad: false`、主题跟随 `prefers-color-scheme`；每个图唯一 id，渲染前容器清空。**用户内容不得进入 innerHTML 之外的执行路径**。
+- 差异呈现：改动的图表默认显示**改后**渲染 + 角标"图表已变更"，可展开"改前"渲染做对比（两张图并排，窄屏上下）；源码（围栏内容）默认折叠，展开后按代码块规则做行级差异。判定依据是源码是否相同，而不是 SVG。
+- 失败降级：mermaid 语法错误、渲染超时、脚本加载失败（离线或被拦截）三种情况都显示"图表渲染失败"+ 错误摘要 + 源码，绝不出现空白块。
+
+**两处与既有约定的关系**
+
+- 代码块高亮发生在字符串层（§7.6 的 `projectInline` 之后），因此不影响块 DOM 契约（`data-line`、`data-end-line`、`data-block` 均保留）。
+- 打印与色觉：行级 `+`/`−` 非纯颜色编码，与 §7.11 一致；mermaid 图为位图式渲染，打印时改为"显示源码"。
+
 ## 8. 迁移与分期
 
 每期可独立上线，任一期失败可停在上一期。
@@ -382,12 +415,14 @@ interface Decorated {
 | **P1 引擎** | `parseBlocks / alignBlocks / diffBlock / classify` 四个纯函数 + 单测 | `public/semdiff.js`（新文件，vendored `diff-match-patch`） | 黄金语料 100% 通过；属性测试 round-trip 通过 |
 | **P2 渲染切换** | 阅读视图改用引擎产物；块级竖线与行内标记；三态显示；删除 `.drail`/`syncRail`/`railHTML`；删除并排与统一视图及其 CSS/按钮/测试 | 顶栏精简，`readingHTML` 重写 | 视觉验收（你确认）；现有评论、草稿、深链、引用视图不退化 |
 | **P3 右栏统一** | 改动卡片 + 评论 + 草稿 + 已阅；窄屏退化为把手 | 抽屉重写 | 键盘可达；计数正确 |
+| **P2.5 代码与图表** | 语法高亮（整块高亮 + 标签感知拆行）；代码块行级差异；mermaid 懒加载、改前/改后对比、三种失败降级 | `public/highlight.min.js`、`public/mermaid.min.js`、`splitHighlightedLines` | 高亮不破坏 `data-line` 与评论落点；无 mermaid 的页面首屏零额外请求 |
 | **P4 搬移检测 + 审阅窗格** | `moved` 状态；底部窗格与 `j/k` | — | 语料中搬移用例全中 |
 
 **删除清单（P2 必须一并完成，否则留下死代码）**：`sideBySideHTML`、`unifiedHTML`、`splitHTML`、`csvSideBySideHTML` 的并排分支、`.drail*` 样式约 9 处、`syncRail()`、`railHTML()`、`changeRail()`、顶栏 4 个模式按钮、`public/route.js` 的 `mode` 参数（含 `route.test.mjs` 三处断言）、`1/2/3/4` 视图快捷键、以及 6 处引用上述符号的测试。**清单是下限，不是上限**：P2 结束时用 `grep -n "sideBySide\|unified\|split\|drail\|changeRail"` 全仓复查一遍。
 
 ## 9. 测试策略
 
+0. **纯函数优先**：`splitHighlightedLines`（多行注释、模板字符串、空行、`</span>` 误闭合）、语言别名归一、mermaid 占位与失败降级都走 `node --test`；**mermaid 真实渲染不进单测**（stub DOM 无法承载），只在浏览器冒烟里验。
 1. **黄金语料**（P0 产出）：JSON 描述 `{base, head, expect: {blocks: [...], states, granularity, inline}}`。每个用例覆盖一类真实改动（数字微调、整句改写、列表换序、表格加行、标题升降级、段内搬移）。
 2. **属性测试**：随机生成 base/head 对（随机插入、删除、替换、搬移 token），断言 ①对齐保序 ②行内区间施加后逐字节还原 head ③`delText` 在 base 中原位可寻。
 3. **降级测试**：块数超限、token 超限、解析失败、截断，各有断言（不追求渲染正确，只断言"降级且提示"）。
@@ -477,6 +512,9 @@ show('2024 年区域银行智能研发投入同比增长 12.3%，其中股份制
 | 章节色条 | 保留 `.cbar`，计数由 `Decorated[]` 供给 |
 | 空/异常输入 | `base` 或 `head` 为空时不做对齐，全部按 `added` / `removed` 呈现 |
 | 引用文档 | 无 base 侧输入，直接 `render` 且 `inline: []` |
+| 未知栅栏语言 | 只转义不着色，保留 `data-lang` |
+| mermaid 语法错误 / 加载失败 | 显示错误摘要 + 源码，块仍可评论 |
+| 代码块超长（> 3000 行） | 只高亮前 1000 行，其余保留纯文本并提示 |
 
 ## 附录 C 术语
 
