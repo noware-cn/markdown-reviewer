@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Markdown 文档审批工作台 · noware-cn/workspace</title>
-<link rel="stylesheet" href="/styles.css?v=328">
+<link rel="stylesheet" href="/styles.css?v=329">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -82,6 +82,7 @@
       <button type="button" data-view-state="final" aria-pressed="false" title="只看定稿">定稿</button>
       <button type="button" data-view-state="original" aria-pressed="false" title="只看改前">改前</button>
     </div>
+    <button class="wb-focus-btn" id="wbFocusBtn" type="button" title="全屏阅读（F）" aria-pressed="false">⛶</button>
     <div class="wb-look">
       <button class="wb-look-btn" id="wbLookBtn" type="button" aria-haspopup="true" aria-expanded="false" aria-controls="wbLookPop" title="文档主题与表格样式">外观</button>
       <div class="wb-look-pop" id="wbLookPop" hidden>
@@ -99,6 +100,16 @@
             <button type="button" data-read="narrow" role="radio" aria-checked="false">窄</button>
             <button type="button" data-read="standard" role="radio" aria-checked="true">标准</button>
             <button type="button" data-read="wide" role="radio" aria-checked="false">宽</button>
+          </div>
+        </div>
+        <div class="look-group">
+          <span class="look-label">文档缩放</span>
+          <div class="look-seg" role="radiogroup" aria-label="文档缩放">
+            <button type="button" data-zoom="0.9" role="radio" aria-checked="false">90%</button>
+            <button type="button" data-zoom="1" role="radio" aria-checked="true">100%</button>
+            <button type="button" data-zoom="1.15" role="radio" aria-checked="false">115%</button>
+            <button type="button" data-zoom="1.3" role="radio" aria-checked="false">130%</button>
+            <button type="button" data-zoom="1.5" role="radio" aria-checked="false">150%</button>
           </div>
         </div>
         <div class="look-group">
@@ -186,6 +197,14 @@
   <span id="navCount">0/0</span>
   <button type="button" id="navNext" title="下一处变更 (n)">↓</button>
 </div>
+<div class="focusbar" id="focusBar" hidden>
+  <button type="button" id="focusZoomOut" title="缩小">−</button>
+  <span class="focusbar-zoom" id="focusZoomLabel">100%</span>
+  <button type="button" id="focusZoomIn" title="放大">+</button>
+  <span class="focusbar-sep" aria-hidden="true"></span>
+  <button type="button" id="focusDrawer">意见</button>
+  <button type="button" id="focusExit" title="退出全屏（Esc）">退出全屏</button>
+</div>
 <div class="dtoast" id="dtoast" role="status"></div>
 <script src="/marked.min.js?v=1"></script>
 <script src="/purify.min.js?v=1"></script>
@@ -205,7 +224,7 @@ window.DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 <script src="/diff-model.js?v=211"></script>
 <script src="/highlight.min.js?v=1"></script>
 <script src="/semdiff.js?v=2"></script>
-<script src="/diff.js?v=254"></script>
+<script src="/diff.js?v=255"></script>
 <script src="/app.js?v=220"></script>
 </body>
 </html>

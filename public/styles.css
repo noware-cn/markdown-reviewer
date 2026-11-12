@@ -2793,3 +2793,42 @@ body.tbl-full-on { overflow: hidden; }
 
 /* 宽屏只留左栏的收起按钮，顶栏这条在窄屏才需要 */
 @media (min-width: 1024px) { .wb-nav-toggle { display: none; } }
+
+/* ---------- 文档缩放（只作用于正文） ---------- */
+.wb-content { zoom: var(--doc-zoom, 1); }
+.wb-focus-btn {
+  flex: none; width: 30px; height: 28px; line-height: 1;
+  border: 1px solid var(--border); border-radius: 6px;
+  background: transparent; color: var(--muted); cursor: pointer; font-size: 14px;
+}
+.wb-focus-btn:hover { color: var(--text); background: var(--raised); }
+.wb-focus-btn[aria-pressed="true"] { color: var(--text); background: var(--raised); border-color: var(--text); }
+
+/* ---------- 全屏阅读：只留正文与浮动控制 ---------- */
+body.reading-focus .wb-topbar,
+body.reading-focus .wb-nav,
+body.reading-focus #navFloat { display: none !important; }
+body.reading-focus .wb-body { padding: 0; }
+body.reading-focus .wb-doc { border: 0; border-radius: 0; }
+body.reading-focus .wb-filepath { padding-left: 28px; }
+/* 全屏时意见面板改为浮层，不再挤压正文 */
+body.reading-focus .wb-drawer {
+  position: fixed; right: 12px; top: 12px; bottom: 12px; z-index: 70;
+  width: min(430px, 92vw);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+}
+.focusbar {
+  position: fixed; right: 18px; bottom: 18px; z-index: 80;
+  display: flex; align-items: center; gap: 4px;
+  padding: 4px 6px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--sheet); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  font-size: var(--fs-meta);
+}
+.focusbar[hidden] { display: none; }
+.focusbar button {
+  border: 0; background: transparent; color: var(--text);
+  padding: 5px 9px; border-radius: 999px; cursor: pointer; font-size: var(--fs-meta);
+}
+.focusbar button:hover { background: var(--raised); }
+.focusbar-zoom { min-width: 42px; text-align: center; color: var(--muted); font-variant-numeric: tabular-nums; }
+.focusbar-sep { width: 1px; height: 18px; background: var(--border); margin: 0 2px; }

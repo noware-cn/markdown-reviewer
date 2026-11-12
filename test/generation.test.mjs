@@ -183,7 +183,11 @@ function mountApp(world) {
   ctx.window.DiffModel = modelCtx.window.DiffModel;
 
   const ANCHOR = '  let bound = false;';
-  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__docTarget = docLinkTarget; window.__render = render; window.__clickReview = (line, side) => { const f = curFile(); setReviewed(f, Number(line), side || "head", !isReviewed(f, Number(line), side || "head")); render(); }; window.__docLink = handleDocLink; window.__resolve = resolveBlockUrls; window.__reply = sendReply;\n${ANCHOR}`);
+  const exposed = diffSrc.replace(ANCHOR, `  window.__D = D; window.__load = load; window.__selectFile = selectFile; window.__selectCommit = selectCommit; window.__commitAll = selectAll; window.__submit = submitDrafts; window.__locateFromSelection = locateFromSelection; window.__saveDrafts = saveDrafts; window.__listBlockWithInsertions = listBlockWithInsertions; window.__blockHtml = blockHtml; window.__docTarget = docLinkTarget; window.__render = render; window.__setZoom = (v) => { D.zoom = clampZoom(v); applyZoom(); };
+  window.__zoomVar = () => (document.documentElement && document.documentElement.style.getPropertyValue ? document.documentElement.style.getPropertyValue('--doc-zoom') : String(D.zoom));
+  window.__setFocus = (on) => setFocus(on);
+  window.__bodyClasses = () => (document.body.classList.contains('reading-focus') ? 'reading-focus' : '');
+  window.__clickReview = (line, side) => { const f = curFile(); setReviewed(f, Number(line), side || "head", !isReviewed(f, Number(line), side || "head")); render(); }; window.__docLink = handleDocLink; window.__resolve = resolveBlockUrls; window.__reply = sendReply;\n${ANCHOR}`);
   const semCtx = { window: { marked: modelCtx.window.marked }, console };
   semCtx.window.window = semCtx.window;
   semCtx.globalThis = semCtx;
@@ -1087,4 +1091,34 @@ test('截断分侧判断：只有 base 截断时，原始态拦住、最终态�
   app.ctx.window.__render();
   assert.ok(!app.els.get('wbContent').innerHTML.includes('超过读取上限'), 'head 完整时不误报');
   D.docView = 'markup';
+});
+
+test('文档缩放：只作用于正文，档位与快捷键都改变 --doc-zoom', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n正文。\n', 'a.md@base': '# 标题\n\n改前正文。\n' };
+  world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n-改前正文。\n+正文。\n' };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const w = app.ctx.window;
+  w.__setZoom(1.3);
+  assert.equal(w.__D.zoom, 1.3);
+  assert.equal(w.__zoomVar(), '1.3');
+  w.__setZoom(99);
+  assert.equal(w.__D.zoom, 2, '超出上限被夹住');
+  w.__setZoom(0.1);
+  assert.equal(w.__D.zoom, 0.6, '低于下限被夹住');
+});
+
+test('全屏阅读：切焦点模式加类，Esc 退出；草稿与选中评论仍在浮层面板里', async () => {
+  const world = makeWorld();
+  world.texts = { 'a.md': '# 标题\n\n正文。\n', 'a.md@base': '# 标题\n\n改前正文。\n' };
+  world.patches = { 'a.md': '@@ -1,3 +1,3 @@\n # 标题\n \n-改前正文。\n+正文。\n' };
+  const app = mountApp(world);
+  await mountComplete(world, app, 1);
+  const w = app.ctx.window;
+  w.__setFocus(true);
+  assert.equal(w.__D.focus, true);
+  assert.ok(w.__bodyClasses().includes('reading-focus'), '焦点模式类已加');
+  w.__setFocus(false);
+  assert.ok(!w.__bodyClasses().includes('reading-focus'), '退出后类被移除');
 });
