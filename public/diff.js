@@ -362,7 +362,10 @@
     const start = b.startLine;
     const end = b.endLine ?? b.startLine;
     if (start == null) return [];
+    const sha = refOf();
     return D.drafts.filter((d) => d.path === file.path
+      /* 提交换过之后，同路径同行号是另一段文字；只标当前版本创建的那条 */
+      && (!d.headSha || !sha || d.headSha === sha)
       && d.start != null && d.start <= end && (d.end ?? d.start) >= start);
   }
 
@@ -467,6 +470,13 @@
   }
 
   /** 抽屉收起后在右缘留一个把手，避免「点掉箭头就再也打不开」。 */
+  /** 打开抽屉：所有入口共用，保证右缘把手与面板状态一致 */
+  function openDrawer() {
+    const body = document.getElementById("wbBody");
+    if (body) body.classList.add("drawer-open");
+    syncDrawerHandle();
+  }
+
   function syncDrawerHandle() {
     const btn = document.getElementById("wbDrawerOpen");
     if (!btn) return;
@@ -1470,7 +1480,7 @@
         });
         document.querySelectorAll("[data-composer]").forEach((box) => {
           const key = box.dataset.composer;
-          if (!opened.has(key) && !kept.get(key)) return;
+          if (!opened.has(key)) return;
           box.hidden = false;
           const act = document.querySelector(`[data-act="reply-toggle"][data-draft-key="${key}"]`);
           if (act) { act.setAttribute("aria-expanded", "true"); act.textContent = "取消回复"; }
@@ -2306,7 +2316,7 @@
       }
       const openTree = e.target.closest('[data-act="open-tree"]');
       if (openTree) {
-        document.getElementById("wbBody").classList.add("drawer-open");
+        openDrawer();
         const jump = treeItemsForBlock(openTree.closest(".md-block"))[0];
         if (jump) jump.scrollIntoView({ block: "nearest" });
         return;
@@ -2332,7 +2342,7 @@
         D.active = { path: D.file, start: line, end: line, quote: "" };
         render();
         body.classList.add("drawer-open");
-        document.getElementById("wbBody").classList.add("drawer-open");
+        openDrawer();
         setTimeout(() => { const ta = document.getElementById("wbcText"); if (ta) ta.focus(); }, 50);
         return;
       }
@@ -2608,7 +2618,7 @@
       chip.hidden = true;
       window.getSelection().removeAllRanges();
       render();
-      document.getElementById("wbBody").classList.add("drawer-open");
+      openDrawer();
       setTimeout(() => { const ta = document.getElementById("wbcText"); if (ta) { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); } }, 50);
     });
 
@@ -3153,7 +3163,7 @@
       syncDrawerHandle();
     });
     document.getElementById("wbDrawerOpen").addEventListener("click", () => {
-      document.getElementById("wbBody").classList.add("drawer-open");
+      openDrawer();
       syncDrawerHandle();
     });
     document.getElementById("wbNavFold").addEventListener("click", () => {
@@ -3264,6 +3274,10 @@
     refresh: (number, force) => load(number, true, !!force),
     unmount: () => {
       document.getElementById("workbench").hidden = true;
+      const handle = document.getElementById("wbDrawerOpen");
+      if (handle) handle.hidden = true;
+      const shell = document.getElementById("wbBody");
+      if (shell) shell.classList.remove("drawer-open");
       document.body.classList.remove("wb-mode-on");
       document.body.classList.remove("tbl-full-on");
       closeCellPopover();
