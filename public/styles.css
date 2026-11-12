@@ -517,11 +517,10 @@ body.wb-mode-on .layout { display: none; }
   column-gap: 3px;
   padding: 0 8px 8px;
 }
-.wb-body.drawer-open { grid-template-columns: var(--nav-w) 7px minmax(0, 1fr) var(--drawer-w); }
-.wb-body.nav-collapsed { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
-.wb-body.nav-collapsed .wb-nav,
-.wb-body.nav-collapsed .wb-sash-col { display: none; }
-.wb-body.drawer-open.nav-collapsed { grid-template-columns: minmax(0, 1fr) var(--drawer-w); column-gap: 8px; }
+/* 列模板由 applyLayout() 写入：停靠面板才占列 */
+.wb-body.left-hidden .wb-nav,
+.wb-body.left-hidden .wb-sash-col,
+.wb-body.right-hidden .wb-drawer { display: none; }
 
 /* ===== 左侧：变更文件与章节（留在地面上，不套卡片） ===== */
 .wb-nav {
@@ -961,7 +960,8 @@ body.wb-mode-on .layout { display: none; }
   border: 1px solid var(--border);
   border-radius: 16px;
 }
-.wb-body.drawer-open .wb-drawer { display: flex; }
+.wb-body.right-docked .wb-drawer,
+.wb-body.right-floating .wb-drawer { display: flex; }
 .wb-drawer-head {
   flex: none;
   display: flex;
@@ -1391,17 +1391,7 @@ body.wb-mode-on .layout { display: none; }
   .wb-look { order: 6; }
   .wb-look-pop { right: -4px; }
   .wb-modes { order: 9; flex: 1 1 100%; margin-left: 0; padding-bottom: 4px; overflow-x: auto; }
-  .wb-drawer {
-    position: fixed;
-    top: 8px;
-    right: 8px;
-    bottom: 8px;
-    width: min(360px, 92vw);
-    z-index: 60;
-    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.16);
-  }
-  .wb-body.drawer-open { grid-template-columns: var(--nav-w) minmax(0, 1fr); }
-  .wb-body.drawer-open.nav-collapsed { grid-template-columns: minmax(0, 1fr); }
+  /* 抽屉的浮层定位与列模板由 applyLayout() 按状态决定（右栏 ≤1100 降级为浮层） */
 }
 
 @media (max-width: 1000px) {
@@ -1432,9 +1422,7 @@ body.wb-mode-on .layout { display: none; }
   .item-author, .item-time { overflow: visible; white-space: normal; }
   .badge { grid-area: badge; grid-column: auto; }
 
-  .wb-body { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
-  .wb-body.drawer-open,
-  .wb-body.drawer-open.nav-collapsed { grid-template-columns: minmax(0, 1fr); }
+  .wb-body { grid-template-columns: minmax(0, 1fr) !important; column-gap: 0; }
   .wb-nav {
     position: fixed;
     top: 8px;
@@ -2236,8 +2224,7 @@ body.tbl-full-on { overflow: hidden; }
   .wb-brand-text { display: none; }
   .wb-title { font-size: var(--fs-body); white-space: normal; }
   .wb-sash-col { display: none; }
-  .wb-body { grid-template-columns: minmax(0, 1fr); column-gap: 0; }
-  .wb-body.drawer-open { grid-template-columns: minmax(0, 1fr); }
+  .wb-body { grid-template-columns: minmax(0, 1fr) !important; column-gap: 0; }
   .wb-filepath,
   .wb-doc[data-kind="csv"] .wb-filepath,
   .wb-doc[data-mode="sidebyside"] .wb-filepath,
@@ -2807,9 +2794,8 @@ body.tbl-full-on { overflow: hidden; }
 /* ---------- 全屏阅读：只留正文与浮动控制 ---------- */
 body.reading-focus .wb-topbar,
 body.reading-focus #navFloat { display: none !important; }
-/* 网格列模板必须一起收掉：只隐藏左栏会留下 nav-w + 7px 两条空列，正文被挤到右侧 */
+/* 列模板由 applyLayout() 计算（全屏左栏 224px、不占分隔列），这里只收内边距与间距 */
 body.reading-focus .wb-body {
-  grid-template-columns: minmax(0, 1fr) !important;
   column-gap: 0;
   padding: 0;
 }
@@ -2819,11 +2805,13 @@ body.reading-focus .wb-doc { width: 100%; }
 body.reading-focus .wb-content { padding-bottom: 72px; }
 body.reading-focus .wb-doc { border: 0; border-radius: 0; }
 body.reading-focus .wb-filepath { padding-left: 28px; }
-/* 全屏时意见面板改为浮层，不再挤压正文 */
-body.reading-focus .wb-drawer {
-  position: fixed; right: 12px; top: 12px; bottom: 12px; z-index: 70;
+/* 全屏时意见面板一律浮层（布局模型在 focus 下不会给出停靠列） */
+body.reading-focus .wb-body.right-floating .wb-drawer {
+  top: 12px;
+  bottom: 12px;
+  height: auto;
   width: min(430px, 92vw);
-  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.28);
+  z-index: 86;
 }
 .focusbar {
   position: fixed; right: 18px; bottom: 18px; z-index: 80;
@@ -2853,7 +2841,6 @@ body.reading-focus .wb-drawer {
 .chg-fold[open] > summary { margin-bottom: 8px; color: var(--text); }
 
 /* ---------- 全屏阅读：左侧大纲 ---------- */
-body.reading-focus .wb-body { grid-template-columns: var(--focus-nav-w, 224px) minmax(0, 1fr) !important; }
 body.reading-focus .wb-view-files,
 body.reading-focus .wb-nav-tools,
 body.reading-focus .wb-nav-head .wb-nav-title,
@@ -2869,21 +2856,70 @@ body.reading-focus.outline-off .wb-nav { display: none; }
 body.reading-focus .wb-nav { padding-inline: 2px 10px; }
 
 /* 全屏大纲要能压过「左栏已收起」的记忆状态 */
-body.reading-focus .wb-body.nav-collapsed { grid-template-columns: var(--focus-nav-w, 224px) minmax(0, 1fr) !important; column-gap: 0; }
-body.reading-focus .wb-body.nav-collapsed .wb-nav { display: flex; }
-body.reading-focus.outline-off .wb-body.nav-collapsed { grid-template-columns: minmax(0, 1fr) !important; }
-body.reading-focus.outline-off .wb-body.nav-collapsed .wb-nav { display: none; }
 
 /* 窄屏：大纲改为浮层，不挤压正文 */
 @media (max-width: 899px) {
   /* 抽屉优先：打开意见时把大纲浮层让开，且抽屉在更上层 */
-  body.reading-focus .wb-body.drawer-open .wb-nav { display: none !important; }
-  body.reading-focus .wb-drawer { z-index: 90; }
-  body.reading-focus .wb-body,
-  body.reading-focus .wb-body.nav-collapsed { grid-template-columns: minmax(0, 1fr) !important; }
+  body.reading-focus .wb-drawer.is-floating { z-index: 90; }
   body.reading-focus:not(.outline-off) .wb-nav {
     position: fixed; left: 0; top: 0; bottom: 0; width: 264px; z-index: 75;
     background: var(--sheet); border-right: 1px solid var(--border);
     box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.16);
   }
 }
+
+/* ---------- 面板三态：停靠 / 悬浮 / 隐藏 ---------- */
+.wb-panelctl {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  margin-left: auto;
+}
+.wb-panelctl button {
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: none;
+  color: var(--faint);
+  font-size: 11px;
+  line-height: 1;
+}
+.wb-panelctl button:hover { background: var(--active); color: var(--text); }
+.wb-panelctl button[aria-pressed="true"] { color: var(--text); background: var(--raised); }
+.wb-nav-head .wb-panelctl + .wb-nav-fold { margin-left: 2px; }
+
+/* 浮层：脱离网格，贴边卡片，可拖动 */
+.wb-body.left-floating .wb-nav,
+.wb-body.right-floating .wb-drawer {
+  position: fixed;
+  z-index: 78;
+  background: var(--sheet);
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.22);
+  padding: 8px 10px;
+  height: min(72vh, 680px);
+  overflow: auto;
+}
+.wb-body.left-floating .wb-nav {
+  left: 12px;
+  top: 60px;
+  width: 300px;
+}
+.wb-body.right-floating .wb-drawer {
+  right: 12px;
+  top: 60px;
+  width: min(400px, 92vw);
+}
+.wb-body.left-floating .wb-nav-head,
+.wb-body.right-floating .wb-drawer-head {
+  cursor: grab;
+  user-select: none;
+}
+.wb-body.is-dragging .wb-nav,
+.wb-body.is-dragging .wb-drawer { cursor: grabbing; }
+.wb-nav.is-dragging,
+.wb-drawer.is-dragging { opacity: 0.94; }
+.wb-body.left-floating .wb-sash-col { display: none; }

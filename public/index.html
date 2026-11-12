@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Markdown 文档审批工作台 · noware-cn/workspace</title>
-<link rel="stylesheet" href="/styles.css?v=338">
+<link rel="stylesheet" href="/styles.css?v=340">
 <link rel="icon" type="image/svg+xml" href="/favicon.svg?v=8">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
 <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
@@ -132,7 +132,11 @@
       <div class="wb-nav-head">
         <span class="wb-nav-title">变更文件</span>
         <span class="wb-progress" id="wbProgress"></span>
-        <button class="wb-nav-fold" id="wbNavFold" type="button" title="收起导航" aria-label="收起导航">◀</button>
+        <span class="wb-panelctl" role="group" aria-label="左栏布局">
+          <button type="button" data-panel="left" data-layout="docked" title="停靠" aria-pressed="true">▥</button>
+          <button type="button" data-panel="left" data-layout="floating" title="悬浮" aria-pressed="false">⧉</button>
+        </span>
+        <button class="wb-nav-fold" id="wbNavFold" type="button" title="隐藏导航" aria-label="隐藏导航">◀</button>
       </div>
       <div class="wb-nav-tools">
         <input class="wb-filter" id="wbFilter" type="search" placeholder="筛选文件路径" autocomplete="off">
@@ -183,7 +187,11 @@
     <aside class="wb-drawer" id="wbDrawer">
       <div class="wb-drawer-head">
         <span>意见与草稿</span>
-        <button class="wb-drawer-fold" id="wbDrawerFold" type="button" title="收起面板">▶</button>
+        <span class="wb-panelctl" role="group" aria-label="意见面板布局">
+          <button type="button" data-panel="right" data-layout="docked" title="停靠" aria-pressed="false">▥</button>
+          <button type="button" data-panel="right" data-layout="floating" title="悬浮" aria-pressed="false">⧉</button>
+        </span>
+        <button class="wb-drawer-fold" id="wbDrawerFold" type="button" title="隐藏面板">▶</button>
       </div>
       <div class="wb-drawer-body" id="wbDrawerBody"></div>
     </aside>
@@ -225,7 +233,7 @@ window.DOMPurify.addHook("afterSanitizeAttributes", (node) => {
 <script src="/diff-model.js?v=211"></script>
 <script src="/highlight.min.js?v=1"></script>
 <script src="/semdiff.js?v=2"></script>
-<script src="/diff.js?v=260"></script>
+<script src="/diff.js?v=262"></script>
 <script src="/app.js?v=220"></script>
 </body>
 </html>
