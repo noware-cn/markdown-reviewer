@@ -628,7 +628,7 @@ test('提交成功只删除快照草稿，保留请求期间新增的草稿', as
   assert.deepEqual(saved.map((d) => d.id), ['new-during-submit']);
 });
 
-test('手动强制刷新只刷新 PR 元数据，不强制刷新正文', async () => {
+test('手动强制刷新重取元信息、提交与合并条件，不强制刷新正文', async () => {
   const world = makeWorld();
   const app = mountApp(world);
   await mountComplete(world, app, 1);
@@ -637,9 +637,11 @@ test('手动强制刷新只刷新 PR 元数据，不强制刷新正文', async (
   await app.ctx.window.__load(1, true, true);
   assert.ok(world.calls.some((c) => c.url.includes('/1/diff') && c.url.includes('refreshMeta=1')));
   assert.equal(world.calls.filter((c) => c.url.includes('/file?')).length, beforeFiles);
-  /* 正文缓存不动；提交列表随强制刷新重取一次（?refresh=1 只出现在 commits 上） */
+  /* 正文缓存不动；提交列表与合并条件随强制刷新重取（?refresh=1 只出现在这两个接口上） */
   assert.ok(world.calls.every((c) => !c.url.includes('refreshText=1')));
-  const forced = world.calls.filter((c) => c.url.includes('refresh=1') && !c.url.includes('/commits'));
+  assert.ok(world.calls.some((c) => c.url.includes('/merge-options') && c.url.includes('refresh=1')));
+  const forced = world.calls.filter((c) => c.url.includes('refresh=1')
+    && !c.url.includes('/commits') && !c.url.includes('/merge-options'));
   assert.deepEqual(forced, []);
 });
 

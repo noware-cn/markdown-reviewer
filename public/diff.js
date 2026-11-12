@@ -3456,7 +3456,8 @@
       D.pendingFile = null;
       render();
       if (opts.onRendered) opts.onRendered();
-      loadMergeOptions();
+      /* force 一并透给合并条件：刷新与合并成功回调都要求它是最新的 */
+      loadMergeOptions(force);
       /* 提交列表与正文并行拉取：列表慢只影响提交选择器，不该挡住默认阅读视图 */
       const commitsReady = ensureCommits(force || headChanged);
       if (opts.commit) {
